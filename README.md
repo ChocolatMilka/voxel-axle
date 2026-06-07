@@ -11,6 +11,12 @@ graze, panic-run when struck, and topple over when killed. Everything is
 drawn by a z-buffered, textured triangle rasteriser over face-culled
 geometry.
 
+## Screenshots
+
+| Forest | Desert | Coast |
+|--------|--------|-------|
+| ![Forest biome with oak trees](doc/gameplay.png) | ![Desert biome with a water pool and a mob](doc/gameplay2.png) | ![Hills meeting a beach and ocean, with chickens](doc/gameplay3.png) |
+
 ## Controls
 
 | Input            | Action                  |
