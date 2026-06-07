@@ -1,0 +1,182 @@
+// raster — software triangle rasteriser into the ARGB framebuffer with a
+// per-pixel inverse-depth z-buffer. Half-plane (edge-function) inside
+// test; depth is the barycentric blend of vertex inverse depths, nearest
+// wins. Winding-agnostic (the area's sign flows through the weights).
+
+use std::numeric::math::floorToInt;
+use crate::platform::sdl::putPixel;
+use crate::platform::sdl::getF64;
+use crate::platform::sdl::setF64;
+use crate::platform::sdl::readI32;
+use crate::platform::sdl::rgb;
+use crate::config;
+
+fn minf(a : f64, b : f64) : f64 {
+    if (a < b) { return a; }
+    return b;
+}
+
+fn maxf(a : f64, b : f64) : f64 {
+    if (a > b) { return a; }
+    return b;
+}
+
+fn edge(ax : f64, ay : f64, bx : f64, by : f64, px : f64, py : f64) : f64 {
+    return (px - ax) * (by - ay) - (py - ay) * (bx - ax);
+}
+
+/** Fill the frame with `bg` and reset the z-buffer. */
+fn clearFrame(pixels : i64, zbuf : i64, w : i32, h : i32, bg : i32) : void {
+    let n : i32 = w * h;
+    let i : i32 = 0;
+    while (i < n) {
+        putPixel(pixels, i, bg);
+        setF64(zbuf, i, 0.0);
+        i = i + 1;
+    }
+}
+
+/** Sample a square atlas tile (vertical strip) at (fu, fv) in [0,1). */
+fn sampleAtlas(atlas : i64, tile : i32, fu : f64, fv : f64) : i32 {
+    let t : i32 = config::tilePx;
+    let tx : i32 = floorToInt(fu * (t as f64)) as i32;
+    let ty : i32 = floorToInt(fv * (t as f64)) as i32;
+    if (tx < 0) { tx = 0; }
+    if (tx > t - 1) { tx = t - 1; }
+    if (ty < 0) { ty = 0; }
+    if (ty > t - 1) { ty = t - 1; }
+    let idx : i32 = (tile * t + ty) * t + tx;
+    return readI32(atlas, (idx as i64) * 4);
+}
+
+/** Textured triangle: perspective-correct UV sampling of an atlas tile,
+ *  each channel scaled by its own multiplier (`tr`, `tg`, `tb`). Passing
+ *  the same value for all three is plain brightness; an unequal triple
+ *  tints — e.g. a red hurt flash multiplies green/blue down. */
+fn rasterTriTex(pixels : i64, zbuf : i64, w : i32, h : i32,
+    x0 : f64, y0 : f64, iz0 : f64, u0 : f64, v0 : f64,
+    x1 : f64, y1 : f64, iz1 : f64, u1 : f64, v1 : f64,
+    x2 : f64, y2 : f64, iz2 : f64, u2 : f64, v2 : f64,
+    atlas : i64, tile : i32, tr : f64, tg : f64, tb : f64) : void {
+    let area : f64 = edge(x0, y0, x1, y1, x2, y2);
+    if (area > 0.0 - 0.0001 && area < 0.0001) { return; }
+    let inv : f64 = 1.0 / area;
+    let uw0 : f64 = u0 * iz0; let vw0 : f64 = v0 * iz0;
+    let uw1 : f64 = u1 * iz1; let vw1 : f64 = v1 * iz1;
+    let uw2 : f64 = u2 * iz2; let vw2 : f64 = v2 * iz2;
+
+    let minx : i32 = floorToInt(minf(x0, minf(x1, x2))) as i32;
+    let maxx : i32 = floorToInt(maxf(x0, maxf(x1, x2))) as i32;
+    let miny : i32 = floorToInt(minf(y0, minf(y1, y2))) as i32;
+    let maxy : i32 = floorToInt(maxf(y0, maxf(y1, y2))) as i32;
+    if (minx < 0) { minx = 0; }
+    if (miny < 0) { miny = 0; }
+    if (maxx > w - 1) { maxx = w - 1; }
+    if (maxy > h - 1) { maxy = h - 1; }
+
+    // Incremental edge functions: the three edge values are linear in the
+    // pixel centre, so we evaluate them once at the bbox corner and step
+    // them by constant deltas instead of recomputing per pixel.
+    let cx0 : f64 = (minx as f64) + 0.5;
+    let cy0 : f64 = (miny as f64) + 0.5;
+    let ax0 : f64 = y2 - y1; let ay0 : f64 = x1 - x2;
+    let ax1 : f64 = y0 - y2; let ay1 : f64 = x2 - x0;
+    let ax2 : f64 = y1 - y0; let ay2 : f64 = x0 - x1;
+    let e0row : f64 = edge(x1, y1, x2, y2, cx0, cy0);
+    let e1row : f64 = edge(x2, y2, x0, y0, cx0, cy0);
+    let e2row : f64 = edge(x0, y0, x1, y1, cx0, cy0);
+
+    // Hoist the tile constants; the inner pixel does raw pointer loads /
+    // stores and a single reciprocal instead of per-pixel `getF64` /
+    // `setF64` / `putPixel` / `readI32` calls and two divides.
+    let t : i32 = config::tilePx;
+    let tf : f64 = t as f64;
+    let tmax : i32 = t - 1;
+    let tbase : i32 = tile * t;
+
+    let py : i32 = miny;
+    while (py <= maxy) {
+        let e0 : f64 = e0row;
+        let e1 : f64 = e1row;
+        let e2 : f64 = e2row;
+        let rowbase : i32 = py * w;
+        let px : i32 = minx;
+        while (px <= maxx) {
+            if (e0 * inv >= 0.0 && e1 * inv >= 0.0 && e2 * inv >= 0.0) {
+                let b0 : f64 = e0 * inv;
+                let b1 : f64 = e1 * inv;
+                let b2 : f64 = e2 * inv;
+                let izp : f64 = b0 * iz0 + b1 * iz1 + b2 * iz2;
+                let idx : i64 = (rowbase + px) as i64;
+                unsafe {
+                    let zp : ptr<f64> = (zbuf + idx * 8) as ptr<f64>;
+                    if (izp > *zp) {
+                        let invz : f64 = 1.0 / izp;
+                        let u : f64 = (b0 * uw0 + b1 * uw1 + b2 * uw2) * invz;
+                        let v : f64 = (b0 * vw0 + b1 * vw1 + b2 * vw2) * invz;
+                        let tx : i32 = floorToInt(u * tf) as i32;
+                        let ty : i32 = floorToInt(v * tf) as i32;
+                        if (tx < 0) { tx = 0; } else if (tx > tmax) { tx = tmax; }
+                        if (ty < 0) { ty = 0; } else if (ty > tmax) { ty = tmax; }
+                        let tp : ptr<i32> = (atlas + (((tbase + ty) * t + tx) as i64) * 4) as ptr<i32>;
+                        let texel : i32 = *tp;
+                        let r : i32 = floorToInt(((texel / 65536) & 0xFF) as f64 * tr) as i32;
+                        let g : i32 = floorToInt(((texel / 256) & 0xFF) as f64 * tg) as i32;
+                        let bl : i32 = floorToInt((texel & 0xFF) as f64 * tb) as i32;
+                        if (r > 255) { r = 255; }
+                        if (g > 255) { g = 255; }
+                        if (bl > 255) { bl = 255; }
+                        *zp = izp;
+                        let pp : ptr<i32> = (pixels + idx * 4) as ptr<i32>;
+                        *pp = (r & 0xFF) * 65536 + (g & 0xFF) * 256 + (bl & 0xFF);
+                    }
+                }
+            }
+            e0 = e0 + ax0; e1 = e1 + ax1; e2 = e2 + ax2;
+            px = px + 1;
+        }
+        e0row = e0row + ay0; e1row = e1row + ay1; e2row = e2row + ay2;
+        py = py + 1;
+    }
+}
+
+fn rasterTri(pixels : i64, zbuf : i64, w : i32, h : i32,
+    x0 : f64, y0 : f64, iz0 : f64,
+    x1 : f64, y1 : f64, iz1 : f64,
+    x2 : f64, y2 : f64, iz2 : f64,
+    color : i32) : void {
+    let area : f64 = edge(x0, y0, x1, y1, x2, y2);
+    if (area > 0.0 - 0.0001 && area < 0.0001) { return; }
+    let inv : f64 = 1.0 / area;
+
+    let minx : i32 = floorToInt(minf(x0, minf(x1, x2))) as i32;
+    let maxx : i32 = floorToInt(maxf(x0, maxf(x1, x2))) as i32;
+    let miny : i32 = floorToInt(minf(y0, minf(y1, y2))) as i32;
+    let maxy : i32 = floorToInt(maxf(y0, maxf(y1, y2))) as i32;
+    if (minx < 0) { minx = 0; }
+    if (miny < 0) { miny = 0; }
+    if (maxx > w - 1) { maxx = w - 1; }
+    if (maxy > h - 1) { maxy = h - 1; }
+
+    let py : i32 = miny;
+    while (py <= maxy) {
+        let cy : f64 = (py as f64) + 0.5;
+        let px : i32 = minx;
+        while (px <= maxx) {
+            let cx : f64 = (px as f64) + 0.5;
+            let b0 : f64 = edge(x1, y1, x2, y2, cx, cy) * inv;
+            let b1 : f64 = edge(x2, y2, x0, y0, cx, cy) * inv;
+            let b2 : f64 = edge(x0, y0, x1, y1, cx, cy) * inv;
+            if (b0 >= 0.0 && b1 >= 0.0 && b2 >= 0.0) {
+                let iz : f64 = b0 * iz0 + b1 * iz1 + b2 * iz2;
+                let idx : i32 = py * w + px;
+                if (iz > getF64(zbuf, idx)) {
+                    setF64(zbuf, idx, iz);
+                    putPixel(pixels, idx, color);
+                }
+            }
+            px = px + 1;
+        }
+        py = py + 1;
+    }
+}

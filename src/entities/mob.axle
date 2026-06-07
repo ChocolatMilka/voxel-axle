@@ -1,0 +1,165 @@
+// mob — a passive animal (chicken, sheep or cow). Extends Entity, so it
+// is pulled down by gravity, stands on the terrain and steps up ledges
+// with the same physics as the player. On top it carries a livelier AI:
+// it eases smoothly toward a target heading, alternates wandering with
+// standing still to graze, occasionally hops, and bolts away in a panic
+// for a moment when struck. Chickens flutter down slowly. When killed it
+// does not vanish — it enters a `dying` state and the renderer collapses
+// it over `deathFrames` before the manager removes it.
+
+use std::numeric::math::sin;
+use std::numeric::math::cos;
+use std::numeric::math::floorToInt;
+use crate::entities::entity::Entity;
+use crate::world::manager::ChunkManager;
+use crate::config;
+
+class Mob extends Entity {
+    kind : i32,
+    speed : f64,
+    heading : f64,
+    targetHeading : f64,
+    turnTimer : i32,
+    moving : i32,
+    walkPhase : f64,
+    fleeTimer : i32,
+    hurtTimer : i32,
+    state : i32,        // 0 = alive, 1 = dying
+    deathTimer : i32,
+
+    constructor(x : f64, y : f64, z : f64, kind : i32, maxHp : i32) {
+        this.posX = x;
+        this.posY = y;
+        this.posZ = z;
+        this.velY = 0.0;
+        this.radius = config::mobRadius;
+        this.gravityScale = 1.0;
+        this.hp = maxHp;
+        this.maxHp = maxHp;
+        this.onGround = 0;
+        this.impact = 0.0;
+        this.riseGravity = config::gravity;
+        this.apexY = y;
+        this.kind = kind;
+        this.heading = 0.0;
+        this.targetHeading = 0.0;
+        this.turnTimer = 0;
+        this.moving = 1;
+        this.walkPhase = 0.0;
+        this.fleeTimer = 0;
+        this.hurtTimer = 0;
+        this.state = 0;
+        this.deathTimer = 0;
+        this.speed = config::mobWanderSpeed;
+        if (kind == config::mobSheep) { this.speed = config::mobSheepSpeed; }
+        if (kind == config::mobCow) { this.speed = config::mobCowSpeed; }
+        if (kind == config::mobChicken) { this.gravityScale = config::chickenGravityScale; }
+    }
+
+    /** Flag a hit so the renderer glows the mob red for a few frames. */
+    fn flashHurt() : void {
+        this.hurtTimer = config::hurtFlashFrames;
+    }
+
+    /** React to a hit from (px, pz): panic-run directly away for a while. */
+    fn panicFrom(px : f64, pz : f64) : void {
+        this.targetHeading = atan2(this.posZ - pz, this.posX - px);
+        this.fleeTimer = config::mobFleeFrames;
+        this.moving = 1;
+        this.turnTimer = config::mobFleeFrames;
+    }
+
+    /** Begin the death collapse; the manager removes the mob when it ends. */
+    fn startDying() : void {
+        this.state = 1;
+        this.deathTimer = config::deathFrames;
+        this.moving = 0;
+    }
+
+    fn isDying() : boolean { return this.state == 1; }
+    fn deathDone() : boolean { return this.state == 1 && this.deathTimer <= 0; }
+
+    /** Collapse progress in [0,1): 0 at the moment of death, 1 when gone. */
+    fn deathProgress() : f64 {
+        if (this.state == 0) { return 0.0; }
+        let df : f64 = config::deathFrames as f64;
+        return (df - (this.deathTimer as f64)) / df;
+    }
+
+    /** Ease `heading` toward `targetHeading` by at most `mobTurnRate`,
+     *  taking the shortest way around the circle. */
+    fn turnToward() : void {
+        let two : f64 = 6.2831853;
+        let d : f64 = this.targetHeading - this.heading;
+        while (d > 3.14159265) { d = d - two; }
+        while (d < 0.0 - 3.14159265) { d = d + two; }
+        let rate : f64 = config::mobTurnRate;
+        if (d > rate) { d = rate; }
+        if (d < 0.0 - rate) { d = 0.0 - rate; }
+        this.heading = this.heading + d;
+    }
+
+    /** Advance the AI by one frame. `rnd` is a fresh value in [0,1)
+     *  supplied by the manager (the world has no RNG of its own). */
+    fn aiStep(world : ChunkManager, rnd : f64) : void {
+        if (this.hurtTimer > 0) { this.hurtTimer = this.hurtTimer - 1; }
+
+        // Dying: stop steering, just let gravity settle the body while the
+        // collapse animation plays out.
+        if (this.state == 1) {
+            if (this.deathTimer > 0) { this.deathTimer = this.deathTimer - 1; }
+            this.tick(world, 0.0, 0.0);
+            return;
+        }
+
+        if (this.fleeTimer > 0) { this.fleeTimer = this.fleeTimer - 1; }
+        this.turnTimer = this.turnTimer - 1;
+        if (this.turnTimer <= 0 && this.fleeTimer <= 0) {
+            this.targetHeading = rnd * 6.2831853;
+            this.turnTimer = config::mobTurnEveryMin + floorToInt(rnd * (config::mobTurnEveryRand as f64)) as i32;
+            if (rnd < config::mobIdleChance) { this.moving = 0; } else { this.moving = 1; }
+        }
+        this.turnToward();
+
+        let spd : f64 = 0.0;
+        if (this.fleeTimer > 0) { spd = config::mobFleeSpeed; }
+        else if (this.moving == 1) { spd = this.speed; }
+
+        if (spd > 0.0) { this.walkPhase = this.walkPhase + 0.35; }
+        if (this.onGround == 1 && spd > 0.0 && rnd < config::mobHopChance) {
+            this.velY = config::mobHopVel;
+        }
+
+        let dx : f64 = cos(this.heading) * spd;
+        let dz : f64 = sin(this.heading) * spd;
+        this.tick(world, dx, dz);
+    }
+}
+
+/** Two-argument arctangent over the full circle, in radians. Built from
+ *  `sin`/`cos`-free algebra is awkward, so we lean on the standard atan
+ *  via a small rational approximation good enough for facing directions. */
+fn atan2(y : f64, x : f64) : f64 {
+    let pi : f64 = 3.14159265358979;
+    if (x > 0.0) { return atanApprox(y / x); }
+    if (x < 0.0) {
+        if (y >= 0.0) { return atanApprox(y / x) + pi; }
+        return atanApprox(y / x) - pi;
+    }
+    if (y > 0.0) { return pi * 0.5; }
+    if (y < 0.0) { return 0.0 - pi * 0.5; }
+    return 0.0;
+}
+
+/** atan(z) approximation (max error ~0.0038 rad) — ample for AI facing. */
+fn atanApprox(z : f64) : f64 {
+    let a : f64 = z;
+    if (a < 0.0) { a = 0.0 - a; }
+    let inv : boolean = a > 1.0;
+    if (inv) { a = 1.0 / a; }
+    let a3 : f64 = a * a * a;
+    let r : f64 = 0.7853981634 * a - a * (a - 1.0) * (0.2447 + 0.0663 * a);
+    if (inv) { r = 1.5707963268 - r; }
+    if (z < 0.0) { return 0.0 - r; }
+    return r;
+}

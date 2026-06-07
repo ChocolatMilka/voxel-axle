@@ -1,0 +1,182 @@
+// player — the human entity and the camera in one. Extends Entity, so it
+// falls, lands and walks up ledges through the shared physics; on top it
+// adds first-person look (yaw/pitch with cached sin/cos), eye position for
+// the renderer, walking/sprinting/jumping/swimming, and the survival
+// loop: fall damage, drowning, and health regeneration. There is no
+// floating fly-camera any more — where you look is where you walk, and
+// gravity always has a say.
+
+use std::numeric::math::sin;
+use std::numeric::math::cos;
+use std::numeric::math::floorToInt;
+use crate::entities::entity::Entity;
+use crate::world::manager::ChunkManager;
+use crate::config;
+
+class Player extends Entity {
+    yaw : f64,
+    pitch : f64,
+    siny : f64,
+    cosy : f64,
+    sinp : f64,
+    cosp : f64,
+    eyeX : f64,
+    eyeY : f64,
+    eyeZ : f64,
+    airTicks : i32,
+    drownTick : i32,
+    sinceHurt : i32,
+    regenTick : i32,
+    creative : i32,   // 0 = survival, 1 = creative (fly)
+
+    constructor(x : f64, y : f64, z : f64) {
+        this.posX = x;
+        this.posY = y;
+        this.posZ = z;
+        this.velY = 0.0;
+        this.radius = config::playerRadius;
+        this.gravityScale = 1.0;
+        this.hp = config::playerMaxHp;
+        this.maxHp = config::playerMaxHp;
+        this.onGround = 0;
+        this.impact = 0.0;
+        this.riseGravity = config::jumpGravity;
+        this.apexY = y;
+        this.yaw = 0.0;
+        this.pitch = 0.0 - 0.18;
+        this.siny = 0.0;
+        this.cosy = 1.0;
+        this.sinp = 0.0;
+        this.cosp = 1.0;
+        this.eyeX = x;
+        this.eyeY = y + config::eyeHeight;
+        this.eyeZ = z;
+        this.airTicks = 0;
+        this.drownTick = config::drownEveryFrames;
+        this.sinceHurt = 0;
+        this.regenTick = config::regenEveryFrames;
+        this.creative = 0;
+    }
+
+    /** Toggle survival ↔ creative. Creative enables free flight; entering
+     *  it cancels any fall, leaving it restores normal gravity. */
+    fn toggleGameMode() : void {
+        if (this.creative == 0) { this.creative = 1; this.velY = 0.0; }
+        else { this.creative = 0; }
+    }
+
+    /** Recompute look trig and the eye position the renderer projects from. */
+    fn refresh() : void {
+        this.siny = sin(this.yaw);
+        this.cosy = cos(this.yaw);
+        this.sinp = sin(this.pitch);
+        this.cosp = cos(this.pitch);
+        this.eyeX = this.posX;
+        this.eyeY = this.posY + config::eyeHeight;
+        this.eyeZ = this.posZ;
+    }
+
+    fn look(dyaw : f64, dpitch : f64) : void {
+        this.yaw = this.yaw + dyaw;
+        this.pitch = this.pitch + dpitch;
+        if (this.pitch > config::pitchMax) { this.pitch = config::pitchMax; }
+        if (this.pitch < 0.0 - config::pitchMax) { this.pitch = 0.0 - config::pitchMax; }
+    }
+
+    /** Damage that also restarts the regeneration delay. */
+    fn hurt(d : i32) : void {
+        this.damage(d);
+        this.sinceHurt = 0;
+    }
+
+    fn isUnderwater() : boolean {
+        return (this.posY + config::eyeHeight) < (config::seaLevel as f64);
+    }
+
+    /** Full per-frame update. `fwd`/`strafe` are in [-1,1]; `up`/`down`
+     *  drive vertical flight in creative. Survival applies gravity + the
+     *  survival effects (fall / drown / regen); creative flies freely with
+     *  no damage. Refreshes the camera at the end. */
+    fn update(world : ChunkManager, fwd : f64, strafe : f64, sprint : boolean,
+        up : boolean, down : boolean) : void {
+        if (this.creative == 1) {
+            this.fly(world, fwd, strafe, sprint, up, down);
+            this.refresh();
+            return;
+        }
+
+        let water : boolean = this.isUnderwater();
+        let speed : f64 = config::walkSpeed;
+        if (water) { speed = config::swimSpeed; }
+        else if (sprint) { speed = config::sprintSpeed; }
+
+        let dx : f64 = (0.0 - this.siny) * fwd + this.cosy * strafe;
+        let dz : f64 = this.cosy * fwd + this.siny * strafe;
+        dx = dx * speed;
+        dz = dz * speed;
+
+        if (water) {
+            this.velY = this.velY * 0.5;
+            if (up) { this.velY = 0.11; }
+        } else if (up && this.onGround == 1) {
+            this.velY = config::jumpVel;
+        }
+
+        this.tick(world, dx, dz);
+        this.survive(water);
+        this.refresh();
+    }
+
+    /** Creative free flight: no gravity, faster horizontal movement,
+     *  Space/Shift for up/down, blocked by walls but never sinks below
+     *  the ground under the feet. */
+    fn fly(world : ChunkManager, fwd : f64, strafe : f64, sprint : boolean,
+        up : boolean, down : boolean) : void {
+        let speed : f64 = config::flySpeed;
+        if (sprint) { speed = config::flySprintSpeed; }
+        let dx : f64 = ((0.0 - this.siny) * fwd + this.cosy * strafe) * speed;
+        let dz : f64 = (this.cosy * fwd + this.siny * strafe) * speed;
+        this.velY = 0.0;
+        this.onGround = 0;
+        this.tryMoveX(world, dx);
+        this.tryMoveZ(world, dz);
+        if (up) { this.posY = this.posY + config::flyVertSpeed; }
+        if (down) { this.posY = this.posY - config::flyVertSpeed; }
+        let g : f64 = this.groundUnder(world) as f64;
+        if (this.posY < g) { this.posY = g; this.onGround = 1; }
+    }
+
+    /** Fall damage, drowning and regeneration based on this frame's state. */
+    fn survive(water : boolean) : void {
+        this.sinceHurt = this.sinceHurt + 1;
+
+        // Water cushions a fall; on land, falling far hurts (`impact` is
+        // the distance dropped from the apex).
+        if (!water && this.impact > config::safeFallDist) {
+            let dmg : i32 = floorToInt((this.impact - config::safeFallDist) * config::fallDamagePerBlock) as i32;
+            if (dmg > 0) { this.hurt(dmg); }
+        }
+
+        if (water) {
+            this.airTicks = this.airTicks + 1;
+            if (this.airTicks > config::drownGraceFrames) {
+                this.drownTick = this.drownTick - 1;
+                if (this.drownTick <= 0) {
+                    this.hurt(1);
+                    this.drownTick = config::drownEveryFrames;
+                }
+            }
+        } else {
+            this.airTicks = 0;
+            this.drownTick = config::drownEveryFrames;
+        }
+
+        if (!water && this.hp < this.maxHp && this.sinceHurt > config::regenDelayFrames) {
+            this.regenTick = this.regenTick - 1;
+            if (this.regenTick <= 0) {
+                this.heal(1);
+                this.regenTick = config::regenEveryFrames;
+            }
+        }
+    }
+}

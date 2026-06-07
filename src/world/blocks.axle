@@ -1,0 +1,55 @@
+// blocks — the block table: id → colour and a few predicates.
+//
+// To add a block: give it an id in `config`, a colour here, and place it
+// in `world` / `biome`. The mesher and renderer are id-agnostic.
+
+use crate::platform::sdl::rgb;
+use crate::config;
+
+fn isAir(id : i32) : boolean {
+    return id == config::bAir;
+}
+
+/** A face between a block and `id` is drawn when `id` lets light/air
+ *  through. Air (and, later, glass) are non-occluding. */
+fn isTransparent(id : i32) : boolean {
+    return id == config::bAir;
+}
+
+/** Atlas tile for a block id on face `dir` (2 = top, 3 = bottom, else
+ *  side). Tile order matches the generated `atlas.raw`:
+ *  0 grass-top, 1 grass-side, 2 dirt, 3 stone, 4 sand, 5 snow,
+ *  6 gravel, 7 log-side, 8 log-top, 9 leaves, 10 water. */
+fn tileFor(id : i32, dir : i32) : i32 {
+    if (id == config::bGrass) {
+        if (dir == 2) { return 0; }
+        if (dir == 3) { return 2; }
+        return 1;
+    }
+    if (id == config::bDirt) { return 2; }
+    if (id == config::bStone) { return 3; }
+    if (id == config::bSand) { return 4; }
+    if (id == config::bSnow) { return 5; }
+    if (id == config::bGravel) { return 6; }
+    if (id == config::bWood) {
+        if (dir == 2 || dir == 3) { return 8; }
+        return 7;
+    }
+    if (id == config::bLeaves) { return 9; }
+    if (id == config::bWater) { return 10; }
+    return 3;
+}
+
+/** Base RGB colour of a block id. */
+fn color(id : i32) : i32 {
+    if (id == config::bGrass) { return rgb(86, 165, 73); }
+    if (id == config::bDirt) { return rgb(140, 100, 64); }
+    if (id == config::bStone) { return rgb(128, 128, 132); }
+    if (id == config::bSand) { return rgb(218, 205, 145); }
+    if (id == config::bSnow) { return rgb(236, 240, 246); }
+    if (id == config::bWater) { return rgb(58, 110, 200); }
+    if (id == config::bWood) { return rgb(110, 78, 48); }
+    if (id == config::bLeaves) { return rgb(58, 132, 60); }
+    if (id == config::bGravel) { return rgb(122, 118, 112); }
+    return rgb(0, 0, 0);
+}

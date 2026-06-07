@@ -1,0 +1,120 @@
+// mobs — the entity manager. Owns the live Mob array, drives every mob's
+// AI each frame, spawns animals onto solid land in a ring around the
+// player (despawning the ones that drift too far), and resolves the
+// player's melee attack against the nearest mob in view. The world has no
+// RNG, so the manager threads its own counter through the sin-hash.
+
+use std::numeric::math::sin;
+use std::numeric::math::cos;
+use std::numeric::math::floorToInt;
+use crate::entities::mob::Mob;
+use crate::entities::player::Player;
+use crate::world::manager::ChunkManager;
+use crate::world::noise::hash2;
+use crate::config;
+
+class MobManager {
+    mobs : Mob[],
+    count : i32,
+    rc : f64,
+
+    constructor() {
+        this.mobs = malloc<Mob>(config::mobCap);
+        this.count = 0;
+        this.rc = 9.0;
+    }
+
+    /** Next pseudo-random value in [0,1). */
+    fn rand() : f64 {
+        this.rc = this.rc + 1.0;
+        return hash2(this.rc, this.rc * 1.3 + 7.0, config::seedI + 4242);
+    }
+
+    fn remove(i : i32) : void {
+        this.count = this.count - 1;
+        this.mobs[i] = this.mobs[this.count];
+    }
+
+    /** Try to place one animal on land in the spawn ring around the
+     *  player. Returns whether it found a dry column. */
+    fn spawnOne(world : ChunkManager, player : Player) : boolean {
+        if (this.count >= config::mobCap) { return false; }
+        let a : f64 = this.rand() * 6.2831853;
+        let span : f64 = (config::mobSpawnRadius - config::mobSpawnMin) as f64;
+        let r : f64 = (config::mobSpawnMin as f64) + this.rand() * span;
+        let wx : f64 = player.posX + cos(a) * r;
+        let wz : f64 = player.posZ + sin(a) * r;
+        let surf : i32 = world.columnHeight(floorToInt(wx) as i32, floorToInt(wz) as i32);
+        if (surf <= config::seaLevel) { return false; }
+        let kind : i32 = config::mobChicken;
+        let hp : i32 = config::mobChickenHp;
+        let pick : f64 = this.rand();
+        if (pick > 0.66) { kind = config::mobCow; hp = config::mobCowHp; }
+        else if (pick > 0.33) { kind = config::mobSheep; hp = config::mobSheepHp; }
+        this.mobs[this.count] = new Mob(wx, surf as f64, wz, kind, hp);
+        this.count = this.count + 1;
+        return true;
+    }
+
+    /** Step AI, cull distant/dead mobs, and top the population back up. */
+    fn update(world : ChunkManager, player : Player) : void {
+        let i : i32 = 0;
+        while (i < this.count) {
+            this.mobs[i].aiStep(world, this.rand());
+            i = i + 1;
+        }
+        let despawn2 : f64 = config::mobDespawnDist * config::mobDespawnDist;
+        let j : i32 = 0;
+        while (j < this.count) {
+            let m : Mob = this.mobs[j];
+            let dx : f64 = m.posX - player.posX;
+            let dz : f64 = m.posZ - player.posZ;
+            // Remove a corpse once its collapse finished; cull a live mob
+            // only when it has wandered out of range (a dying one stays so
+            // its animation plays through).
+            if (m.deathDone() || (!m.isDying() && dx * dx + dz * dz > despawn2)) {
+                this.remove(j);
+            } else {
+                j = j + 1;
+            }
+        }
+        let tries : i32 = 0;
+        while (this.count < config::mobTargetCount && tries < 6) {
+            this.spawnOne(world, player);
+            tries = tries + 1;
+        }
+    }
+
+    /** Melee the nearest living mob in front of the player within range.
+     *  Returns the struck mob's kind, or -1 if nothing was hit. */
+    fn attackNearest(player : Player) : i32 {
+        let fwdx : f64 = 0.0 - player.siny;
+        let fwdz : f64 = player.cosy;
+        let best : i32 = 0 - 1;
+        let bestD : f64 = config::attackRange * config::attackRange;
+        let i : i32 = 0;
+        while (i < this.count) {
+            let m : Mob = this.mobs[i];
+            let dx : f64 = m.posX - player.posX;
+            let dz : f64 = m.posZ - player.posZ;
+            let d2 : f64 = dx * dx + dz * dz;
+            if (d2 <= bestD && (dx * fwdx + dz * fwdz) > 0.0) {
+                best = i;
+                bestD = d2;
+            }
+            i = i + 1;
+        }
+        if (best < 0) { return 0 - 1; }
+        let target : Mob = this.mobs[best];
+        if (target.isDying()) { return 0 - 1; }
+        target.damage(config::attackDamage);
+        target.flashHurt();
+        let kind : i32 = target.kind;
+        if (target.isAlive()) {
+            target.panicFrom(player.posX, player.posZ);
+        } else {
+            target.startDying();
+        }
+        return kind;
+    }
+}

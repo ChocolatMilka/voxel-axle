@@ -1,0 +1,7 @@
+[package]
+name = "voxel"
+version = "0.1.0"
+
+[link]
+libs  = ["SDL2"]
+paths = ["C:/vcpkg/installed/x64-windows/lib"]

@@ -1,0 +1,151 @@
+// entity — the physical base class every living thing in the world
+// derives from. It owns a position, a body radius, vertical velocity and
+// health, plus the shared physics: gravity, landing on the solid world,
+// and horizontal movement that keeps the whole body (not just a point)
+// outside block faces — so you cannot walk through terrain cliffs or tree
+// trunks — while still auto-stepping up gentle one-block ledges. Player
+// and Mob extend it and reuse `tick` unchanged.
+//
+// Coordinates: posX/posZ are the body centre, posY the foot height.
+// Collision samples the world columns under the body's footprint
+// (`collisionHeight` already folds tree trunks into the solid surface),
+// which is exact enough for heightmap terrain with solid trees.
+
+use std::numeric::math::floorToInt;
+use crate::world::manager::ChunkManager;
+use crate::config;
+
+class Entity {
+    posX : f64,
+    posY : f64,
+    posZ : f64,
+    velY : f64,
+    radius : f64,
+    gravityScale : f64,
+    hp : i32,
+    maxHp : i32,
+    onGround : i32,
+    impact : f64,
+    riseGravity : f64,   // gravity while moving up; the player floats, mobs don't
+    apexY : f64,         // highest Y since leaving the ground (for fall distance)
+
+    constructor(x : f64, y : f64, z : f64, maxHp : i32) {
+        this.posX = x;
+        this.posY = y;
+        this.posZ = z;
+        this.velY = 0.0;
+        this.radius = config::playerRadius;
+        this.gravityScale = 1.0;
+        this.hp = maxHp;
+        this.maxHp = maxHp;
+        this.onGround = 0;
+        this.impact = 0.0;
+        this.riseGravity = config::gravity;
+        this.apexY = y;
+    }
+
+    /** Apply `d` points of damage; clamps at zero. */
+    fn damage(d : i32) : void {
+        this.hp = this.hp - d;
+        if (this.hp < 0) { this.hp = 0; }
+    }
+
+    /** Restore `d` points, never above max. */
+    fn heal(d : i32) : void {
+        this.hp = this.hp + d;
+        if (this.hp > this.maxHp) { this.hp = this.maxHp; }
+    }
+
+    fn isAlive() : boolean {
+        return this.hp > 0;
+    }
+
+    /** Solid collision height of the world column under (fx, fz). */
+    fn cellSurf(world : ChunkManager, fx : f64, fz : f64) : i32 {
+        return world.collisionHeight(floorToInt(fx) as i32, floorToInt(fz) as i32);
+    }
+
+    /** Highest solid surface under the body's footprint (its 4 corners),
+     *  so the entity stands on its tallest support and never sinks into a
+     *  block its edge overlaps. */
+    fn groundUnder(world : ChunkManager) : i32 {
+        let r : f64 = this.radius;
+        let a : i32 = this.cellSurf(world, this.posX - r, this.posZ - r);
+        let b : i32 = this.cellSurf(world, this.posX + r, this.posZ - r);
+        let c : i32 = this.cellSurf(world, this.posX - r, this.posZ + r);
+        let d : i32 = this.cellSurf(world, this.posX + r, this.posZ + r);
+        let m : i32 = a;
+        if (b > m) { m = b; }
+        if (c > m) { m = c; }
+        if (d > m) { m = d; }
+        return m;
+    }
+
+    /** Move along X by dx if the leading edge of the body clears the wall;
+     *  climb it instead when it is within a step and we are grounded. */
+    fn tryMoveX(world : ChunkManager, dx : f64) : void {
+        if (dx == 0.0) { return; }
+        let r : f64 = this.radius;
+        let edge : f64 = this.posX + dx;
+        if (dx > 0.0) { edge = edge + r; } else { edge = edge - r; }
+        let s1 : i32 = this.cellSurf(world, edge, this.posZ - r);
+        let s2 : i32 = this.cellSurf(world, edge, this.posZ + r);
+        let surf : i32 = s1;
+        if (s2 > s1) { surf = s2; }
+        let fsurf : f64 = surf as f64;
+        if (fsurf - this.posY <= config::stepHeight) {
+            this.posX = this.posX + dx;
+            if (this.onGround == 1 && fsurf > this.posY) { this.posY = fsurf; }
+        }
+    }
+
+    fn tryMoveZ(world : ChunkManager, dz : f64) : void {
+        if (dz == 0.0) { return; }
+        let r : f64 = this.radius;
+        let edge : f64 = this.posZ + dz;
+        if (dz > 0.0) { edge = edge + r; } else { edge = edge - r; }
+        let s1 : i32 = this.cellSurf(world, this.posX - r, edge);
+        let s2 : i32 = this.cellSurf(world, this.posX + r, edge);
+        let surf : i32 = s1;
+        if (s2 > s1) { surf = s2; }
+        let fsurf : f64 = surf as f64;
+        if (fsurf - this.posY <= config::stepHeight) {
+            this.posZ = this.posZ + dz;
+            if (this.onGround == 1 && fsurf > this.posY) { this.posY = fsurf; }
+        }
+    }
+
+    /** Vertical motion + landing. Going UP the velocity decelerates under
+     *  `riseGravity` (the player's floaty jump arc; mobs use normal
+     *  gravity). Going DOWN the descent is LINEAR — a constant `fallSpeed`,
+     *  no acceleration — so the fall reads as a straight glide, not an
+     *  accelerating drop. `impact` is set on landing to the distance fallen
+     *  from the apex, which is what fall damage reads. */
+    fn fall(world : ChunkManager) : void {
+        this.impact = 0.0;
+        if (this.velY > 0.0) {
+            this.velY = this.velY - this.riseGravity * this.gravityScale;
+        } else {
+            this.velY = 0.0 - config::fallSpeed * this.gravityScale;
+        }
+        this.posY = this.posY + this.velY;
+        if (this.posY > this.apexY) { this.apexY = this.posY; }
+        let floorY : f64 = this.groundUnder(world) as f64;
+        if (this.posY <= floorY) {
+            this.impact = this.apexY - floorY;
+            this.posY = floorY;
+            this.velY = 0.0;
+            this.onGround = 1;
+            this.apexY = floorY;
+        } else {
+            this.onGround = 0;
+        }
+    }
+
+    /** One physics step: horizontal intent (dx, dz) then vertical. */
+    fn tick(world : ChunkManager, dx : f64, dz : f64) : void {
+        this.tryMoveX(world, dx);
+        this.tryMoveZ(world, dz);
+        this.fall(world);
+    }
+}

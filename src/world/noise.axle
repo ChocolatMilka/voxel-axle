@@ -1,0 +1,100 @@
+// noise — deterministic value noise, fbm, and the terrain fields.
+//
+// The lattice hash is a fast **integer** mix (wrapping i32 arithmetic), not
+// a `sin`-based hash: at startup the world generates dozens of chunks, each
+// sampling the noise hundreds of times per column, so a transcendental call
+// per sample dominated the load. `valueNoise` smooth-interpolates the hash;
+// `fbm` sums octaves. On top, `terrainHeight` composes a Minecraft-ish
+// landscape — domain-warped sample point, low-frequency continentalness
+// lifting land out of the ocean, mid-frequency hills, and a mountain lift
+// where continentalness is high.
+
+use std::numeric::math::floorToInt;
+use crate::config;
+
+/** Hash a lattice point (ix, iy) with seed `s` into [0,1). Pure integer
+ *  bit-mix; `i32` multiply wraps on overflow, which is exactly what a hash
+ *  wants. */
+fn hashI(ix : i32, iy : i32, s : i32) : f64 {
+    let n : i32 = ix * 374761393 + iy * 668265263 + s * 1442695041;
+    n = (n ^ (n >> 13)) * 1274126177;
+    n = n ^ (n >> 16);
+    return ((n & 0x7FFFFFFF) as f64) / 2147483647.0;
+}
+
+fn smooth(t : f64) : f64 {
+    return t * t * (3.0 - 2.0 * t);
+}
+
+fn valueNoise(x : f64, y : f64, s : i32) : f64 {
+    let xi : i32 = floorToInt(x) as i32;
+    let yi : i32 = floorToInt(y) as i32;
+    let xf : f64 = x - (xi as f64);
+    let yf : f64 = y - (yi as f64);
+    let u : f64 = smooth(xf);
+    let v : f64 = smooth(yf);
+    let a : f64 = hashI(xi, yi, s);
+    let b : f64 = hashI(xi + 1, yi, s);
+    let c : f64 = hashI(xi, yi + 1, s);
+    let d : f64 = hashI(xi + 1, yi + 1, s);
+    let ab : f64 = a + (b - a) * u;
+    let cd : f64 = c + (d - c) * u;
+    return ab + (cd - ab) * v;
+}
+
+fn fbm(x : f64, y : f64, s : i32, oct : i32) : f64 {
+    let total : f64 = 0.0;
+    let amp : f64 = 1.0;
+    let freq : f64 = 1.0;
+    let norm : f64 = 0.0;
+    let o : i32 = 0;
+    while (o < oct) {
+        total = total + valueNoise(x * freq, y * freq, s + o * 17) * amp;
+        norm = norm + amp;
+        amp = amp * 0.5;
+        freq = freq * 2.0;
+        o = o + 1;
+    }
+    return total / norm;
+}
+
+/** Scatter value in [0,1) at world point (wx, wz) with seed `s` — the
+ *  generic single-sample hash used for tree placement and mob RNG. */
+fn hash2(wx : f64, wz : f64, s : i32) : f64 {
+    return hashI(floorToInt(wx) as i32, floorToInt(wz) as i32, s);
+}
+
+/** Continentalness in [0,1): low = ocean, high = mountains. */
+fn continentalness(wx : f64, wz : f64) : f64 {
+    let wxx : f64 = wx + (fbm(wx * config::warpScale, wz * config::warpScale, config::seedI + 11, 2) - 0.5) * 34.0;
+    let wzz : f64 = wz + (fbm(wx * config::warpScale + 9.0, wz * config::warpScale + 9.0, config::seedI + 23, 2) - 0.5) * 34.0;
+    return fbm(wxx * config::contScale, wzz * config::contScale, config::seedI, 3);
+}
+
+/** Terrain surface height (blocks) at world column (wx, wz). */
+fn terrainHeight(wx : f64, wz : f64) : f64 {
+    let cont : f64 = continentalness(wx, wz);
+    let hills : f64 = fbm(wx * config::hillScale, wz * config::hillScale, config::seedI + 99, 3);
+    let sea : f64 = config::seaLevel as f64;
+    let h : f64 = sea - 8.0 + cont * 34.0 + (hills - 0.5) * 12.0;
+    if (cont > 0.66) {
+        let m : f64 = (cont - 0.66) / 0.34;
+        h = h + m * m * 44.0;
+    }
+    return h;
+}
+
+/** Temperature in [0,1) (drives biome choice). */
+fn temperature(wx : f64, wz : f64) : f64 {
+    return fbm(wx * config::tempScale, wz * config::tempScale, config::seedI + 555, 2);
+}
+
+/** Humidity / rainfall in [0,1) (second biome axis, like Minecraft). */
+fn humidity(wx : f64, wz : f64) : f64 {
+    return fbm(wx * config::humidScale + 41.0, wz * config::humidScale - 17.0, config::seedI + 808, 2);
+}
+
+/** Scatter value in [0,1) for tree placement. */
+fn treeHash(wx : f64, wz : f64) : f64 {
+    return hash2(wx, wz, config::seedI * 3);
+}

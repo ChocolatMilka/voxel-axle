@@ -1,0 +1,271 @@
+// manager — the streaming chunk world.
+//
+// A fixed ring of `span × span` slots follows the camera: a chunk keeps
+// its slot (addressed by chunk-coord modulo `span`) as the player moves,
+// so crossing a chunk border only regenerates the newly-entered ones.
+// Each slot stores a heightmap (with a one-block border for seamless
+// edge meshing), a per-column biome, and a baked face list. Meshing is
+// heightmap-based — top + exposed side faces + a flat water surface —
+// plus tree cubes; the world is effectively infinite.
+
+use std::numeric::math::floorToInt;
+use crate::world::noise::terrainHeight;
+use crate::world::noise::temperature;
+use crate::world::noise::humidity;
+use crate::world::noise::treeHash;
+use crate::world::biome::biomeAt;
+use crate::world::biome::surfaceBlock;
+use crate::world::biome::fillerBlock;
+use crate::world::biome::treeThreshold;
+use crate::world::blocks::tileFor;
+use crate::config;
+
+class ChunkManager {
+    cxs : i32[],
+    czs : i32[],
+    loaded : i32[],
+    fcount : i32[],
+    fx : i32[],
+    fy : i32[],
+    fz : i32[],
+    fdir : i32[],
+    ftile : i32[],
+    hmap : i32[],
+    bcol : i32[],
+    ctop : i32[],
+
+    constructor() {
+        let slots : i32 = config::span * config::span;
+        let faceCap : i32 = slots * config::maxFacesPerChunk;
+        let hSide : i32 = config::chunkSize + 2;
+        this.cxs = malloc<i32>(slots);
+        this.czs = malloc<i32>(slots);
+        this.loaded = malloc<i32>(slots);
+        this.fcount = malloc<i32>(slots);
+        this.fx = malloc<i32>(faceCap);
+        this.fy = malloc<i32>(faceCap);
+        this.fz = malloc<i32>(faceCap);
+        this.fdir = malloc<i32>(faceCap);
+        this.ftile = malloc<i32>(faceCap);
+        this.hmap = malloc<i32>(slots * hSide * hSide);
+        this.bcol = malloc<i32>(slots * config::chunkSize * config::chunkSize);
+        this.ctop = malloc<i32>(slots * config::chunkSize * config::chunkSize);
+        let i : i32 = 0;
+        while (i < slots) { this.loaded[i] = 0; i = i + 1; }
+    }
+
+    fn wrap(v : i32) : i32 {
+        let s : i32 = config::span;
+        let m : i32 = v - (v / s) * s;
+        if (m < 0) { m = m + s; }
+        return m;
+    }
+
+    fn slotFor(cx : i32, cz : i32) : i32 {
+        return this.wrap(cz) * config::span + this.wrap(cx);
+    }
+
+    fn heightAt(slot : i32, lx : i32, lz : i32) : i32 {
+        let hSide : i32 = config::chunkSize + 2;
+        return this.hmap[slot * hSide * hSide + (lz + 1) * hSide + (lx + 1)];
+    }
+
+    fn floorDiv(a : i32, b : i32) : i32 {
+        let q : i32 = a / b;
+        if (a - q * b < 0) { q = q - 1; }
+        return q;
+    }
+
+    /** Terrain surface Y at world column (wx, wz): the top of the highest
+     *  solid terrain block, i.e. the height the heightmap meshes up to.
+     *  Returns sea level for an unloaded column so entities never fall to
+     *  -∞. Trees are not counted (use `collisionHeight` for that). */
+    fn columnHeight(wx : i32, wz : i32) : i32 {
+        let s : i32 = config::chunkSize;
+        let cx : i32 = this.floorDiv(wx, s);
+        let cz : i32 = this.floorDiv(wz, s);
+        let slot : i32 = this.slotFor(cx, cz);
+        if (this.loaded[slot] == 0 || this.cxs[slot] != cx || this.czs[slot] != cz) {
+            return config::seaLevel;
+        }
+        return this.heightAt(slot, wx - cx * s, wz - cz * s);
+    }
+
+    /** Solid collision surface Y at (wx, wz): the terrain top raised to a
+     *  tree trunk's top where one stands, so trunks are solid to walk
+     *  into. Used by entity physics. */
+    fn collisionHeight(wx : i32, wz : i32) : i32 {
+        let s : i32 = config::chunkSize;
+        let cx : i32 = this.floorDiv(wx, s);
+        let cz : i32 = this.floorDiv(wz, s);
+        let slot : i32 = this.slotFor(cx, cz);
+        if (this.loaded[slot] == 0 || this.cxs[slot] != cx || this.czs[slot] != cz) {
+            return config::seaLevel;
+        }
+        return this.ctop[slot * s * s + (wz - cz * s) * s + (wx - cx * s)];
+    }
+
+    /** Load / regenerate every chunk within the view radius of the
+     *  camera's chunk; chunks already in place are left untouched. */
+    fn ensureLoaded(camCX : i32, camCZ : i32) : void {
+        let r : i32 = config::viewRadius;
+        let dz : i32 = 0 - r;
+        while (dz <= r) {
+            let dx : i32 = 0 - r;
+            while (dx <= r) {
+                let cx : i32 = camCX + dx;
+                let cz : i32 = camCZ + dz;
+                let slot : i32 = this.slotFor(cx, cz);
+                if (this.loaded[slot] == 0 || this.cxs[slot] != cx || this.czs[slot] != cz) {
+                    this.regen(slot, cx, cz);
+                }
+                dx = dx + 1;
+            }
+            dz = dz + 1;
+        }
+    }
+
+    fn regen(slot : i32, cx : i32, cz : i32) : void {
+        this.cxs[slot] = cx;
+        this.czs[slot] = cz;
+        this.loaded[slot] = 1;
+        this.genHeightmap(slot, cx, cz);
+        this.genBiome(slot, cx, cz);
+        this.buildMesh(slot, cx, cz);
+    }
+
+    fn genHeightmap(slot : i32, cx : i32, cz : i32) : void {
+        let s : i32 = config::chunkSize;
+        let hSide : i32 = s + 2;
+        let base : i32 = slot * hSide * hSide;
+        let lz : i32 = 0 - 1;
+        while (lz <= s) {
+            let lx : i32 = 0 - 1;
+            while (lx <= s) {
+                let wx : f64 = (cx * s + lx) as f64;
+                let wz : f64 = (cz * s + lz) as f64;
+                let h : i32 = floorToInt(terrainHeight(wx, wz)) as i32;
+                if (h < 2) { h = 2; }
+                if (h > config::maxHeight - 1) { h = config::maxHeight - 1; }
+                this.hmap[base + (lz + 1) * hSide + (lx + 1)] = h;
+                lx = lx + 1;
+            }
+            lz = lz + 1;
+        }
+    }
+
+    fn genBiome(slot : i32, cx : i32, cz : i32) : void {
+        let s : i32 = config::chunkSize;
+        let base : i32 = slot * s * s;
+        let lz : i32 = 0;
+        while (lz < s) {
+            let lx : i32 = 0;
+            while (lx < s) {
+                let wx : f64 = (cx * s + lx) as f64;
+                let wz : f64 = (cz * s + lz) as f64;
+                let h : i32 = this.heightAt(slot, lx, lz);
+                this.bcol[base + lz * s + lx] = biomeAt(temperature(wx, wz), humidity(wx, wz), h);
+                lx = lx + 1;
+            }
+            lz = lz + 1;
+        }
+    }
+
+    fn addFace(slot : i32, wx : i32, wy : i32, wz : i32, dir : i32, tile : i32) : void {
+        let fc : i32 = this.fcount[slot];
+        if (fc >= config::maxFacesPerChunk) { return; }
+        let i : i32 = slot * config::maxFacesPerChunk + fc;
+        this.fx[i] = wx;
+        this.fy[i] = wy;
+        this.fz[i] = wz;
+        this.fdir[i] = dir;
+        this.ftile[i] = tile;
+        this.fcount[slot] = fc + 1;
+    }
+
+    /** Exposed side faces of a column toward one neighbour. */
+    fn side(slot : i32, wx : i32, wz : i32, dir : i32, h : i32, hn : i32, surf : i32, filler : i32) : void {
+        if (hn >= h) { return; }
+        let y : i32 = hn;
+        while (y <= h - 1) {
+            let blk : i32 = config::bStone;
+            if (y == h - 1) { blk = surf; }
+            else if (y >= h - 3) { blk = filler; }
+            this.addFace(slot, wx, y, wz, dir, tileFor(blk, dir));
+            y = y + 1;
+        }
+    }
+
+    fn buildMesh(slot : i32, cx : i32, cz : i32) : void {
+        this.fcount[slot] = 0;
+        let s : i32 = config::chunkSize;
+        let bbase : i32 = slot * s * s;
+        let lz : i32 = 0;
+        while (lz < s) {
+            let lx : i32 = 0;
+            while (lx < s) {
+                let wx : i32 = cx * s + lx;
+                let wz : i32 = cz * s + lz;
+                let h : i32 = this.heightAt(slot, lx, lz);
+                let biome : i32 = this.bcol[bbase + lz * s + lx];
+                this.ctop[bbase + lz * s + lx] = h;
+                if (h - 1 >= config::seaLevel) {
+                    let surf : i32 = surfaceBlock(biome, h);
+                    let filler : i32 = fillerBlock(biome);
+                    this.addFace(slot, wx, h - 1, wz, 2, tileFor(surf, 2));
+                    this.side(slot, wx, wz, 0, h, this.heightAt(slot, lx + 1, lz), surf, filler);
+                    this.side(slot, wx, wz, 1, h, this.heightAt(slot, lx - 1, lz), surf, filler);
+                    this.side(slot, wx, wz, 4, h, this.heightAt(slot, lx, lz + 1), surf, filler);
+                    this.side(slot, wx, wz, 5, h, this.heightAt(slot, lx, lz - 1), surf, filler);
+                    if (treeHash(wx as f64, wz as f64) > treeThreshold(biome)) {
+                        this.addTree(slot, wx, h, wz);
+                        this.ctop[bbase + lz * s + lx] = h + config::treeHeight;
+                    }
+                } else {
+                    this.addFace(slot, wx, config::seaLevel, wz, 2, tileFor(config::bWater, 2));
+                }
+                lx = lx + 1;
+            }
+            lz = lz + 1;
+        }
+    }
+
+    /** All six faces of a cube. Used for free-standing blocks (trees),
+     *  whose underside can be seen from below, so the bottom is included. */
+    fn addCube(slot : i32, wx : i32, wy : i32, wz : i32, blk : i32) : void {
+        this.addFace(slot, wx, wy, wz, 0, tileFor(blk, 0));
+        this.addFace(slot, wx, wy, wz, 1, tileFor(blk, 1));
+        this.addFace(slot, wx, wy, wz, 2, tileFor(blk, 2));
+        this.addFace(slot, wx, wy, wz, 3, tileFor(blk, 3));
+        this.addFace(slot, wx, wy, wz, 4, tileFor(blk, 4));
+        this.addFace(slot, wx, wy, wz, 5, tileFor(blk, 5));
+    }
+
+    /** A compact oak: a 4-tall trunk, one wide 3×3 leaf layer, a plus-
+     *  shaped layer above it, and a single crown block. Fewer leaf cubes
+     *  than a full 3-layer blob — forests stay readable but emit far fewer
+     *  faces, which is the dominant per-frame cost in wooded biomes. */
+    fn addTree(slot : i32, wx : i32, baseY : i32, wz : i32) : void {
+        let t : i32 = 0;
+        while (t < 4) {
+            this.addCube(slot, wx, baseY + t, wz, config::bWood);
+            t = t + 1;
+        }
+        let cy : i32 = baseY + 4;
+        let dx : i32 = 0 - 1;
+        while (dx <= 1) {
+            let dz : i32 = 0 - 1;
+            while (dz <= 1) {
+                this.addCube(slot, wx + dx, cy - 1, wz + dz, config::bLeaves);
+                dz = dz + 1;
+            }
+            dx = dx + 1;
+        }
+        this.addCube(slot, wx, cy, wz, config::bLeaves);
+        this.addCube(slot, wx + 1, cy, wz, config::bLeaves);
+        this.addCube(slot, wx - 1, cy, wz, config::bLeaves);
+        this.addCube(slot, wx, cy, wz + 1, config::bLeaves);
+        this.addCube(slot, wx, cy, wz - 1, config::bLeaves);
+        this.addCube(slot, wx, cy + 1, wz, config::bLeaves);
+    }
+}

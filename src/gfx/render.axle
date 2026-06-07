@@ -1,0 +1,441 @@
+// render — draw the streamed chunk world and its mobs from the player's
+// eye, textured and shaded.
+//
+// World faces: each loaded slot's baked faces are projected, backface /
+// distance-culled, and filled with their atlas tile (perspective-correct
+// UV), shaded by `normal · light`. Mobs: each animal is drawn as a small
+// stack of shaded cuboids (flat-coloured by default, atlas-textured when
+// `useMobTextures` is on). The mob pass shares the world's z-buffer, so
+// terrain correctly occludes animals behind it.
+
+use std::numeric::math::sin;
+use std::numeric::math::cos;
+use crate::platform::sdl::allocBytes;
+use crate::platform::sdl::getF64;
+use crate::platform::sdl::setF64;
+use crate::platform::sdl::putPixel;
+use crate::platform::sdl::rgb;
+use crate::platform::sdl::scaleRgb;
+use crate::platform::sdl::tintIf;
+use crate::gfx::raster::rasterTriTex;
+use crate::gfx::raster::rasterTri;
+use crate::gfx::raster::clearFrame;
+use crate::entities::player::Player;
+use crate::world::manager::ChunkManager;
+use crate::entities::mobs::MobManager;
+use crate::entities::mob::Mob;
+use crate::config;
+
+class Renderer {
+    coff : i32[],
+    uvu : i32[],
+    uvv : i32[],
+    csx : i64,
+    csy : i64,
+    ciz : i64,
+    cvis : i32[],
+    atlas : i64,
+    cax : i64,
+    cay : i64,
+    caz : i64,
+    cau : i64,
+    cav : i64,
+    cbx : i64,
+    cby : i64,
+    cbz : i64,
+    cbu : i64,
+    cbv : i64,
+    obx : i64,
+    oby : i64,
+    obz : i64,
+
+    constructor() {
+        this.coff = malloc<i32>(72);
+        this.uvu = malloc<i32>(24);
+        this.uvv = malloc<i32>(24);
+        // Screen-space scratch sized for a near-clipped polygon (≤ 5 verts).
+        this.csx = allocBytes(8 * 8);
+        this.csy = allocBytes(8 * 8);
+        this.ciz = allocBytes(8 * 8);
+        this.cvis = malloc<i32>(4);
+        this.atlas = 0;
+        // Camera-space input (ca*) and clipped output (cb*) buffers: x, y,
+        // z (depth) and the u, v texture coordinates per vertex.
+        this.cax = allocBytes(8 * 8);
+        this.cay = allocBytes(8 * 8);
+        this.caz = allocBytes(8 * 8);
+        this.cau = allocBytes(8 * 8);
+        this.cav = allocBytes(8 * 8);
+        this.cbx = allocBytes(8 * 8);
+        this.cby = allocBytes(8 * 8);
+        this.cbz = allocBytes(8 * 8);
+        this.cbu = allocBytes(8 * 8);
+        this.cbv = allocBytes(8 * 8);
+        // Oriented-box world corners (8 per mob part).
+        this.obx = allocBytes(8 * 8);
+        this.oby = allocBytes(8 * 8);
+        this.obz = allocBytes(8 * 8);
+        this.fillTable();
+    }
+
+    fn setAtlas(base : i64) : void {
+        this.atlas = base;
+    }
+
+    fn setCorner(dir : i32, k : i32, ox : i32, oy : i32, oz : i32, u : i32, v : i32) : void {
+        let b : i32 = (dir * 4 + k) * 3;
+        this.coff[b] = ox;
+        this.coff[b + 1] = oy;
+        this.coff[b + 2] = oz;
+        let q : i32 = dir * 4 + k;
+        this.uvu[q] = u;
+        this.uvv[q] = v;
+    }
+
+    fn fillTable() : void {
+        this.setCorner(0, 0, 1, 0, 0, 0, 1); this.setCorner(0, 1, 1, 0, 1, 1, 1); this.setCorner(0, 2, 1, 1, 1, 1, 0); this.setCorner(0, 3, 1, 1, 0, 0, 0);
+        this.setCorner(1, 0, 0, 0, 0, 0, 1); this.setCorner(1, 1, 0, 1, 0, 0, 0); this.setCorner(1, 2, 0, 1, 1, 1, 0); this.setCorner(1, 3, 0, 0, 1, 1, 1);
+        this.setCorner(2, 0, 0, 1, 0, 0, 0); this.setCorner(2, 1, 1, 1, 0, 1, 0); this.setCorner(2, 2, 1, 1, 1, 1, 1); this.setCorner(2, 3, 0, 1, 1, 0, 1);
+        this.setCorner(3, 0, 0, 0, 0, 0, 0); this.setCorner(3, 1, 0, 0, 1, 0, 1); this.setCorner(3, 2, 1, 0, 1, 1, 1); this.setCorner(3, 3, 1, 0, 0, 1, 0);
+        this.setCorner(4, 0, 0, 0, 1, 0, 1); this.setCorner(4, 1, 1, 0, 1, 1, 1); this.setCorner(4, 2, 1, 1, 1, 1, 0); this.setCorner(4, 3, 0, 1, 1, 0, 0);
+        this.setCorner(5, 0, 0, 0, 0, 0, 1); this.setCorner(5, 1, 0, 1, 0, 0, 0); this.setCorner(5, 2, 1, 1, 0, 1, 0); this.setCorner(5, 3, 1, 0, 0, 1, 1);
+    }
+
+    /** Project one world point into screen + inverse depth, into slot k. */
+    fn projectPoint(p : Player, wx : f64, wy : f64, wz : f64, k : i32) : void {
+        let dx : f64 = wx - p.eyeX;
+        let dy : f64 = wy - p.eyeY;
+        let dz : f64 = wz - p.eyeZ;
+        let rx : f64 = dx * p.cosy + dz * p.siny;
+        let rz : f64 = (0.0 - dx) * p.siny + dz * p.cosy;
+        let ry : f64 = dy;
+        let ry2 : f64 = ry * p.cosp - rz * p.sinp;
+        let rz2 : f64 = ry * p.sinp + rz * p.cosp;
+        if (rz2 < config::nearPlane) {
+            this.cvis[k] = 0;
+            return;
+        }
+        setF64(this.csx, k, config::halfW + config::focal * rx / rz2);
+        setF64(this.csy, k, config::halfH - config::focal * ry2 / rz2);
+        setF64(this.ciz, k, 1.0 / rz2);
+        this.cvis[k] = 1;
+    }
+
+    /** Lambert term for a face normal, lifted by ambient. */
+    fn shadeN(nx : f64, ny : f64, nz : f64) : f64 {
+        let ndl : f64 = nx * config::lightX + ny * config::lightY + nz * config::lightZ;
+        if (ndl < 0.0) { ndl = 0.0; }
+        return config::ambient + (1.0 - config::ambient) * ndl;
+    }
+
+    /** Transform a world point into camera space (post yaw + pitch) and
+     *  store (x, depth-z) into the `ca*` input buffers at slot k. The y is
+     *  the pitch-rotated height; depth is `caz`. No perspective divide yet
+     *  — that happens after near-plane clipping. */
+    fn toCam(p : Player, wx : f64, wy : f64, wz : f64, k : i32) : void {
+        let dx : f64 = wx - p.eyeX;
+        let dy : f64 = wy - p.eyeY;
+        let dz : f64 = wz - p.eyeZ;
+        let rx : f64 = dx * p.cosy + dz * p.siny;
+        let rz : f64 = (0.0 - dx) * p.siny + dz * p.cosy;
+        setF64(this.cax, k, rx);
+        setF64(this.cay, k, dy * p.cosp - rz * p.sinp);
+        setF64(this.caz, k, dy * p.sinp + rz * p.cosp);
+    }
+
+    /** Write the linear blend of input vertices j and i at parameter t
+     *  (the near-plane crossing) into output slot o. */
+    fn emitLerp(j : i32, i : i32, t : f64, o : i32) : void {
+        setF64(this.cbx, o, getF64(this.cax, j) + (getF64(this.cax, i) - getF64(this.cax, j)) * t);
+        setF64(this.cby, o, getF64(this.cay, j) + (getF64(this.cay, i) - getF64(this.cay, j)) * t);
+        setF64(this.cbz, o, getF64(this.caz, j) + (getF64(this.caz, i) - getF64(this.caz, j)) * t);
+        setF64(this.cbu, o, getF64(this.cau, j) + (getF64(this.cau, i) - getF64(this.cau, j)) * t);
+        setF64(this.cbv, o, getF64(this.cav, j) + (getF64(this.cav, i) - getF64(this.cav, j)) * t);
+    }
+
+    /** Copy input vertex i to output slot o. */
+    fn copyVert(i : i32, o : i32) : void {
+        setF64(this.cbx, o, getF64(this.cax, i));
+        setF64(this.cby, o, getF64(this.cay, i));
+        setF64(this.cbz, o, getF64(this.caz, i));
+        setF64(this.cbu, o, getF64(this.cau, i));
+        setF64(this.cbv, o, getF64(this.cav, i));
+    }
+
+    /** Clip the `nIn`-vertex camera-space polygon in `ca*` against the
+     *  near plane (depth ≥ nearPlane) into `cb*` (Sutherland–Hodgman),
+     *  interpolating position + UV at each crossing. Returns the output
+     *  vertex count. Replacing the old "drop the whole face if any corner
+     *  is too close" rule is what removes the holes / texture smear when
+     *  the camera hugs a block. */
+    fn clipNear(nIn : i32) : i32 {
+        let outN : i32 = 0;
+        let j : i32 = nIn - 1;
+        let i : i32 = 0;
+        while (i < nIn) {
+            let zi : f64 = getF64(this.caz, i);
+            let zj : f64 = getF64(this.caz, j);
+            let inI : boolean = zi >= config::nearPlane;
+            let inJ : boolean = zj >= config::nearPlane;
+            if (inI != inJ) {
+                let t : f64 = (config::nearPlane - zj) / (zi - zj);
+                this.emitLerp(j, i, t, outN);
+                outN = outN + 1;
+            }
+            if (inI) {
+                this.copyVert(i, outN);
+                outN = outN + 1;
+            }
+            j = i;
+            i = i + 1;
+        }
+        return outN;
+    }
+
+    fn renderFace(man : ChunkManager, idx : i32, p : Player, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
+        let x : i32 = man.fx[idx];
+        let y : i32 = man.fy[idx];
+        let z : i32 = man.fz[idx];
+        let dir : i32 = man.fdir[idx];
+        let nx : f64 = 0.0;
+        let ny : f64 = 0.0;
+        let nz : f64 = 0.0;
+        if (dir == 0) { nx = 1.0; }
+        else if (dir == 1) { nx = 0.0 - 1.0; }
+        else if (dir == 2) { ny = 1.0; }
+        else if (dir == 3) { ny = 0.0 - 1.0; }
+        else if (dir == 4) { nz = 1.0; }
+        else { nz = 0.0 - 1.0; }
+
+        let fcx : f64 = (x as f64) + 0.5 + nx * 0.5;
+        let fcy : f64 = (y as f64) + 0.5 + ny * 0.5;
+        let fcz : f64 = (z as f64) + 0.5 + nz * 0.5;
+        let vx : f64 = p.eyeX - fcx;
+        let vy : f64 = p.eyeY - fcy;
+        let vz : f64 = p.eyeZ - fcz;
+        if (vx * nx + vy * ny + vz * nz <= 0.0) { return; }
+        if (vx * vx + vz * vz > config::renderDist * config::renderDist) { return; }
+
+        // Load the 4 corners into camera space + their tile UVs.
+        let q : i32 = dir * 4;
+        let k : i32 = 0;
+        while (k < 4) {
+            let b : i32 = (dir * 4 + k) * 3;
+            this.toCam(p, (x + this.coff[b]) as f64, (y + this.coff[b + 1]) as f64, (z + this.coff[b + 2]) as f64, k);
+            setF64(this.cau, k, this.uvu[q + k] as f64);
+            setF64(this.cav, k, this.uvv[q + k] as f64);
+            k = k + 1;
+        }
+
+        // Clip against the near plane, then project the surviving polygon.
+        let n : i32 = this.clipNear(4);
+        if (n < 3) { return; }
+        let bright : f64 = this.shadeN(nx, ny, nz);
+        let tile : i32 = man.ftile[idx];
+        let v : i32 = 0;
+        while (v < n) {
+            let rz2 : f64 = getF64(this.cbz, v);
+            setF64(this.csx, v, config::halfW + config::focal * getF64(this.cbx, v) / rz2);
+            setF64(this.csy, v, config::halfH - config::focal * getF64(this.cby, v) / rz2);
+            setF64(this.ciz, v, 1.0 / rz2);
+            v = v + 1;
+        }
+
+        // Fan-triangulate the clipped polygon from vertex 0.
+        let t : i32 = 1;
+        while (t < n - 1) {
+            rasterTriTex(pixels, zbuf, w, h,
+                getF64(this.csx, 0), getF64(this.csy, 0), getF64(this.ciz, 0), getF64(this.cbu, 0), getF64(this.cbv, 0),
+                getF64(this.csx, t), getF64(this.csy, t), getF64(this.ciz, t), getF64(this.cbu, t), getF64(this.cbv, t),
+                getF64(this.csx, t + 1), getF64(this.csy, t + 1), getF64(this.ciz, t + 1), getF64(this.cbu, t + 1), getF64(this.cbv, t + 1),
+                this.atlas, tile, bright, bright, bright);
+            t = t + 1;
+        }
+    }
+
+    /** A chunk is worth drawing only if any part of it is in front of the
+     *  camera and within render distance. We test the chunk centre against
+     *  the view forward with a margin of the chunk's half-diagonal, so a
+     *  whole chunk behind the player is skipped without touching its
+     *  thousands of faces — the biggest per-frame win. */
+    fn chunkVisible(p : Player, cx : i32, cz : i32) : boolean {
+        let s : f64 = config::chunkSize as f64;
+        let wx : f64 = (cx as f64) * s + s * 0.5;
+        let wz : f64 = (cz as f64) * s + s * 0.5;
+        let dx : f64 = wx - p.eyeX;
+        let dz : f64 = wz - p.eyeZ;
+        let dist2 : f64 = dx * dx + dz * dz;
+        let far : f64 = config::renderDist + s;
+        if (dist2 > far * far) { return false; }
+        // forward = (-siny, cosy); keep chunks whose centre is ahead or
+        // within a half-diagonal (~0.71·chunk) behind the eye.
+        let ahead : f64 = dx * (0.0 - p.siny) + dz * p.cosy;
+        return ahead > 0.0 - s;
+    }
+
+    fn render(man : ChunkManager, p : Player, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
+        clearFrame(pixels, zbuf, w, h, rgb(150, 198, 240));
+        let slots : i32 = config::span * config::span;
+        let slot : i32 = 0;
+        while (slot < slots) {
+            if (man.loaded[slot] == 1 && this.chunkVisible(p, man.cxs[slot], man.czs[slot])) {
+                let base : i32 = slot * config::maxFacesPerChunk;
+                let n : i32 = man.fcount[slot];
+                let fi : i32 = 0;
+                while (fi < n) {
+                    this.renderFace(man, base + fi, p, pixels, zbuf, w, h);
+                    fi = fi + 1;
+                }
+            }
+            slot = slot + 1;
+        }
+    }
+
+    /** One face of a mob box: project 4 corners, backface-cull against the
+     *  eye, then fill atlas-textured (or flat-shaded). `hurt` tints the
+     *  face red for the damage flash. */
+    fn drawQuad(p : Player, pixels : i64, zbuf : i64, w : i32, h : i32,
+        ax : f64, ay : f64, az : f64, bx : f64, by : f64, bz : f64,
+        cx : f64, cy : f64, cz : f64, dx : f64, dy : f64, dz : f64,
+        nx : f64, ny : f64, nz : f64, color : i32, tile : i32, hurt : boolean) : void {
+        let mx : f64 = (ax + bx + cx + dx) * 0.25;
+        let my : f64 = (ay + by + cy + dy) * 0.25;
+        let mz : f64 = (az + bz + cz + dz) * 0.25;
+        if ((p.eyeX - mx) * nx + (p.eyeY - my) * ny + (p.eyeZ - mz) * nz <= 0.0) { return; }
+
+        this.projectPoint(p, ax, ay, az, 0);
+        this.projectPoint(p, bx, by, bz, 1);
+        this.projectPoint(p, cx, cy, cz, 2);
+        this.projectPoint(p, dx, dy, dz, 3);
+        if (this.cvis[0] == 0 || this.cvis[1] == 0 || this.cvis[2] == 0 || this.cvis[3] == 0) { return; }
+
+        let bright : f64 = this.shadeN(nx, ny, nz);
+        let sx0 : f64 = getF64(this.csx, 0); let sy0 : f64 = getF64(this.csy, 0); let iz0 : f64 = getF64(this.ciz, 0);
+        let sx1 : f64 = getF64(this.csx, 1); let sy1 : f64 = getF64(this.csy, 1); let iz1 : f64 = getF64(this.ciz, 1);
+        let sx2 : f64 = getF64(this.csx, 2); let sy2 : f64 = getF64(this.csy, 2); let iz2 : f64 = getF64(this.ciz, 2);
+        let sx3 : f64 = getF64(this.csx, 3); let sy3 : f64 = getF64(this.csy, 3); let iz3 : f64 = getF64(this.ciz, 3);
+
+        if (config::useMobTextures && tile >= 0) {
+            let tr : f64 = bright; let tg : f64 = bright; let tb : f64 = bright;
+            if (hurt) { tr = bright + 0.6; tg = bright * 0.4; tb = bright * 0.4; }
+            rasterTriTex(pixels, zbuf, w, h,
+                sx0, sy0, iz0, 0.0, 1.0, sx1, sy1, iz1, 1.0, 1.0, sx2, sy2, iz2, 1.0, 0.0,
+                this.atlas, tile, tr, tg, tb);
+            rasterTriTex(pixels, zbuf, w, h,
+                sx0, sy0, iz0, 0.0, 1.0, sx2, sy2, iz2, 1.0, 0.0, sx3, sy3, iz3, 0.0, 0.0,
+                this.atlas, tile, tr, tg, tb);
+        } else {
+            let col : i32 = scaleRgb(tintIf(hurt, color), bright);
+            rasterTri(pixels, zbuf, w, h, sx0, sy0, iz0, sx1, sy1, iz1, sx2, sy2, iz2, col);
+            rasterTri(pixels, zbuf, w, h, sx0, sy0, iz0, sx2, sy2, iz2, sx3, sy3, iz3, col);
+        }
+    }
+
+    /** One face of an oriented box: the 4 vertices are corner indices into
+     *  the `ob*` world-corner buffers filled by `drawObox`. */
+    fn oquad(p : Player, pixels : i64, zbuf : i64, w : i32, h : i32,
+        i0 : i32, i1 : i32, i2 : i32, i3 : i32,
+        nx : f64, ny : f64, nz : f64, color : i32, tile : i32, hurt : boolean) : void {
+        this.drawQuad(p, pixels, zbuf, w, h,
+            getF64(this.obx, i0), getF64(this.oby, i0), getF64(this.obz, i0),
+            getF64(this.obx, i1), getF64(this.oby, i1), getF64(this.obz, i1),
+            getF64(this.obx, i2), getF64(this.oby, i2), getF64(this.obz, i2),
+            getF64(this.obx, i3), getF64(this.oby, i3), getF64(this.obz, i3),
+            nx, ny, nz, color, tile, hurt);
+    }
+
+    /** Draw one body part as an **oriented** box: the part is positioned in
+     *  the mob's own frame — `mr` right, `my` up above the feet, `mf`
+     *  forward — with half-extents `hr/hy/hf`, then the whole box is rotated
+     *  by the mob's heading. So the head/body/legs turn together as a rigid
+     *  model instead of the head orbiting an axis-aligned body. The +forward
+     *  face carries `faceTile` (the animal's face), the rest `skinTile`.
+     *  Death collapses the box (sink + squash + topple along the heading). */
+    fn drawObox(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32,
+        mr : f64, my : f64, mf : f64, hr : f64, hy : f64, hf : f64,
+        color : i32, skinTile : i32, faceTile : i32) : void {
+        let fwdx : f64 = cos(m.heading); let fwdz : f64 = sin(m.heading);
+        let rgtx : f64 = sin(m.heading); let rgtz : f64 = 0.0 - cos(m.heading);
+        let pr : f64 = m.deathProgress();
+        let squash : f64 = 1.0 - 0.85 * pr;
+        let lean : f64 = 0.7 * pr;
+        let sink : f64 = 0.12 * pr;
+        let ci : i32 = 0;
+        while (ci < 8) {
+            let sr : f64 = 0.0 - 1.0; if ((ci & 1) != 0) { sr = 1.0; }
+            let su : f64 = 0.0 - 1.0; if ((ci & 2) != 0) { su = 1.0; }
+            let sf : f64 = 0.0 - 1.0; if ((ci & 4) != 0) { sf = 1.0; }
+            let lr : f64 = mr + sr * hr;
+            let hun : f64 = my + su * hy;
+            let lu : f64 = hun * squash;
+            let lf : f64 = mf + sf * hf + lean * hun;
+            setF64(this.obx, ci, m.posX + lr * rgtx + lf * fwdx);
+            setF64(this.oby, ci, m.posY - sink + lu);
+            setF64(this.obz, ci, m.posZ + lr * rgtz + lf * fwdz);
+            ci = ci + 1;
+        }
+        let hurt : boolean = m.hurtTimer > 0;
+        this.oquad(p, pixels, zbuf, w, h, 1, 5, 7, 3, rgtx, 0.0, rgtz, color, skinTile, hurt);
+        this.oquad(p, pixels, zbuf, w, h, 4, 0, 2, 6, 0.0 - rgtx, 0.0, 0.0 - rgtz, color, skinTile, hurt);
+        this.oquad(p, pixels, zbuf, w, h, 2, 3, 7, 6, 0.0, 1.0, 0.0, color, skinTile, hurt);
+        this.oquad(p, pixels, zbuf, w, h, 4, 5, 7, 6, fwdx, 0.0, fwdz, color, faceTile, hurt);
+        this.oquad(p, pixels, zbuf, w, h, 1, 0, 2, 3, 0.0 - fwdx, 0.0, 0.0 - fwdz, color, skinTile, hurt);
+    }
+
+    fn drawChicken(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
+        let sw : f64 = sin(m.walkPhase) * 0.08;   // forward leg stride
+        let leg : i32 = rgb(232, 150, 40);
+        let body : i32 = rgb(236, 236, 232);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.07, 0.10, sw, 0.035, 0.10, 0.04, leg, 0 - 1, 0 - 1);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0 - 0.07, 0.10, 0.0 - sw, 0.035, 0.10, 0.04, leg, 0 - 1, 0 - 1);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 0.27, 0.0, 0.15, 0.14, 0.18, body, config::tlChickenBody, config::tlChickenBody);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 0.47, 0.18, 0.11, 0.12, 0.10, body, config::tlChickenBody, config::tlChickenHead);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 0.45, 0.30, 0.05, 0.04, 0.06, rgb(232, 170, 40), 0 - 1, 0 - 1);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 0.58, 0.08, 0.05, 0.06, 0.04, rgb(200, 40, 40), 0 - 1, 0 - 1);
+    }
+
+    fn drawSheep(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
+        let sw : f64 = sin(m.walkPhase) * 0.11;
+        let leg : i32 = rgb(54, 46, 40);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0 - 0.20, 0.16, 0.18 + sw, 0.07, 0.16, 0.07, leg, 0 - 1, 0 - 1);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.20, 0.16, 0.18 - sw, 0.07, 0.16, 0.07, leg, 0 - 1, 0 - 1);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0 - 0.20, 0.16, 0.0 - 0.18 - sw, 0.07, 0.16, 0.07, leg, 0 - 1, 0 - 1);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.20, 0.16, 0.0 - 0.18 + sw, 0.07, 0.16, 0.07, leg, 0 - 1, 0 - 1);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 0.50, 0.0, 0.28, 0.30, 0.40, rgb(232, 230, 222), config::tlSheepWool, config::tlSheepWool);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 0.54, 0.46, 0.15, 0.15, 0.14, rgb(226, 222, 214), config::tlSheepWool, config::tlSheepHead);
+    }
+
+    fn drawCow(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
+        let sw : f64 = sin(m.walkPhase) * 0.12;
+        let leg : i32 = rgb(70, 54, 44);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0 - 0.26, 0.20, 0.24 + sw, 0.09, 0.20, 0.09, leg, 0 - 1, 0 - 1);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.26, 0.20, 0.24 - sw, 0.09, 0.20, 0.09, leg, 0 - 1, 0 - 1);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0 - 0.26, 0.20, 0.0 - 0.24 - sw, 0.09, 0.20, 0.09, leg, 0 - 1, 0 - 1);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.26, 0.20, 0.0 - 0.24 + sw, 0.09, 0.20, 0.09, leg, 0 - 1, 0 - 1);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 0.60, 0.0, 0.38, 0.34, 0.50, rgb(110, 86, 66), config::tlCowBody, config::tlCowBody);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 0.64, 0.58, 0.18, 0.18, 0.18, rgb(110, 86, 66), config::tlCowBody, config::tlCowHead);
+    }
+
+    fn renderMobs(mm : MobManager, p : Player, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
+        let i : i32 = 0;
+        while (i < mm.count) {
+            let m : Mob = mm.mobs[i];
+            if (m.kind == config::mobChicken) { this.drawChicken(p, m, pixels, zbuf, w, h); }
+            else if (m.kind == config::mobCow) { this.drawCow(p, m, pixels, zbuf, w, h); }
+            else { this.drawSheep(p, m, pixels, zbuf, w, h); }
+            i = i + 1;
+        }
+    }
+
+    fn crosshair(pixels : i64, w : i32, h : i32) : void {
+        let cx : i32 = w / 2;
+        let cy : i32 = h / 2;
+        let white : i32 = rgb(255, 255, 255);
+        let i : i32 = 0 - 6;
+        while (i <= 6) {
+            putPixel(pixels, cy * w + cx + i, white);
+            putPixel(pixels, (cy + i) * w + cx, white);
+            i = i + 1;
+        }
+    }
+}

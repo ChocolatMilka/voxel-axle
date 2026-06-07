@@ -1,0 +1,259 @@
+// voxel — a Minecraft-style survival world in Axle, software-rendered into
+// an SDL2 window. You are a real entity: gravity pulls you down, you stand
+// and walk on the solid streamed terrain, jump, swim, and take fall /
+// drowning damage with health that regenerates. The land is split into
+// Minecraft-like biomes (ocean, beach, plains, forest, desert, savanna,
+// snowy, mountains) with trees, and texture-skinned passive mobs (chickens,
+// sheep, cows) that wander, flee when struck, and collapse when killed.
+//
+// Controls:  Mouse look, W/A/S/D move, LCtrl sprint, Space jump / swim up,
+//            Left-click attack, Esc / close quit.
+//
+// Build & run:  axle run      (SDL2.dll must sit next to the binary)
+
+use std::numeric::math::floorToInt;
+use std::numeric::math::sin;
+use std::numeric::math::cos;
+use crate::platform::sdl::cfree;
+use crate::platform::sdl::SDL_Init;
+use crate::platform::sdl::SDL_Quit;
+use crate::platform::sdl::SDL_CreateWindow;
+use crate::platform::sdl::SDL_DestroyWindow;
+use crate::platform::sdl::SDL_CreateRenderer;
+use crate::platform::sdl::SDL_DestroyRenderer;
+use crate::platform::sdl::SDL_CreateTexture;
+use crate::platform::sdl::SDL_DestroyTexture;
+use crate::platform::sdl::SDL_UpdateTexture;
+use crate::platform::sdl::SDL_RenderClear;
+use crate::platform::sdl::SDL_RenderCopy;
+use crate::platform::sdl::SDL_RenderPresent;
+use crate::platform::sdl::SDL_PollEvent;
+use crate::platform::sdl::SDL_SetRelativeMouseMode;
+use crate::platform::sdl::SDL_GetRelativeMouseState;
+use crate::platform::sdl::SDL_INIT_VIDEO;
+use crate::platform::sdl::SDL_WINDOWPOS_CENTERED;
+use crate::platform::sdl::SDL_WINDOW_SHOWN;
+use crate::platform::sdl::SDL_RENDERER_ACCEL_VSYNC;
+use crate::platform::sdl::SDL_PIXELFORMAT_ARGB8888;
+use crate::platform::sdl::SDL_TEXTUREACCESS_STREAMING;
+use crate::platform::sdl::SDL_QUIT;
+use crate::platform::sdl::SC_W;
+use crate::platform::sdl::SC_A;
+use crate::platform::sdl::SC_S;
+use crate::platform::sdl::SC_D;
+use crate::platform::sdl::SC_SPACE;
+use crate::platform::sdl::SC_LCTRL;
+use crate::platform::sdl::SC_LSHIFT;
+use crate::platform::sdl::SC_F3;
+use crate::platform::sdl::SC_F4;
+use crate::platform::sdl::SC_ESC;
+use crate::platform::sdl::nullPtr;
+use crate::platform::sdl::asPtr;
+use crate::platform::sdl::isNull;
+use crate::platform::sdl::allocBytes;
+use crate::platform::sdl::readI32;
+use crate::platform::sdl::readU8;
+use crate::platform::sdl::loadAtlas;
+use crate::platform::sdl::keyboardBase;
+use crate::world::manager::ChunkManager;
+use crate::entities::player::Player;
+use crate::entities::mobs::MobManager;
+use crate::gfx::render::Renderer;
+use crate::gfx::hud::drawHealth;
+use crate::config;
+
+fn axis(kb : i64, plus : i32, minus : i32) : f64 {
+    let v : f64 = 0.0;
+    if (readU8(kb, plus as i64) != 0) { v = v + 1.0; }
+    if (readU8(kb, minus as i64) != 0) { v = v - 1.0; }
+    return v;
+}
+
+fn chunkOf(p : f64) : i32 {
+    return floorToInt(p / (config::chunkSize as f64)) as i32;
+}
+
+/** A clearing to spawn in: the 3×3 columns around (gx, gz) are tree-free
+ *  and within one block of height, so the player starts on flat open
+ *  ground with a view rather than buried against a trunk. */
+fn openSpot(man : ChunkManager, gx : i32, gz : i32) : boolean {
+    let h0 : i32 = man.columnHeight(gx, gz);
+    let dz : i32 = 0 - 1;
+    while (dz <= 1) {
+        let dx : i32 = 0 - 1;
+        while (dx <= 1) {
+            let cx : i32 = gx + dx;
+            let cz : i32 = gz + dz;
+            let hc : i32 = man.columnHeight(cx, cz);
+            if (man.collisionHeight(cx, cz) != hc) { return false; }
+            let d : i32 = hc - h0;
+            if (d < 0) { d = 0 - d; }
+            if (d > 1) { return false; }
+            dx = dx + 1;
+        }
+        dz = dz + 1;
+    }
+    return true;
+}
+
+/** Pick the spawn yaw whose forward ray stays open (tree-free, not
+ *  rising) for the most blocks, so the player faces the clearing rather
+ *  than a trunk. Forward for a yaw is (-sin, cos). */
+fn openYaw(man : ChunkManager, sx : i32, sz : i32, baseH : i32) : f64 {
+    let best : f64 = 0.0;
+    let bestScore : i32 = 0 - 1;
+    let k : i32 = 0;
+    while (k < 8) {
+        let yaw : f64 = (k as f64) * 0.7853981634;
+        let fwx : f64 = 0.0 - sin(yaw);
+        let fwz : f64 = cos(yaw);
+        let score : i32 = 0;
+        let blocked : boolean = false;
+        let d : f64 = 1.5;
+        while (d < 8.0 && !blocked) {
+            let cx : i32 = floorToInt((sx as f64) + 0.5 + fwx * d) as i32;
+            let cz : i32 = floorToInt((sz as f64) + 0.5 + fwz * d) as i32;
+            let hc : i32 = man.columnHeight(cx, cz);
+            if (man.collisionHeight(cx, cz) != hc || hc > baseH + 1) { blocked = true; }
+            else { score = score + 1; }
+            d = d + 1.0;
+        }
+        if (score > bestScore) { bestScore = score; best = yaw; }
+        k = k + 1;
+    }
+    return best;
+}
+
+fn main() : void {
+    let w : i32 = config::renderW;
+    let h : i32 = config::renderH;
+    let winW : i32 = config::screenW;
+    let winH : i32 = config::screenH;
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) { Console.println("SDL_Init failed"); return; }
+    let win : ptr = SDL_CreateWindow("Axle Voxel — survival",
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, winW, winH, SDL_WINDOW_SHOWN);
+    if (isNull(win)) { Console.println("window failed"); SDL_Quit(); return; }
+    let ren : ptr = SDL_CreateRenderer(win, 0 - 1, SDL_RENDERER_ACCEL_VSYNC);
+    if (isNull(ren)) { Console.println("renderer failed"); SDL_DestroyWindow(win); SDL_Quit(); return; }
+    let tex : ptr = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, h);
+    if (isNull(tex)) { Console.println("texture failed"); SDL_Quit(); return; }
+
+    let pixels : i64 = allocBytes((w as i64) * (h as i64) * 4);
+    let zbuf : i64 = allocBytes((w as i64) * (h as i64) * 8);
+    let ev : i64 = allocBytes(128);
+    let mrel : i64 = allocBytes(16);
+    let kb : i64 = keyboardBase();
+    SDL_SetRelativeMouseMode(1);
+
+    Console.println("Survive! Mouse look, WASD move, Ctrl sprint, Space jump, click to attack, Esc quit.");
+    let man : ChunkManager = new ChunkManager();
+    man.ensureLoaded(0, 0);
+
+    // Spawn on the highest dry column near the origin — a hilltop vantage
+    // with an open view, rather than the foot of a slope.
+    let sx : i32 = 0;
+    let sz : i32 = 0;
+    let bestH : i32 = 0 - 1;
+    let gz : i32 = 0 - 40;
+    while (gz <= 40) {
+        let gx : i32 = 0 - 40;
+        while (gx <= 40) {
+            let hh : i32 = man.columnHeight(gx, gz);
+            if (hh > config::seaLevel + 2 && hh > bestH && openSpot(man, gx, gz)) { bestH = hh; sx = gx; sz = gz; }
+            gx = gx + 1;
+        }
+        gz = gz + 1;
+    }
+    if (bestH < 0) { bestH = config::seaLevel + 1; }
+    let spawnY : f64 = bestH as f64;
+    let player : Player = new Player((sx as f64) + 0.5, spawnY, (sz as f64) + 0.5);
+    player.yaw = openYaw(man, sx, sz, bestH);
+    player.refresh();
+    man.ensureLoaded(chunkOf(player.posX), chunkOf(player.posZ));
+
+    let mobs : MobManager = new MobManager();
+    let renderer : Renderer = new Renderer();
+
+    // Block + mob texture atlas, loaded at runtime from `atlas.raw`
+    // (no longer embedded in the source).
+    let tpx : i64 = config::tilePx as i64;
+    let atlasBytes : i64 = tpx * tpx * 4 * (config::atlasTiles as i64);
+    let atlas : i64 = allocBytes(atlasBytes);
+    if (loadAtlas(atlas, atlasBytes) != atlasBytes) {
+        Console.println("warning: atlas.raw not found next to the binary — textures will be blank");
+    }
+    renderer.setAtlas(atlas);
+
+    let attackCd : i32 = 0;
+    let wasGmToggle : boolean = false;
+    let running : boolean = true;
+    while (running) {
+        while (SDL_PollEvent(asPtr(ev)) != 0) {
+            if (readI32(ev, 0) == SDL_QUIT) { running = false; }
+        }
+        if (readU8(kb, SC_ESC as i64) != 0) { running = false; }
+
+        // F3 + F4 together toggles survival ↔ creative (latched on the edge).
+        let gmBoth : boolean = readU8(kb, SC_F3 as i64) != 0 && readU8(kb, SC_F4 as i64) != 0;
+        if (gmBoth && !wasGmToggle) {
+            player.toggleGameMode();
+            if (player.creative == 1) { Console.println("Creative — fly: Space up, Shift down, Ctrl boost."); }
+            else { Console.println("Survival."); }
+        }
+        wasGmToggle = gmBoth;
+
+        // Mouse look (relative motion) + attack button.
+        let btn : i32 = SDL_GetRelativeMouseState(asPtr(mrel), asPtr(mrel + 4));
+        let mdx : i32 = readI32(mrel, 0);
+        let mdy : i32 = readI32(mrel, 4);
+        player.look(0.0 - (mdx as f64) * config::mouseSens, 0.0 - (mdy as f64) * config::mouseSens);
+
+        let fwd : f64 = axis(kb, SC_W, SC_S);
+        let strafe : f64 = axis(kb, SC_D, SC_A);
+        let sprint : boolean = readU8(kb, SC_LCTRL as i64) != 0;
+        let up : boolean = readU8(kb, SC_SPACE as i64) != 0;
+        let down : boolean = readU8(kb, SC_LSHIFT as i64) != 0;
+        player.update(man, fwd, strafe, sprint, up, down);
+
+        if (attackCd > 0) { attackCd = attackCd - 1; }
+        if ((btn & 1) != 0 && attackCd == 0) {
+            mobs.attackNearest(player);
+            attackCd = config::attackCooldown;
+        }
+
+        man.ensureLoaded(chunkOf(player.posX), chunkOf(player.posZ));
+        mobs.update(man, player);
+
+        // Death → respawn at full health on the nearest ground.
+        if (player.hp <= 0) {
+            player.hp = config::playerMaxHp;
+            player.velY = 0.0;
+            player.airTicks = 0;
+            player.sinceHurt = 0;
+            player.posY = man.columnHeight(floorToInt(player.posX) as i32, floorToInt(player.posZ) as i32) as f64;
+            player.refresh();
+            Console.println("You died — respawned.");
+        }
+
+        renderer.render(man, player, pixels, zbuf, w, h);
+        renderer.renderMobs(mobs, player, pixels, zbuf, w, h);
+        drawHealth(pixels, w, h, player.hp, player.maxHp);
+        renderer.crosshair(pixels, w, h);
+
+        SDL_UpdateTexture(tex, nullPtr(), asPtr(pixels), w * 4);
+        SDL_RenderClear(ren);
+        SDL_RenderCopy(ren, tex, nullPtr(), nullPtr());
+        // PRESENTVSYNC paces the loop to the display; no extra sleep (a
+        // fixed delay would stack on top of vsync and halve the frame rate).
+        SDL_RenderPresent(ren);
+    }
+
+    cfree(asPtr(pixels));
+    cfree(asPtr(zbuf));
+    cfree(asPtr(ev));
+    cfree(asPtr(mrel));
+    SDL_DestroyTexture(tex);
+    SDL_DestroyRenderer(ren);
+    SDL_DestroyWindow(win);
+    SDL_Quit();
+}

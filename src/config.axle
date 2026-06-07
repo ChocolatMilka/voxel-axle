@@ -1,0 +1,156 @@
+// config — every tunable of the game, as a function. Screen/projection,
+// the streamed world, terrain & biome noise, the block / biome id tables,
+// player physics, mobs and the HUD all read their numbers from here, so
+// new blocks, biomes, mobs and feel-tweaks land in one file without the
+// engine ever changing.
+
+// ── Screen / projection ─────────────────────────────────────
+// The window is `screenW × screenH`; the world is rasterised into a
+// smaller `renderW × renderH` framebuffer that SDL upscales to the
+// window. Fewer pixels to fill is the main per-frame speed lever — the
+// projection constants (`halfW/halfH/focal`) match the RENDER size.
+const screenW : i32 = 960;
+const screenH : i32 = 600;
+const renderW : i32 = 640;
+const renderH : i32 = 400;
+const halfW : f64 = 320.0;
+const halfH : f64 = 200.0;
+const focal : f64 = 373.0;
+const nearPlane : f64 = 0.12;
+
+// ── Infinite world (streamed chunks) ────────────────────────
+const chunkSize : i32 = 16;
+const viewRadius : i32 = 4;  // chunks loaded each side → 9×9
+const span : i32 = 9;  // 2*viewRadius + 1
+const maxFacesPerChunk : i32 = 9000;
+const seaLevel : i32 = 24;
+const maxHeight : i32 = 96;
+
+// ── Texture atlas (vertical strip of square tiles) ──────────
+// The first `blockTiles` tiles are block faces; any tiles above that
+// are mob skins. Bump `atlasTiles` (and the embedded hex) when you add
+// mob textures, then flip `useMobTextures` on.
+const tilePx : i32 = 64;
+const blockTiles : i32 = 11;
+const atlasTiles : i32 = 17;
+const useMobTextures : boolean = true;
+
+// ── Terrain noise (Minecraft-ish: warp + continentalness) ───
+const seedI : i32 = 1337;       // integer seed for the lattice hash
+const warpScale : f64 = 0.011;
+const contScale : f64 = 0.0065;
+const hillScale : f64 = 0.032;
+const tempScale : f64 = 0.0070;
+const humidScale : f64 = 0.0090;
+
+// ── Player physics (grounded, with gravity) ─────────────────
+// The player's jump uses asymmetric gravity: a light pull while rising
+// (a moderate ~1.7-block arc with hang time, ~0.38 s up) and a heavier
+// pull while falling so the descent is short and weighty, not lunar. Only
+// the player floats up like this; mobs keep `gravity` both ways, so their
+// hops stay small (see `Entity.riseGravity`).
+const gravity : f64 = 0.045;        // decel while a mob rises (mob hops)
+const jumpGravity : f64 = 0.0065;   // player rising only (hang time)
+const fallSpeed : f64 = 0.08;       // CONSTANT descent speed (linear fall), blocks/frame
+const terminalVel : f64 = 1.1;      // (kept; descent is constant so unused)
+const jumpVel : f64 = 0.19;         // apex ~2.8 blocks
+const walkSpeed : f64 = 0.0775;
+const sprintSpeed : f64 = 0.155;    // 2× walk (Ctrl)
+const swimSpeed : f64 = 0.060;
+const flySpeed : f64 = 0.26;        // creative horizontal fly
+const flySprintSpeed : f64 = 0.52;  // creative fly + Ctrl
+const flyVertSpeed : f64 = 0.30;    // creative up/down
+const eyeHeight : f64 = 1.62;
+const stepHeight : f64 = 1.05;
+const playerRadius : f64 = 0.30;
+const mobRadius : f64 = 0.28;
+const treeHeight : i32 = 4;
+const mouseSens : f64 = 0.0024;
+const pitchMax : f64 = 1.45;
+
+// ── Health / damage ─────────────────────────────────────────
+const playerMaxHp : i32 = 20;
+// Fall damage is distance-based now (the descent is constant-speed, so
+// landing speed no longer encodes the drop height).
+const safeFallDist : f64 = 4.0;        // blocks fallen before it hurts
+const fallDamagePerBlock : f64 = 1.5;  // hp per block beyond the safe distance
+const drownGraceFrames : i32 = 180;  // ~3 s of breath
+const drownEveryFrames : i32 = 18;  // lose 1 hp per this many frames
+const regenDelayFrames : i32 = 420;  // ~7 s without damage before regen
+const regenEveryFrames : i32 = 90;  // +1 hp per this many frames
+
+// ── Render ──────────────────────────────────────────────────
+const renderDist : f64 = 64.0;
+const frameMillis : i32 = 16;
+
+// ── Directional light ───────────────────────────────────────
+const lightX : f64 = 0.35;
+const lightY : f64 = 0.86;
+const lightZ : f64 = 0.37;
+const ambient : f64 = 0.50;
+const edgeShade : f64 = 0.74;
+
+// ── Block ids ───────────────────────────────────────────────
+const bAir : i32 = 0;
+const bGrass : i32 = 1;
+const bDirt : i32 = 2;
+const bStone : i32 = 3;
+const bSand : i32 = 4;
+const bSnow : i32 = 5;
+const bWater : i32 = 6;
+const bWood : i32 = 7;
+const bLeaves : i32 = 8;
+const bGravel : i32 = 9;
+
+// ── Biome ids (Minecraft-inspired) ──────────────────────────
+const biOcean : i32 = 0;
+const biBeach : i32 = 1;
+const biPlains : i32 = 2;
+const biForest : i32 = 3;
+const biDesert : i32 = 4;
+const biSavanna : i32 = 5;
+const biSnowy : i32 = 6;
+const biMountain : i32 = 7;
+
+// ── Mobs ────────────────────────────────────────────────────
+const mobCap : i32 = 32;
+const mobChicken : i32 = 0;
+const mobSheep : i32 = 1;
+const mobCow : i32 = 2;
+const mobChickenHp : i32 = 4;
+const mobSheepHp : i32 = 8;
+const mobCowHp : i32 = 10;
+const mobWanderSpeed : f64 = 0.034;
+const mobSheepSpeed : f64 = 0.030;
+const mobCowSpeed : f64 = 0.024;
+const mobSpawnRadius : i32 = 30;  // blocks from player
+const mobSpawnMin : i32 = 12;
+const mobDespawnDist : f64 = 56.0;
+const mobTargetCount : i32 = 18;
+const mobTurnEveryMin : i32 = 40;
+const mobTurnEveryRand : i32 = 110;
+const mobTurnRate : f64 = 0.10;   // radians/frame the heading eases toward target
+const mobIdleChance : f64 = 0.34; // chance a turn picks "stand and graze"
+const mobHopChance : f64 = 0.010; // chance/frame a grounded walker little-hops
+const mobHopVel : f64 = 0.26;
+const mobFleeFrames : i32 = 70;   // panic-run duration after being hit
+const mobFleeSpeed : f64 = 0.085;
+const chickenGravityScale : f64 = 0.42;  // chickens flutter down slowly
+const deathFrames : i32 = 38;     // collapse animation length before removal
+const attackRange : f64 = 3.4;
+const attackDamage : i32 = 4;
+const attackCooldown : i32 = 18;
+const hurtFlashFrames : i32 = 10;  // frames a struck mob glows red
+
+// ── Mob atlas tiles (used when useMobTextures) ──────────────
+const tlChickenBody : i32 = 11;
+const tlChickenHead : i32 = 12;
+const tlSheepWool : i32 = 13;
+const tlSheepHead : i32 = 14;
+const tlCowBody : i32 = 15;
+const tlCowHead : i32 = 16;
+
+// ── HUD ─────────────────────────────────────────────────────
+const heartPx : i32 = 16;
+const heartGap : i32 = 2;
+const hudMargin : i32 = 16;
