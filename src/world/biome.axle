@@ -49,9 +49,9 @@ fn fillerBlock(biome : i32) : i32 {
 /** Tree scatter threshold: a column grows a tree when its tree-hash
  *  exceeds this. 1.1 disables trees for the biome. */
 fn treeThreshold(biome : i32) : f64 {
-    if (biome == config::biForest) { return 0.90; }
-    if (biome == config::biPlains) { return 0.980; }
-    if (biome == config::biSavanna) { return 0.988; }
-    if (biome == config::biSnowy) { return 0.955; }
+    if (biome == config::biForest) { return 0.95; }
+    if (biome == config::biPlains) { return 0.990; }
+    if (biome == config::biSavanna) { return 0.994; }
+    if (biome == config::biSnowy) { return 0.978; }
     return 1.1;
 }
