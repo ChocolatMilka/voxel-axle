@@ -33,7 +33,7 @@ const maxHeight : i32 = 96;
 const tilePx : i32 = 64;
 const blockTiles : i32 = 11;
 const atlasTiles : i32 = 17;
-const useMobTextures : boolean = true;
+const useMobTextures : bool = true;
 
 // ── Terrain noise (Minecraft-ish: warp + continentalness) ───
 const seedI : i32 = 1337;       // integer seed for the lattice hash

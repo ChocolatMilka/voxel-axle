@@ -70,7 +70,7 @@ fn asPtr(addr : i64) : ptr {
     unsafe { return addr as ptr; }
 }
 
-fn isNull(p : ptr) : boolean {
+fn isNull(p : ptr) : bool {
     unsafe { return (p as i64) == 0; }
 }
 
@@ -181,7 +181,7 @@ fn redTint(color : i32) : i32 {
 }
 
 /** `redTint(color)` when `on`, else `color` unchanged. */
-fn tintIf(on : boolean, color : i32) : i32 {
+fn tintIf(on : bool, color : i32) : i32 {
     if (on) { return redTint(color); }
     return color;
 }

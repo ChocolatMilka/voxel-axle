@@ -76,8 +76,8 @@ class Mob extends Entity {
         this.moving = 0;
     }
 
-    fn isDying() : boolean { return this.state == 1; }
-    fn deathDone() : boolean { return this.state == 1 && this.deathTimer <= 0; }
+    fn isDying() : bool { return this.state == 1; }
+    fn deathDone() : bool { return this.state == 1 && this.deathTimer <= 0; }
 
     /** Collapse progress in [0,1): 0 at the moment of death, 1 when gone. */
     fn deathProgress() : f64 {
@@ -155,7 +155,7 @@ fn atan2(y : f64, x : f64) : f64 {
 fn atanApprox(z : f64) : f64 {
     let a : f64 = z;
     if (a < 0.0) { a = 0.0 - a; }
-    let inv : boolean = a > 1.0;
+    let inv : bool = a > 1.0;
     if (inv) { a = 1.0 / a; }
     let a3 : f64 = a * a * a;
     let r : f64 = 0.7853981634 * a - a * (a - 1.0) * (0.2447 + 0.0663 * a);

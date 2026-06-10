@@ -6,13 +6,13 @@
 use crate::platform::sdl::rgb;
 use crate::config;
 
-fn isAir(id : i32) : boolean {
+fn isAir(id : i32) : bool {
     return id == config::bAir;
 }
 
 /** A face between a block and `id` is drawn when `id` lets light/air
  *  through. Air (and, later, glass) are non-occluding. */
-fn isTransparent(id : i32) : boolean {
+fn isTransparent(id : i32) : bool {
     return id == config::bAir;
 }
 

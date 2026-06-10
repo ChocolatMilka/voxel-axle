@@ -89,7 +89,7 @@ class Player extends Entity {
         this.sinceHurt = 0;
     }
 
-    fn isUnderwater() : boolean {
+    fn isUnderwater() : bool {
         return (this.posY + config::eyeHeight) < (config::seaLevel as f64);
     }
 
@@ -97,15 +97,15 @@ class Player extends Entity {
      *  drive vertical flight in creative. Survival applies gravity + the
      *  survival effects (fall / drown / regen); creative flies freely with
      *  no damage. Refreshes the camera at the end. */
-    fn update(world : ChunkManager, fwd : f64, strafe : f64, sprint : boolean,
-        up : boolean, down : boolean) : void {
+    fn update(world : ChunkManager, fwd : f64, strafe : f64, sprint : bool,
+        up : bool, down : bool) : void {
         if (this.creative == 1) {
             this.fly(world, fwd, strafe, sprint, up, down);
             this.refresh();
             return;
         }
 
-        let water : boolean = this.isUnderwater();
+        let water : bool = this.isUnderwater();
         let speed : f64 = config::walkSpeed;
         if (water) { speed = config::swimSpeed; }
         else if (sprint) { speed = config::sprintSpeed; }
@@ -130,8 +130,8 @@ class Player extends Entity {
     /** Creative free flight: no gravity, faster horizontal movement,
      *  Space/Shift for up/down, blocked by walls but never sinks below
      *  the ground under the feet. */
-    fn fly(world : ChunkManager, fwd : f64, strafe : f64, sprint : boolean,
-        up : boolean, down : boolean) : void {
+    fn fly(world : ChunkManager, fwd : f64, strafe : f64, sprint : bool,
+        up : bool, down : bool) : void {
         let speed : f64 = config::flySpeed;
         if (sprint) { speed = config::flySprintSpeed; }
         let dx : f64 = ((0.0 - this.siny) * fwd + this.cosy * strafe) * speed;
@@ -147,7 +147,7 @@ class Player extends Entity {
     }
 
     /** Fall damage, drowning and regeneration based on this frame's state. */
-    fn survive(water : boolean) : void {
+    fn survive(water : bool) : void {
         this.sinceHurt = this.sinceHurt + 1;
 
         // Water cushions a fall; on land, falling far hurts (`impact` is

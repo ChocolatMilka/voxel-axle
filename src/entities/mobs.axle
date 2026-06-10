@@ -37,7 +37,7 @@ class MobManager {
 
     /** Try to place one animal on land in the spawn ring around the
      *  player. Returns whether it found a dry column. */
-    fn spawnOne(world : ChunkManager, player : Player) : boolean {
+    fn spawnOne(world : ChunkManager, player : Player) : bool {
         if (this.count >= config::mobCap) { return false; }
         let a : f64 = this.rand() * 6.2831853;
         let span : f64 = (config::mobSpawnRadius - config::mobSpawnMin) as f64;

@@ -56,7 +56,7 @@ class Entity {
         if (this.hp > this.maxHp) { this.hp = this.maxHp; }
     }
 
-    fn isAlive() : boolean {
+    fn isAlive() : bool {
         return this.hp > 0;
     }
 

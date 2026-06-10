@@ -175,8 +175,8 @@ class Renderer {
         while (i < nIn) {
             let zi : f64 = getF64(this.caz, i);
             let zj : f64 = getF64(this.caz, j);
-            let inI : boolean = zi >= config::nearPlane;
-            let inJ : boolean = zj >= config::nearPlane;
+            let inI : bool = zi >= config::nearPlane;
+            let inJ : bool = zj >= config::nearPlane;
             if (inI != inJ) {
                 let t : f64 = (config::nearPlane - zj) / (zi - zj);
                 this.emitLerp(j, i, t, outN);
@@ -258,7 +258,7 @@ class Renderer {
      *  the view forward with a margin of the chunk's half-diagonal, so a
      *  whole chunk behind the player is skipped without touching its
      *  thousands of faces — the biggest per-frame win. */
-    fn chunkVisible(p : Player, cx : i32, cz : i32) : boolean {
+    fn chunkVisible(p : Player, cx : i32, cz : i32) : bool {
         let s : f64 = config::chunkSize as f64;
         let wx : f64 = (cx as f64) * s + s * 0.5;
         let wz : f64 = (cz as f64) * s + s * 0.5;
@@ -297,7 +297,7 @@ class Renderer {
     fn drawQuad(p : Player, pixels : i64, zbuf : i64, w : i32, h : i32,
         ax : f64, ay : f64, az : f64, bx : f64, by : f64, bz : f64,
         cx : f64, cy : f64, cz : f64, dx : f64, dy : f64, dz : f64,
-        nx : f64, ny : f64, nz : f64, color : i32, tile : i32, hurt : boolean) : void {
+        nx : f64, ny : f64, nz : f64, color : i32, tile : i32, hurt : bool) : void {
         let mx : f64 = (ax + bx + cx + dx) * 0.25;
         let my : f64 = (ay + by + cy + dy) * 0.25;
         let mz : f64 = (az + bz + cz + dz) * 0.25;
@@ -335,7 +335,7 @@ class Renderer {
      *  the `ob*` world-corner buffers filled by `drawObox`. */
     fn oquad(p : Player, pixels : i64, zbuf : i64, w : i32, h : i32,
         i0 : i32, i1 : i32, i2 : i32, i3 : i32,
-        nx : f64, ny : f64, nz : f64, color : i32, tile : i32, hurt : boolean) : void {
+        nx : f64, ny : f64, nz : f64, color : i32, tile : i32, hurt : bool) : void {
         this.drawQuad(p, pixels, zbuf, w, h,
             getF64(this.obx, i0), getF64(this.oby, i0), getF64(this.obz, i0),
             getF64(this.obx, i1), getF64(this.oby, i1), getF64(this.obz, i1),
@@ -374,7 +374,7 @@ class Renderer {
             setF64(this.obz, ci, m.posZ + lr * rgtz + lf * fwdz);
             ci = ci + 1;
         }
-        let hurt : boolean = m.hurtTimer > 0;
+        let hurt : bool = m.hurtTimer > 0;
         this.oquad(p, pixels, zbuf, w, h, 1, 5, 7, 3, rgtx, 0.0, rgtz, color, skinTile, hurt);
         this.oquad(p, pixels, zbuf, w, h, 4, 0, 2, 6, 0.0 - rgtx, 0.0, 0.0 - rgtz, color, skinTile, hurt);
         this.oquad(p, pixels, zbuf, w, h, 2, 3, 7, 6, 0.0, 1.0, 0.0, color, skinTile, hurt);

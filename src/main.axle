@@ -76,7 +76,7 @@ fn chunkOf(p : f64) : i32 {
 /** A clearing to spawn in: the 3×3 columns around (gx, gz) are tree-free
  *  and within one block of height, so the player starts on flat open
  *  ground with a view rather than buried against a trunk. */
-fn openSpot(man : ChunkManager, gx : i32, gz : i32) : boolean {
+fn openSpot(man : ChunkManager, gx : i32, gz : i32) : bool {
     let h0 : i32 = man.columnHeight(gx, gz);
     let dz : i32 = 0 - 1;
     while (dz <= 1) {
@@ -108,7 +108,7 @@ fn openYaw(man : ChunkManager, sx : i32, sz : i32, baseH : i32) : f64 {
         let fwx : f64 = 0.0 - sin(yaw);
         let fwz : f64 = cos(yaw);
         let score : i32 = 0;
-        let blocked : boolean = false;
+        let blocked : bool = false;
         let d : f64 = 1.5;
         while (d < 8.0 && !blocked) {
             let cx : i32 = floorToInt((sx as f64) + 0.5 + fwx * d) as i32;
@@ -185,8 +185,8 @@ fn main() : void {
     renderer.setAtlas(atlas);
 
     let attackCd : i32 = 0;
-    let wasGmToggle : boolean = false;
-    let running : boolean = true;
+    let wasGmToggle : bool = false;
+    let running : bool = true;
     while (running) {
         while (SDL_PollEvent(asPtr(ev)) != 0) {
             if (readI32(ev, 0) == SDL_QUIT) { running = false; }
@@ -194,7 +194,7 @@ fn main() : void {
         if (readU8(kb, SC_ESC as i64) != 0) { running = false; }
 
         // F3 + F4 together toggles survival ↔ creative (latched on the edge).
-        let gmBoth : boolean = readU8(kb, SC_F3 as i64) != 0 && readU8(kb, SC_F4 as i64) != 0;
+        let gmBoth : bool = readU8(kb, SC_F3 as i64) != 0 && readU8(kb, SC_F4 as i64) != 0;
         if (gmBoth && !wasGmToggle) {
             player.toggleGameMode();
             if (player.creative == 1) { Console.println("Creative — fly: Space up, Shift down, Ctrl boost."); }
@@ -210,9 +210,9 @@ fn main() : void {
 
         let fwd : f64 = axis(kb, SC_W, SC_S);
         let strafe : f64 = axis(kb, SC_D, SC_A);
-        let sprint : boolean = readU8(kb, SC_LCTRL as i64) != 0;
-        let up : boolean = readU8(kb, SC_SPACE as i64) != 0;
-        let down : boolean = readU8(kb, SC_LSHIFT as i64) != 0;
+        let sprint : bool = readU8(kb, SC_LCTRL as i64) != 0;
+        let up : bool = readU8(kb, SC_SPACE as i64) != 0;
+        let down : bool = readU8(kb, SC_LSHIFT as i64) != 0;
         player.update(man, fwd, strafe, sprint, up, down);
 
         if (attackCd > 0) { attackCd = attackCd - 1; }
