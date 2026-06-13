@@ -3,7 +3,7 @@
 // To add a block: give it an id in `config`, a colour here, and place it
 // in `world` / `biome`. The mesher and renderer are id-agnostic.
 
-use crate::platform::sdl::rgb;
+use crate::platform::mem::rgb;
 use crate::config;
 
 fn isAir(id : i32) : bool {
@@ -14,6 +14,20 @@ fn isAir(id : i32) : bool {
  *  through. Air (and, later, glass) are non-occluding. */
 fn isTransparent(id : i32) : bool {
     return id == config::bAir;
+}
+
+/** A "real" block the look-ray can target and that occludes more than
+ *  air: everything except air and water. Water is see-through for aiming
+ *  (you don't dig the sea by clicking its surface). */
+fn isSolid(id : i32) : bool {
+    return id != config::bAir && id != config::bWater;
+}
+
+/** A block the player physically stands on / can't walk through. Leaves
+ *  are solid blocks you can break, but the canopy stays passable (you
+ *  don't walk on treetops), so they're excluded from collision. */
+fn isCollidable(id : i32) : bool {
+    return isSolid(id) && id != config::bLeaves;
 }
 
 /** Atlas tile for a block id on face `dir` (2 = top, 3 = bottom, else

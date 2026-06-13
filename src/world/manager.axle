@@ -1,12 +1,20 @@
-// manager — the streaming chunk world.
+// manager — the streaming voxel world.
 //
 // A fixed ring of `span × span` slots follows the camera: a chunk keeps
 // its slot (addressed by chunk-coord modulo `span`) as the player moves,
 // so crossing a chunk border only regenerates the newly-entered ones.
-// Each slot stores a heightmap (with a one-block border for seamless
-// edge meshing), a per-column biome, and a baked face list. Meshing is
-// heightmap-based — top + exposed side faces + a flat water surface —
-// plus tree cubes; the world is effectively infinite.
+// Each slot now stores a FULL voxel field: `(chunkSize+2) × worldHeight ×
+// (chunkSize+2)` block ids, padded by a one-voxel skirt on x/z that
+// mirrors the neighbouring chunks' edge columns so the mesher can cull
+// faces seamlessly without ever touching another slot. Meshing scans the
+// voxels and emits a face wherever a block borders air; trees are stamped
+// straight into the voxel field, and the world is editable (dig / place)
+// through `breakAt` / `placeAt`, which rewrite voxels and re-mesh.
+//
+// A `hmap` heightmap (terrain top, tree-free) is still kept for
+// `columnHeight()` (used by spawn / mob placement); `ctop` (collision
+// top, the highest collidable voxel per column) still drives entity
+// physics — both interfaces are unchanged, so nothing downstream moved.
 
 use std::numeric::math::floorToInt;
 use crate::world::noise::terrainHeight;
@@ -18,6 +26,8 @@ use crate::world::biome::surfaceBlock;
 use crate::world::biome::fillerBlock;
 use crate::world::biome::treeThreshold;
 use crate::world::blocks::tileFor;
+use crate::world::blocks::isSolid;
+use crate::world::blocks::isCollidable;
 use crate::config;
 
 class ChunkManager {
@@ -31,13 +41,15 @@ class ChunkManager {
     fdir : i32[],
     ftile : i32[],
     hmap : i32[],
-    bcol : i32[],
     ctop : i32[],
+    vox : i32[],
+    maxFY : i32[],
 
     constructor() {
         let slots : i32 = config::span * config::span;
         let faceCap : i32 = slots * config::maxFacesPerChunk;
         let hSide : i32 = config::chunkSize + 2;
+        let s : i32 = config::chunkSize;
         this.cxs = malloc<i32>(slots);
         this.czs = malloc<i32>(slots);
         this.loaded = malloc<i32>(slots);
@@ -48,8 +60,9 @@ class ChunkManager {
         this.fdir = malloc<i32>(faceCap);
         this.ftile = malloc<i32>(faceCap);
         this.hmap = malloc<i32>(slots * hSide * hSide);
-        this.bcol = malloc<i32>(slots * config::chunkSize * config::chunkSize);
-        this.ctop = malloc<i32>(slots * config::chunkSize * config::chunkSize);
+        this.ctop = malloc<i32>(slots * s * s);
+        this.vox = malloc<i32>(slots * hSide * hSide * config::worldHeight);
+        this.maxFY = malloc<i32>(slots);
         let i : i32 = 0;
         while (i < slots) { this.loaded[i] = 0; i = i + 1; }
     }
@@ -65,21 +78,57 @@ class ChunkManager {
         return this.wrap(cz) * config::span + this.wrap(cx);
     }
 
-    fn heightAt(slot : i32, lx : i32, lz : i32) : i32 {
-        let hSide : i32 = config::chunkSize + 2;
-        return this.hmap[slot * hSide * hSide + (lz + 1) * hSide + (lx + 1)];
-    }
-
     fn floorDiv(a : i32, b : i32) : i32 {
         let q : i32 = a / b;
         if (a - q * b < 0) { q = q - 1; }
         return q;
     }
 
-    /** Terrain surface Y at world column (wx, wz): the top of the highest
-     *  solid terrain block, i.e. the height the heightmap meshes up to.
-     *  Returns sea level for an unloaded column so entities never fall to
-     *  -∞. Trees are not counted (use `collisionHeight` for that). */
+    fn heightAt(slot : i32, lx : i32, lz : i32) : i32 {
+        let hSide : i32 = config::chunkSize + 2;
+        return this.hmap[slot * hSide * hSide + (lz + 1) * hSide + (lx + 1)];
+    }
+
+    // ── Voxel access ────────────────────────────────────────────
+    // Local coords accept the one-voxel skirt: lx, lz ∈ [-1 .. chunkSize].
+    // Below y=0 is bedrock (occludes, so no world-floor underside is
+    // drawn); above the field is air.
+
+    fn voxIdx(slot : i32, lx : i32, ly : i32, lz : i32) : i32 {
+        let hSide : i32 = config::chunkSize + 2;
+        let px : i32 = lx + 1;
+        let pz : i32 = lz + 1;
+        return slot * (hSide * hSide * config::worldHeight)
+            + (pz * hSide + px) * config::worldHeight + ly;
+    }
+
+    fn getVox(slot : i32, lx : i32, ly : i32, lz : i32) : i32 {
+        if (ly < 0) { return config::bStone; }
+        if (ly >= config::worldHeight) { return config::bAir; }
+        return this.vox[this.voxIdx(slot, lx, ly, lz)];
+    }
+
+    fn setVoxLocal(slot : i32, lx : i32, ly : i32, lz : i32, id : i32) : void {
+        this.vox[this.voxIdx(slot, lx, ly, lz)] = id;
+    }
+
+    /** Write `id` only if (lx, ly, lz) is inside this slot's padded
+     *  volume — used when stamping trees whose origin sits just outside. */
+    fn setVoxClip(slot : i32, lx : i32, ly : i32, lz : i32, id : i32) : void {
+        let s : i32 = config::chunkSize;
+        if (lx < 0 - 1 || lx > s || lz < 0 - 1 || lz > s) { return; }
+        if (ly < 0 || ly >= config::worldHeight) { return; }
+        this.setVoxLocal(slot, lx, ly, lz, id);
+    }
+
+    fn bumpFY(slot : i32, y : i32) : void {
+        if (y > this.maxFY[slot]) { this.maxFY[slot] = y; }
+    }
+
+    // ── World queries (unchanged interfaces) ────────────────────
+
+    /** Terrain surface Y at world column (wx, wz): the heightmap top,
+     *  excluding trees. Sea level for an unloaded column. */
     fn columnHeight(wx : i32, wz : i32) : i32 {
         let s : i32 = config::chunkSize;
         let cx : i32 = this.floorDiv(wx, s);
@@ -91,9 +140,9 @@ class ChunkManager {
         return this.heightAt(slot, wx - cx * s, wz - cz * s);
     }
 
-    /** Solid collision surface Y at (wx, wz): the terrain top raised to a
-     *  tree trunk's top where one stands, so trunks are solid to walk
-     *  into. Used by entity physics. */
+    /** Solid collision surface Y at (wx, wz): the highest collidable
+     *  voxel + 1 (so tree trunks and placed blocks are solid, dug pits
+     *  drop it, leaf canopies stay passable). Used by entity physics. */
     fn collisionHeight(wx : i32, wz : i32) : i32 {
         let s : i32 = config::chunkSize;
         let cx : i32 = this.floorDiv(wx, s);
@@ -105,8 +154,27 @@ class ChunkManager {
         return this.ctop[slot * s * s + (wz - cz * s) * s + (wx - cx * s)];
     }
 
-    /** Load / regenerate every chunk within the view radius of the
-     *  camera's chunk; chunks already in place are left untouched. */
+    /** Block id at a world voxel; bedrock below 0, air above / unloaded. */
+    fn worldGet(wx : i32, wy : i32, wz : i32) : i32 {
+        if (wy < 0) { return config::bStone; }
+        if (wy >= config::worldHeight) { return config::bAir; }
+        let s : i32 = config::chunkSize;
+        let cx : i32 = this.floorDiv(wx, s);
+        let cz : i32 = this.floorDiv(wz, s);
+        let slot : i32 = this.slotFor(cx, cz);
+        if (this.loaded[slot] == 0 || this.cxs[slot] != cx || this.czs[slot] != cz) {
+            return config::bAir;
+        }
+        return this.getVox(slot, wx - cx * s, wy, wz - cz * s);
+    }
+
+    /** Does a world voxel stop the look-ray (a targetable solid block)? */
+    fn solidTarget(wx : i32, wy : i32, wz : i32) : bool {
+        return isSolid(this.worldGet(wx, wy, wz));
+    }
+
+    // ── Streaming ───────────────────────────────────────────────
+
     fn ensureLoaded(camCX : i32, camCZ : i32) : void {
         let r : i32 = config::viewRadius;
         let dz : i32 = 0 - r;
@@ -130,7 +198,7 @@ class ChunkManager {
         this.czs[slot] = cz;
         this.loaded[slot] = 1;
         this.genHeightmap(slot, cx, cz);
-        this.genBiome(slot, cx, cz);
+        this.genVoxels(slot, cx, cz);
         this.buildMesh(slot, cx, cz);
     }
 
@@ -154,22 +222,122 @@ class ChunkManager {
         }
     }
 
-    fn genBiome(slot : i32, cx : i32, cz : i32) : void {
+    /** Clamped terrain height for an arbitrary world column (for tree
+     *  origins outside the heightmap border). Matches genHeightmap. */
+    fn colHeightWorld(wx : i32, wz : i32) : i32 {
+        let h : i32 = floorToInt(terrainHeight(wx as f64, wz as f64)) as i32;
+        if (h < 2) { h = 2; }
+        if (h > config::maxHeight - 1) { h = config::maxHeight - 1; }
+        return h;
+    }
+
+    // ── Generation ──────────────────────────────────────────────
+
+    /** Fill the padded voxel field for a chunk: stone / filler / surface
+     *  by depth, water up to sea level, air above; then stamp trees. */
+    fn genVoxels(slot : i32, cx : i32, cz : i32) : void {
         let s : i32 = config::chunkSize;
-        let base : i32 = slot * s * s;
-        let lz : i32 = 0;
-        while (lz < s) {
-            let lx : i32 = 0;
-            while (lx < s) {
-                let wx : f64 = (cx * s + lx) as f64;
-                let wz : f64 = (cz * s + lz) as f64;
+        this.maxFY[slot] = 0;
+        let lz : i32 = 0 - 1;
+        while (lz <= s) {
+            let lx : i32 = 0 - 1;
+            while (lx <= s) {
+                let wx : i32 = cx * s + lx;
+                let wz : i32 = cz * s + lz;
                 let h : i32 = this.heightAt(slot, lx, lz);
-                this.bcol[base + lz * s + lx] = biomeAt(temperature(wx, wz), humidity(wx, wz), h);
+                let biome : i32 = biomeAt(temperature(wx as f64, wz as f64),
+                    humidity(wx as f64, wz as f64), h);
+                let surf : i32 = surfaceBlock(biome, h);
+                let filler : i32 = fillerBlock(biome);
+                let topY : i32 = h - 1;
+                if (h <= config::seaLevel) { topY = config::seaLevel; }
+                this.bumpFY(slot, topY);
+                let ly : i32 = 0;
+                while (ly < config::worldHeight) {
+                    let id : i32 = config::bAir;
+                    if (ly < h) {
+                        id = config::bStone;
+                        if (ly == h - 1) { id = surf; }
+                        else if (ly >= h - 3) { id = filler; }
+                    } else if (h <= config::seaLevel && ly <= config::seaLevel) {
+                        id = config::bWater;
+                    }
+                    this.setVoxLocal(slot, lx, ly, lz, id);
+                    ly = ly + 1;
+                }
                 lx = lx + 1;
             }
             lz = lz + 1;
         }
+        this.stampTrees(slot, cx, cz);
     }
+
+    /** Stamp every tree whose origin lies in this chunk's area (plus a
+     *  2-column margin so canopies straddling a border appear from both
+     *  sides). Deterministic via `treeHash`, so the two chunks stamp the
+     *  shared tree identically — seamless. Voxels outside the padded
+     *  volume are clipped away. */
+    fn stampTrees(slot : i32, cx : i32, cz : i32) : void {
+        let s : i32 = config::chunkSize;
+        let olz : i32 = 0 - 2;
+        while (olz <= s + 1) {
+            let olx : i32 = 0 - 2;
+            while (olx <= s + 1) {
+                let wx : i32 = cx * s + olx;
+                let wz : i32 = cz * s + olz;
+                let h : i32 = this.colHeightWorld(wx, wz);
+                if (h > config::seaLevel) {
+                    let biome : i32 = biomeAt(temperature(wx as f64, wz as f64),
+                        humidity(wx as f64, wz as f64), h);
+                    if (treeHash(wx as f64, wz as f64) > treeThreshold(biome)) {
+                        this.stampTreeAt(slot, olx, h, olz);
+                    }
+                }
+                olx = olx + 1;
+            }
+            olz = olz + 1;
+        }
+    }
+
+    /** A leaf voxel, only into air (never carving terrain on a slope). */
+    fn stampLeaf(slot : i32, lx : i32, ly : i32, lz : i32) : void {
+        let s : i32 = config::chunkSize;
+        if (lx < 0 - 1 || lx > s || lz < 0 - 1 || lz > s) { return; }
+        if (ly < 0 || ly >= config::worldHeight) { return; }
+        if (this.getVox(slot, lx, ly, lz) == config::bAir) {
+            this.setVoxLocal(slot, lx, ly, lz, config::bLeaves);
+        }
+    }
+
+    /** A compact oak (matches the old face-based tree): 4-tall trunk, a
+     *  3×3 leaf layer at the trunk top, a plus layer above, and a crown.
+     *  Leaves are stamped first, then the trunk overwrites its column. */
+    fn stampTreeAt(slot : i32, olx : i32, baseY : i32, olz : i32) : void {
+        let cy : i32 = baseY + 4;
+        let dx : i32 = 0 - 1;
+        while (dx <= 1) {
+            let dz : i32 = 0 - 1;
+            while (dz <= 1) {
+                this.stampLeaf(slot, olx + dx, cy - 1, olz + dz);
+                dz = dz + 1;
+            }
+            dx = dx + 1;
+        }
+        this.stampLeaf(slot, olx, cy, olz);
+        this.stampLeaf(slot, olx + 1, cy, olz);
+        this.stampLeaf(slot, olx - 1, cy, olz);
+        this.stampLeaf(slot, olx, cy, olz + 1);
+        this.stampLeaf(slot, olx, cy, olz - 1);
+        this.stampLeaf(slot, olx, cy + 1, olz);
+        let t : i32 = 0;
+        while (t < 4) {
+            this.setVoxClip(slot, olx, baseY + t, olz, config::bWood);
+            t = t + 1;
+        }
+        this.bumpFY(slot, baseY + 5);
+    }
+
+    // ── Meshing ─────────────────────────────────────────────────
 
     fn addFace(slot : i32, wx : i32, wy : i32, wz : i32, dir : i32, tile : i32) : void {
         let fc : i32 = this.fcount[slot];
@@ -183,89 +351,89 @@ class ChunkManager {
         this.fcount[slot] = fc + 1;
     }
 
-    /** Exposed side faces of a column toward one neighbour. */
-    fn side(slot : i32, wx : i32, wz : i32, dir : i32, h : i32, hn : i32, surf : i32, filler : i32) : void {
-        if (hn >= h) { return; }
-        let y : i32 = hn;
-        while (y <= h - 1) {
-            let blk : i32 = config::bStone;
-            if (y == h - 1) { blk = surf; }
-            else if (y >= h - 3) { blk = filler; }
-            this.addFace(slot, wx, y, wz, dir, tileFor(blk, dir));
-            y = y + 1;
-        }
-    }
-
+    /** Re-bake the chunk's faces from its voxels: every block emits a
+     *  face on each side that borders air (so water occludes underwater
+     *  walls — visual parity with the old mesher). Water draws only its
+     *  top surface. Each column's `ctop` is the highest collidable voxel
+     *  + 1. Directions match `render.renderFace` normals:
+     *  0:+x 1:-x 2:+y(top) 3:-y(bottom) 4:+z 5:-z. */
     fn buildMesh(slot : i32, cx : i32, cz : i32) : void {
         this.fcount[slot] = 0;
         let s : i32 = config::chunkSize;
-        let bbase : i32 = slot * s * s;
+        let top : i32 = this.maxFY[slot];
+        let air : i32 = config::bAir;
         let lz : i32 = 0;
         while (lz < s) {
             let lx : i32 = 0;
             while (lx < s) {
                 let wx : i32 = cx * s + lx;
                 let wz : i32 = cz * s + lz;
-                let h : i32 = this.heightAt(slot, lx, lz);
-                let biome : i32 = this.bcol[bbase + lz * s + lx];
-                this.ctop[bbase + lz * s + lx] = h;
-                if (h - 1 >= config::seaLevel) {
-                    let surf : i32 = surfaceBlock(biome, h);
-                    let filler : i32 = fillerBlock(biome);
-                    this.addFace(slot, wx, h - 1, wz, 2, tileFor(surf, 2));
-                    this.side(slot, wx, wz, 0, h, this.heightAt(slot, lx + 1, lz), surf, filler);
-                    this.side(slot, wx, wz, 1, h, this.heightAt(slot, lx - 1, lz), surf, filler);
-                    this.side(slot, wx, wz, 4, h, this.heightAt(slot, lx, lz + 1), surf, filler);
-                    this.side(slot, wx, wz, 5, h, this.heightAt(slot, lx, lz - 1), surf, filler);
-                    if (treeHash(wx as f64, wz as f64) > treeThreshold(biome)) {
-                        this.addTree(slot, wx, h, wz);
-                        this.ctop[bbase + lz * s + lx] = h + config::treeHeight;
+                let coll : i32 = 0;
+                let ly : i32 = 0;
+                while (ly <= top) {
+                    let id : i32 = this.getVox(slot, lx, ly, lz);
+                    if (id != air) {
+                        if (id == config::bWater) {
+                            if (this.getVox(slot, lx, ly + 1, lz) == air) {
+                                this.addFace(slot, wx, ly, wz, 2, tileFor(id, 2));
+                            }
+                        } else {
+                            if (isCollidable(id)) { coll = ly + 1; }
+                            if (this.getVox(slot, lx + 1, ly, lz) == air) { this.addFace(slot, wx, ly, wz, 0, tileFor(id, 0)); }
+                            if (this.getVox(slot, lx - 1, ly, lz) == air) { this.addFace(slot, wx, ly, wz, 1, tileFor(id, 1)); }
+                            if (this.getVox(slot, lx, ly + 1, lz) == air) { this.addFace(slot, wx, ly, wz, 2, tileFor(id, 2)); }
+                            if (this.getVox(slot, lx, ly - 1, lz) == air) { this.addFace(slot, wx, ly, wz, 3, tileFor(id, 3)); }
+                            if (this.getVox(slot, lx, ly, lz + 1) == air) { this.addFace(slot, wx, ly, wz, 4, tileFor(id, 4)); }
+                            if (this.getVox(slot, lx, ly, lz - 1) == air) { this.addFace(slot, wx, ly, wz, 5, tileFor(id, 5)); }
+                        }
                     }
-                } else {
-                    this.addFace(slot, wx, config::seaLevel, wz, 2, tileFor(config::bWater, 2));
+                    ly = ly + 1;
                 }
+                this.ctop[slot * s * s + lz * s + lx] = coll;
                 lx = lx + 1;
             }
             lz = lz + 1;
         }
     }
 
-    /** All six faces of a cube. Used for free-standing blocks (trees),
-     *  whose underside can be seen from below, so the bottom is included. */
-    fn addCube(slot : i32, wx : i32, wy : i32, wz : i32, blk : i32) : void {
-        this.addFace(slot, wx, wy, wz, 0, tileFor(blk, 0));
-        this.addFace(slot, wx, wy, wz, 1, tileFor(blk, 1));
-        this.addFace(slot, wx, wy, wz, 2, tileFor(blk, 2));
-        this.addFace(slot, wx, wy, wz, 3, tileFor(blk, 3));
-        this.addFace(slot, wx, wy, wz, 4, tileFor(blk, 4));
-        this.addFace(slot, wx, wy, wz, 5, tileFor(blk, 5));
+    // ── Editing (dig / place) ───────────────────────────────────
+
+    /** Write `id` at a world voxel into every loaded slot whose padded
+     *  volume contains it (the owner chunk, plus 1–3 neighbours when the
+     *  voxel sits on an edge / corner so their skirt copies stay in
+     *  sync), then re-mesh each. */
+    fn setVoxel(wx : i32, wy : i32, wz : i32, id : i32) : void {
+        if (wy < 0 || wy >= config::worldHeight) { return; }
+        let s : i32 = config::chunkSize;
+        let cx : i32 = this.floorDiv(wx, s);
+        let cz : i32 = this.floorDiv(wz, s);
+        let dcz : i32 = 0 - 1;
+        while (dcz <= 1) {
+            let dcx : i32 = 0 - 1;
+            while (dcx <= 1) {
+                let ccx : i32 = cx + dcx;
+                let ccz : i32 = cz + dcz;
+                let lx : i32 = wx - ccx * s;
+                let lz : i32 = wz - ccz * s;
+                if (lx >= 0 - 1 && lx <= s && lz >= 0 - 1 && lz <= s) {
+                    let slot : i32 = this.slotFor(ccx, ccz);
+                    if (this.loaded[slot] == 1 && this.cxs[slot] == ccx && this.czs[slot] == ccz) {
+                        this.setVoxLocal(slot, lx, wy, lz, id);
+                        if (id != config::bAir) { this.bumpFY(slot, wy); }
+                        this.buildMesh(slot, ccx, ccz);
+                    }
+                }
+                dcx = dcx + 1;
+            }
+            dcz = dcz + 1;
+        }
     }
 
-    /** A compact oak: a 4-tall trunk, one wide 3×3 leaf layer, a plus-
-     *  shaped layer above it, and a single crown block. Fewer leaf cubes
-     *  than a full 3-layer blob — forests stay readable but emit far fewer
-     *  faces, which is the dominant per-frame cost in wooded biomes. */
-    fn addTree(slot : i32, wx : i32, baseY : i32, wz : i32) : void {
-        let t : i32 = 0;
-        while (t < 4) {
-            this.addCube(slot, wx, baseY + t, wz, config::bWood);
-            t = t + 1;
-        }
-        let cy : i32 = baseY + 4;
-        let dx : i32 = 0 - 1;
-        while (dx <= 1) {
-            let dz : i32 = 0 - 1;
-            while (dz <= 1) {
-                this.addCube(slot, wx + dx, cy - 1, wz + dz, config::bLeaves);
-                dz = dz + 1;
-            }
-            dx = dx + 1;
-        }
-        this.addCube(slot, wx, cy, wz, config::bLeaves);
-        this.addCube(slot, wx + 1, cy, wz, config::bLeaves);
-        this.addCube(slot, wx - 1, cy, wz, config::bLeaves);
-        this.addCube(slot, wx, cy, wz + 1, config::bLeaves);
-        this.addCube(slot, wx, cy, wz - 1, config::bLeaves);
-        this.addCube(slot, wx, cy + 1, wz, config::bLeaves);
+    fn breakAt(wx : i32, wy : i32, wz : i32) : void {
+        this.setVoxel(wx, wy, wz, config::bAir);
+    }
+
+    fn placeAt(wx : i32, wy : i32, wz : i32, block : i32) : void {
+        this.setVoxel(wx, wy, wz, block);
     }
 }
