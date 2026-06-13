@@ -1,0 +1,95 @@
+// start — choosing where (and which way) the player starts. Scans columns
+// near the origin for the highest dry, open, roughly-flat hilltop, then
+// picks a yaw whose forward view stays open. Pulled out of `main` so the
+// entry point stays a thin setup + loop. (Named `start`, not `spawn`,
+// because `spawn` is a reserved keyword.)
+
+use std::numeric::math::sin;
+use std::numeric::math::cos;
+use std::numeric::math::floorToInt;
+use crate::world::manager::ChunkManager;
+use crate::config;
+
+/** A clearing to start in: the 3×3 columns around (gx, gz) are tree-free
+ *  and within one block of height, so the player begins on flat open
+ *  ground with a view rather than buried against a trunk. */
+fn openSpot(man : ChunkManager, gx : i32, gz : i32) : bool {
+    let h0 : i32 = man.columnHeight(gx, gz);
+    let dz : i32 = 0 - 1;
+    while (dz <= 1) {
+        let dx : i32 = 0 - 1;
+        while (dx <= 1) {
+            let cx : i32 = gx + dx;
+            let cz : i32 = gz + dz;
+            let hc : i32 = man.columnHeight(cx, cz);
+            if (man.collisionHeight(cx, cz) != hc) { return false; }
+            let d : i32 = hc - h0;
+            if (d < 0) { d = 0 - d; }
+            if (d > 1) { return false; }
+            dx = dx + 1;
+        }
+        dz = dz + 1;
+    }
+    return true;
+}
+
+/** Pick the start yaw whose forward ray stays open (tree-free, not
+ *  rising) for the most blocks, so the player faces the clearing rather
+ *  than a trunk. Forward for a yaw is (-sin, cos). */
+fn openYaw(man : ChunkManager, sx : i32, sz : i32, baseH : i32) : f64 {
+    let best : f64 = 0.0;
+    let bestScore : i32 = 0 - 1;
+    let k : i32 = 0;
+    while (k < 8) {
+        let yaw : f64 = (k as f64) * 0.7853981634;
+        let fwx : f64 = 0.0 - sin(yaw);
+        let fwz : f64 = cos(yaw);
+        let score : i32 = 0;
+        let blocked : bool = false;
+        let d : f64 = 1.5;
+        while (d < 8.0 && !blocked) {
+            let cx : i32 = floorToInt((sx as f64) + 0.5 + fwx * d) as i32;
+            let cz : i32 = floorToInt((sz as f64) + 0.5 + fwz * d) as i32;
+            let hc : i32 = man.columnHeight(cx, cz);
+            if (man.collisionHeight(cx, cz) != hc || hc > baseH + 1) { blocked = true; }
+            else { score = score + 1; }
+            d = d + 1.0;
+        }
+        if (score > bestScore) { bestScore = score; best = yaw; }
+        k = k + 1;
+    }
+    return best;
+}
+
+/** The chosen start column (sx, sz) and its surface height `h`. */
+class Spawn {
+    sx : i32,
+    sz : i32,
+    h : i32,
+
+    constructor() {
+        this.sx = 0;
+        this.sz = 0;
+        this.h = config::seaLevel + 1;
+    }
+
+    /** Search an 81×81 area around the origin for the highest dry, open
+     *  hilltop. Falls back to sea level + 1 if nothing qualifies. */
+    fn find(man : ChunkManager) : void {
+        let bestH : i32 = 0 - 1;
+        let gz : i32 = 0 - 40;
+        while (gz <= 40) {
+            let gx : i32 = 0 - 40;
+            while (gx <= 40) {
+                let hh : i32 = man.columnHeight(gx, gz);
+                if (hh > config::seaLevel + 2 && hh > bestH && openSpot(man, gx, gz)) {
+                    bestH = hh; this.sx = gx; this.sz = gz;
+                }
+                gx = gx + 1;
+            }
+            gz = gz + 1;
+        }
+        if (bestH < 0) { bestH = config::seaLevel + 1; }
+        this.h = bestH;
+    }
+}

@@ -4,11 +4,11 @@
 // wins. Winding-agnostic (the area's sign flows through the weights).
 
 use std::numeric::math::floorToInt;
-use crate::platform::sdl::putPixel;
-use crate::platform::sdl::getF64;
-use crate::platform::sdl::setF64;
-use crate::platform::sdl::readI32;
-use crate::platform::sdl::rgb;
+use crate::platform::mem::putPixel;
+use crate::platform::mem::getF64;
+use crate::platform::mem::setF64;
+use crate::platform::mem::readI32;
+use crate::platform::mem::rgb;
 use crate::config;
 
 fn minf(a : f64, b : f64) : f64 {

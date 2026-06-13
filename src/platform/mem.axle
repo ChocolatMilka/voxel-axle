@@ -1,0 +1,74 @@
+// mem — raw memory: libc allocation, pointer helpers, and the typed
+// accessors used to read/write the CPU framebuffer, z-buffer and the
+// scratch buffers that back the renderer and SDL event structs. Plus
+// `rgb`, the trivial ARGB packer (kept here so both the world's block
+// table and the renderer can use it without depending on gfx).
+
+@link_name("malloc") native fn cmalloc(n : i64) : ptr;
+@link_name("free")   native fn cfree(p : ptr) : void;
+
+fn nullPtr() : ptr {
+    unsafe {
+        let z : i64 = 0;
+        return z as ptr;
+    }
+}
+
+fn asPtr(addr : i64) : ptr {
+    unsafe { return addr as ptr; }
+}
+
+fn isNull(p : ptr) : bool {
+    unsafe { return (p as i64) == 0; }
+}
+
+fn allocBytes(n : i64) : i64 {
+    unsafe { return cmalloc(n) as i64; }
+}
+
+fn putPixel(base : i64, idx : i32, argb : i32) : void {
+    unsafe {
+        let slot : ptr<i32> = (base + (idx as i64) * 4) as ptr<i32>;
+        *slot = argb;
+    }
+}
+
+fn readI32(base : i64, off : i64) : i32 {
+    unsafe {
+        let slot : ptr<i32> = (base + off) as ptr<i32>;
+        return *slot;
+    }
+}
+
+fn readU8(base : i64, off : i64) : i32 {
+    unsafe {
+        let slot : ptr<i8> = (base + off) as ptr<i8>;
+        return (*slot) as i32 & 0xFF;
+    }
+}
+
+fn writeU8(base : i64, off : i64, v : i32) : void {
+    unsafe {
+        let slot : ptr<i8> = (base + off) as ptr<i8>;
+        *slot = v as i8;
+    }
+}
+
+fn setF64(base : i64, idx : i32, v : f64) : void {
+    unsafe {
+        let slot : ptr<f64> = (base + (idx as i64) * 8) as ptr<f64>;
+        *slot = v;
+    }
+}
+
+fn getF64(base : i64, idx : i32) : f64 {
+    unsafe {
+        let slot : ptr<f64> = (base + (idx as i64) * 8) as ptr<f64>;
+        return *slot;
+    }
+}
+
+/** Pack 8-bit r, g, b into a 0x00RRGGBB integer (the framebuffer format). */
+fn rgb(r : i32, g : i32, b : i32) : i32 {
+    return (r & 0xFF) * 65536 + (g & 0xFF) * 256 + (b & 0xFF);
+}
