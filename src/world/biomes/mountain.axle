@@ -1,0 +1,16 @@
+// Mountain — grass at the foot, bare stone higher, snow on the peaks.
+
+use crate::world::biomes::Biome;
+use crate::config;
+
+class Mountain extends Biome {
+    constructor() { super(); }
+    fn surface(height : i32) : i32 {
+        if (height > config::seaLevel + 44) { return config::bSnow; }
+        if (height > config::seaLevel + 38) { return config::bStone; }
+        return config::bGrass;
+    }
+    fn filler() : i32 { return config::bStone; }
+    fn treeThreshold() : f64 { return 1.05; }    // rare
+    fn treeKind() : i32 { return config::treeSpruce; }
+}

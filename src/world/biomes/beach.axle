@@ -1,0 +1,11 @@
+// Beach — a strip of sand at the waterline, no trees.
+
+use crate::world::biomes::Biome;
+use crate::config;
+
+class Beach extends Biome {
+    constructor() { super(); }
+    fn surface(height : i32) : i32 { return config::bSand; }
+    fn filler() : i32 { return config::bSand; }
+    // treeThreshold / treeKind default to none.
+}

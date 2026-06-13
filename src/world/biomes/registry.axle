@@ -1,0 +1,148 @@
+// registry — owns one instance of every biome class and dispatches the
+// per-biome queries by id, plus the climate selector `biomeAt`.
+//
+// Axle has no virtual dispatch, so each biome is held as its concrete
+// subclass type here; the `if` ladder calls the right override. Add a
+// biome: a class under biomes/, a field + `new` here, and a branch in each
+// dispatch method (and in `biomeAt`).
+
+use crate::world::biomes::Biome;
+use crate::world::biomes::plains::Plains;
+use crate::world::biomes::forest::Forest;
+use crate::world::biomes::birchforest::BirchForest;
+use crate::world::biomes::taiga::Taiga;
+use crate::world::biomes::jungle::Jungle;
+use crate::world::biomes::savanna::Savanna;
+use crate::world::biomes::desert::Desert;
+use crate::world::biomes::badlands::Badlands;
+use crate::world::biomes::swamp::Swamp;
+use crate::world::biomes::snowy::Snowy;
+use crate::world::biomes::mountain::Mountain;
+use crate::world::biomes::beach::Beach;
+use crate::world::biomes::ocean::Ocean;
+use crate::world::biomes::frozenocean::FrozenOcean;
+use crate::config;
+
+class Biomes {
+    plains : Plains,
+    forest : Forest,
+    birch : BirchForest,
+    taiga : Taiga,
+    jungle : Jungle,
+    savanna : Savanna,
+    desert : Desert,
+    badlands : Badlands,
+    swamp : Swamp,
+    snowy : Snowy,
+    mountain : Mountain,
+    beach : Beach,
+    ocean : Ocean,
+    frozen : FrozenOcean,
+
+    constructor() {
+        this.plains = new Plains();
+        this.forest = new Forest();
+        this.birch = new BirchForest();
+        this.taiga = new Taiga();
+        this.jungle = new Jungle();
+        this.savanna = new Savanna();
+        this.desert = new Desert();
+        this.badlands = new Badlands();
+        this.swamp = new Swamp();
+        this.snowy = new Snowy();
+        this.mountain = new Mountain();
+        this.beach = new Beach();
+        this.ocean = new Ocean();
+        this.frozen = new FrozenOcean();
+    }
+
+    fn surface(b : i32, height : i32) : i32 {
+        if (b == config::biPlains) { return this.plains.surface(height); }
+        if (b == config::biForest) { return this.forest.surface(height); }
+        if (b == config::biBirchForest) { return this.birch.surface(height); }
+        if (b == config::biTaiga) { return this.taiga.surface(height); }
+        if (b == config::biJungle) { return this.jungle.surface(height); }
+        if (b == config::biSavanna) { return this.savanna.surface(height); }
+        if (b == config::biDesert) { return this.desert.surface(height); }
+        if (b == config::biBadlands) { return this.badlands.surface(height); }
+        if (b == config::biSwamp) { return this.swamp.surface(height); }
+        if (b == config::biSnowy) { return this.snowy.surface(height); }
+        if (b == config::biMountain) { return this.mountain.surface(height); }
+        if (b == config::biBeach) { return this.beach.surface(height); }
+        if (b == config::biFrozenOcean) { return this.frozen.surface(height); }
+        return this.ocean.surface(height);
+    }
+
+    fn filler(b : i32) : i32 {
+        if (b == config::biPlains) { return this.plains.filler(); }
+        if (b == config::biForest) { return this.forest.filler(); }
+        if (b == config::biBirchForest) { return this.birch.filler(); }
+        if (b == config::biTaiga) { return this.taiga.filler(); }
+        if (b == config::biJungle) { return this.jungle.filler(); }
+        if (b == config::biSavanna) { return this.savanna.filler(); }
+        if (b == config::biDesert) { return this.desert.filler(); }
+        if (b == config::biBadlands) { return this.badlands.filler(); }
+        if (b == config::biSwamp) { return this.swamp.filler(); }
+        if (b == config::biSnowy) { return this.snowy.filler(); }
+        if (b == config::biMountain) { return this.mountain.filler(); }
+        if (b == config::biBeach) { return this.beach.filler(); }
+        if (b == config::biFrozenOcean) { return this.frozen.filler(); }
+        return this.ocean.filler();
+    }
+
+    fn treeThreshold(b : i32) : f64 {
+        if (b == config::biPlains) { return this.plains.treeThreshold(); }
+        if (b == config::biForest) { return this.forest.treeThreshold(); }
+        if (b == config::biBirchForest) { return this.birch.treeThreshold(); }
+        if (b == config::biTaiga) { return this.taiga.treeThreshold(); }
+        if (b == config::biJungle) { return this.jungle.treeThreshold(); }
+        if (b == config::biSavanna) { return this.savanna.treeThreshold(); }
+        if (b == config::biDesert) { return this.desert.treeThreshold(); }
+        if (b == config::biBadlands) { return this.badlands.treeThreshold(); }
+        if (b == config::biSwamp) { return this.swamp.treeThreshold(); }
+        if (b == config::biSnowy) { return this.snowy.treeThreshold(); }
+        if (b == config::biMountain) { return this.mountain.treeThreshold(); }
+        if (b == config::biBeach) { return this.beach.treeThreshold(); }
+        if (b == config::biFrozenOcean) { return this.frozen.treeThreshold(); }
+        return this.ocean.treeThreshold();
+    }
+
+    fn treeKind(b : i32) : i32 {
+        if (b == config::biPlains) { return this.plains.treeKind(); }
+        if (b == config::biForest) { return this.forest.treeKind(); }
+        if (b == config::biBirchForest) { return this.birch.treeKind(); }
+        if (b == config::biTaiga) { return this.taiga.treeKind(); }
+        if (b == config::biJungle) { return this.jungle.treeKind(); }
+        if (b == config::biSavanna) { return this.savanna.treeKind(); }
+        if (b == config::biDesert) { return this.desert.treeKind(); }
+        if (b == config::biBadlands) { return this.badlands.treeKind(); }
+        if (b == config::biSwamp) { return this.swamp.treeKind(); }
+        if (b == config::biSnowy) { return this.snowy.treeKind(); }
+        if (b == config::biMountain) { return this.mountain.treeKind(); }
+        if (b == config::biBeach) { return this.beach.treeKind(); }
+        if (b == config::biFrozenOcean) { return this.frozen.treeKind(); }
+        return this.ocean.treeKind();
+    }
+}
+
+/** Pick a biome id from climate (temp, humid in [0,1)) and column height.
+ *  Elevation decides first (ocean / beach / mountain), then a
+ *  temperature×humidity grid chooses the land biome. */
+fn biomeAt(temp : f64, humid : f64, height : i32) : i32 {
+    if (height <= config::seaLevel) {
+        if (temp < 0.26) { return config::biFrozenOcean; }
+        return config::biOcean;
+    }
+    if (height <= config::seaLevel + 1) { return config::biBeach; }
+    if (height >= config::seaLevel + 34) { return config::biMountain; }
+    if (temp < 0.25) { return config::biSnowy; }
+    if (temp < 0.40) { return config::biTaiga; }
+    if (temp > 0.75 && humid < 0.30) { return config::biBadlands; }
+    if (temp > 0.70 && humid < 0.40) { return config::biDesert; }
+    if (temp > 0.58 && humid < 0.52) { return config::biSavanna; }
+    if (humid > 0.75 && temp > 0.62) { return config::biJungle; }
+    if (humid > 0.68 && height <= config::seaLevel + 5) { return config::biSwamp; }
+    if (humid > 0.60) { return config::biForest; }
+    if (humid > 0.48) { return config::biBirchForest; }
+    return config::biPlains;
+}

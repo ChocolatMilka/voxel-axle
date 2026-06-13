@@ -21,10 +21,9 @@ use crate::world::noise::terrainHeight;
 use crate::world::noise::temperature;
 use crate::world::noise::humidity;
 use crate::world::noise::treeHash;
-use crate::world::biome::biomeAt;
-use crate::world::biome::surfaceBlock;
-use crate::world::biome::fillerBlock;
-use crate::world::biome::treeThreshold;
+use crate::world::noise::hashI;
+use crate::world::biomes::registry::biomeAt;
+use crate::world::biomes::registry::Biomes;
 use crate::world::blocks::tileFor;
 use crate::world::blocks::isSolid;
 use crate::world::blocks::isCollidable;
@@ -44,8 +43,10 @@ class ChunkManager {
     ctop : i32[],
     vox : i32[],
     maxFY : i32[],
+    reg : Biomes,
 
     constructor() {
+        this.reg = new Biomes();
         let slots : i32 = config::span * config::span;
         let faceCap : i32 = slots * config::maxFacesPerChunk;
         let hSide : i32 = config::chunkSize + 2;
@@ -252,8 +253,8 @@ class ChunkManager {
                 let h : i32 = this.heightAt(slot, lx, lz);
                 let biome : i32 = biomeAt(temperature(wx as f64, wz as f64),
                     humidity(wx as f64, wz as f64), h);
-                let surf : i32 = surfaceBlock(biome, h);
-                let filler : i32 = fillerBlock(biome);
+                let surf : i32 = this.reg.surface(biome, h);
+                let filler : i32 = this.reg.filler(biome);
                 let topY : i32 = h - 1;
                 if (h <= config::seaLevel) { topY = config::seaLevel; }
                 this.bumpFY(slot, topY);
@@ -261,11 +262,15 @@ class ChunkManager {
                 while (ly < config::worldHeight) {
                     let id : i32 = config::bAir;
                     if (ly < h) {
-                        id = config::bStone;
                         if (ly == h - 1) { id = surf; }
                         else if (ly >= h - 3) { id = filler; }
+                        else { id = this.oreAt(wx, ly, wz); }
                     } else if (h <= config::seaLevel && ly <= config::seaLevel) {
                         id = config::bWater;
+                        // Frozen ocean: the water surface freezes to ice.
+                        if (biome == config::biFrozenOcean && ly == config::seaLevel) {
+                            id = config::bIce;
+                        }
                     }
                     this.setVoxLocal(slot, lx, ly, lz, id);
                     ly = ly + 1;
@@ -294,8 +299,8 @@ class ChunkManager {
                 if (h > config::seaLevel) {
                     let biome : i32 = biomeAt(temperature(wx as f64, wz as f64),
                         humidity(wx as f64, wz as f64), h);
-                    if (treeHash(wx as f64, wz as f64) > treeThreshold(biome)) {
-                        this.stampTreeAt(slot, olx, h, olz);
+                    if (treeHash(wx as f64, wz as f64) > this.reg.treeThreshold(biome)) {
+                        this.stampTree(this.reg.treeKind(biome), slot, olx, h, olz);
                     }
                 }
                 olx = olx + 1;
@@ -304,42 +309,116 @@ class ChunkManager {
         }
     }
 
-    /** A leaf voxel, only into air (never carving terrain on a slope). */
-    fn stampLeaf(slot : i32, lx : i32, ly : i32, lz : i32) : void {
+    /** Deep stone, occasionally an ore — deterministic 3D scatter by depth.
+     *  Common ores (coal/iron) appear at most depths; rare ones (diamond/
+     *  emerald) only deep. Returns bStone when nothing rolls. Called only
+     *  for the deep stone band, so surface/filler are never replaced. */
+    fn oreAt(wx : i32, wy : i32, wz : i32) : i32 {
+        let r : f64 = hashI(wx * 7 + wy * 131, wz * 13 + wy * 977, config::seedI + 9171);
+        if (wy < 14) {
+            if (r > 0.9930) { return config::bDiamondOre; }
+            if (r > 0.9870) { return config::bEmeraldOre; }
+            if (r > 0.9790) { return config::bRedstoneOre; }
+            if (r > 0.9680) { return config::bGoldOre; }
+        }
+        if (wy < 36 && r > 0.9700) { return config::bLapisOre; }
+        if (r > 0.9550) { return config::bIronOre; }
+        if (r > 0.9150) { return config::bCoalOre; }
+        return config::bStone;
+    }
+
+    /** A leaf voxel of `leafId`, only into air (never carving terrain). */
+    fn stampLeafId(slot : i32, lx : i32, ly : i32, lz : i32, leafId : i32) : void {
         let s : i32 = config::chunkSize;
         if (lx < 0 - 1 || lx > s || lz < 0 - 1 || lz > s) { return; }
         if (ly < 0 || ly >= config::worldHeight) { return; }
         if (this.getVox(slot, lx, ly, lz) == config::bAir) {
-            this.setVoxLocal(slot, lx, ly, lz, config::bLeaves);
+            this.setVoxLocal(slot, lx, ly, lz, leafId);
         }
     }
 
-    /** A compact oak (matches the old face-based tree): 4-tall trunk, a
-     *  3×3 leaf layer at the trunk top, a plus layer above, and a crown.
-     *  Leaves are stamped first, then the trunk overwrites its column. */
-    fn stampTreeAt(slot : i32, olx : i32, baseY : i32, olz : i32) : void {
-        let cy : i32 = baseY + 4;
-        let dx : i32 = 0 - 1;
-        while (dx <= 1) {
-            let dz : i32 = 0 - 1;
-            while (dz <= 1) {
-                this.stampLeaf(slot, olx + dx, cy - 1, olz + dz);
-                dz = dz + 1;
+    /** A solid square leaf layer of half-size `rad` centred on (cx,cy,cz). */
+    fn leafLayer(slot : i32, cx : i32, cy : i32, cz : i32, rad : i32, leafId : i32) : void {
+        let dz : i32 = 0 - rad;
+        while (dz <= rad) {
+            let dx : i32 = 0 - rad;
+            while (dx <= rad) {
+                this.stampLeafId(slot, cx + dx, cy, cz + dz, leafId);
+                dx = dx + 1;
             }
-            dx = dx + 1;
+            dz = dz + 1;
         }
-        this.stampLeaf(slot, olx, cy, olz);
-        this.stampLeaf(slot, olx + 1, cy, olz);
-        this.stampLeaf(slot, olx - 1, cy, olz);
-        this.stampLeaf(slot, olx, cy, olz + 1);
-        this.stampLeaf(slot, olx, cy, olz - 1);
-        this.stampLeaf(slot, olx, cy + 1, olz);
+    }
+
+    fn stampTrunk(slot : i32, olx : i32, baseY : i32, olz : i32, height : i32, woodId : i32) : void {
         let t : i32 = 0;
-        while (t < 4) {
-            this.setVoxClip(slot, olx, baseY + t, olz, config::bWood);
+        while (t < height) {
+            this.setVoxClip(slot, olx, baseY + t, olz, woodId);
             t = t + 1;
         }
-        this.bumpFY(slot, baseY + 5);
+        this.bumpFY(slot, baseY + height + 1);
+    }
+
+    /** Stamp a tree of `kind` (config::tree*) with origin column (olx, olz)
+     *  and trunk base `baseY`. Leaves first, then the trunk overwrites its
+     *  column. Shapes are fixed (no RNG) so the two chunks sharing a
+     *  border tree stamp it identically. */
+    fn stampTree(kind : i32, slot : i32, olx : i32, baseY : i32, olz : i32) : void {
+        if (kind == config::treeNone) { return; }
+        if (kind == config::treeCactus) {
+            let c : i32 = 0;
+            while (c < 3) {
+                this.setVoxClip(slot, olx, baseY + c, olz, config::bCactus);
+                c = c + 1;
+            }
+            this.bumpFY(slot, baseY + 3);
+            return;
+        }
+        if (kind == config::treeSpruce) { this.stampSpruce(slot, olx, baseY, olz); return; }
+        if (kind == config::treeAcacia) { this.stampAcacia(slot, olx, baseY, olz); return; }
+        // Oak / birch / jungle: a bushy round canopy; they differ only in
+        // trunk height and wood / leaf species.
+        let height : i32 = 4;
+        let wood : i32 = config::bWood;
+        let leaf : i32 = config::bLeaves;
+        if (kind == config::treeBirch) { height = 6; wood = config::bWoodBirch; leaf = config::bLeavesBirch; }
+        if (kind == config::treeJungle) { height = 8; wood = config::bWoodJungle; leaf = config::bLeavesJungle; }
+        this.stampBushy(slot, olx, baseY, olz, height, wood, leaf);
+    }
+
+    /** Round canopy (oak/birch/jungle): two wide rings, a narrow ring and a
+     *  small crown atop the trunk. */
+    fn stampBushy(slot : i32, olx : i32, baseY : i32, olz : i32, height : i32, wood : i32, leaf : i32) : void {
+        let cy : i32 = baseY + height;
+        this.leafLayer(slot, olx, cy - 2, olz, 2, leaf);
+        this.leafLayer(slot, olx, cy - 1, olz, 2, leaf);
+        this.leafLayer(slot, olx, cy, olz, 1, leaf);
+        this.stampLeafId(slot, olx, cy + 1, olz, leaf);
+        this.stampLeafId(slot, olx + 1, cy + 1, olz, leaf);
+        this.stampLeafId(slot, olx - 1, cy + 1, olz, leaf);
+        this.stampLeafId(slot, olx, cy + 1, olz + 1, leaf);
+        this.stampLeafId(slot, olx, cy + 1, olz - 1, leaf);
+        this.stampTrunk(slot, olx, baseY, olz, height, wood);
+    }
+
+    /** Conical spruce: shrinking square rings up a tall trunk, with a tip. */
+    fn stampSpruce(slot : i32, olx : i32, baseY : i32, olz : i32) : void {
+        let height : i32 = 6;
+        let cy : i32 = baseY + height;
+        this.leafLayer(slot, olx, cy - 3, olz, 2, config::bLeavesSpruce);
+        this.leafLayer(slot, olx, cy - 2, olz, 1, config::bLeavesSpruce);
+        this.leafLayer(slot, olx, cy - 1, olz, 1, config::bLeavesSpruce);
+        this.stampLeafId(slot, olx, cy, olz, config::bLeavesSpruce);
+        this.stampTrunk(slot, olx, baseY, olz, height, config::bWoodSpruce);
+    }
+
+    /** Flat-topped acacia: a tall trunk and a wide thin canopy. */
+    fn stampAcacia(slot : i32, olx : i32, baseY : i32, olz : i32) : void {
+        let height : i32 = 5;
+        let cy : i32 = baseY + height;
+        this.leafLayer(slot, olx, cy, olz, 2, config::bLeavesAcacia);
+        this.leafLayer(slot, olx, cy + 1, olz, 1, config::bLeavesAcacia);
+        this.stampTrunk(slot, olx, baseY, olz, height, config::bWoodAcacia);
     }
 
     // ── Meshing ─────────────────────────────────────────────────

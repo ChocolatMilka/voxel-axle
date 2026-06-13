@@ -1,0 +1,12 @@
+// Taiga — cold spruce forest on bluish-green grass.
+
+use crate::world::biomes::Biome;
+use crate::config;
+
+class Taiga extends Biome {
+    constructor() { super(); }
+    fn surface(height : i32) : i32 { return config::bGrassTaiga; }
+    fn filler() : i32 { return config::bDirt; }
+    fn treeThreshold() : f64 { return 0.918; }
+    fn treeKind() : i32 { return config::treeSpruce; }
+}

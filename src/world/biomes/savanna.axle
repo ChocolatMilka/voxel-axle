@@ -1,0 +1,12 @@
+// Savanna — hot, dry olive grassland dotted with acacias.
+
+use crate::world::biomes::Biome;
+use crate::config;
+
+class Savanna extends Biome {
+    constructor() { super(); }
+    fn surface(height : i32) : i32 { return config::bGrassSavanna; }
+    fn filler() : i32 { return config::bDirt; }
+    fn treeThreshold() : f64 { return 0.993; }
+    fn treeKind() : i32 { return config::treeAcacia; }
+}

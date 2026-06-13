@@ -1,0 +1,12 @@
+// Forest — dense oak woodland on green grass.
+
+use crate::world::biomes::Biome;
+use crate::config;
+
+class Forest extends Biome {
+    constructor() { super(); }
+    fn surface(height : i32) : i32 { return config::bGrass; }
+    fn filler() : i32 { return config::bDirt; }
+    fn treeThreshold() : f64 { return 0.928; }
+    fn treeKind() : i32 { return config::treeOak; }
+}

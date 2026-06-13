@@ -1,0 +1,14 @@
+// Ocean — sandy shallows, gravel in the deeps.
+
+use crate::world::biomes::Biome;
+use crate::config;
+
+class Ocean extends Biome {
+    constructor() { super(); }
+    fn surface(height : i32) : i32 {
+        if (height < config::seaLevel - 6) { return config::bGravel; }
+        return config::bSand;
+    }
+    fn filler() : i32 { return config::bSand; }
+    // treeThreshold / treeKind default to none.
+}

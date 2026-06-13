@@ -1,0 +1,12 @@
+// Swamp — low, wet, dark-green grass with scattered oaks.
+
+use crate::world::biomes::Biome;
+use crate::config;
+
+class Swamp extends Biome {
+    constructor() { super(); }
+    fn surface(height : i32) : i32 { return config::bGrassSwamp; }
+    fn filler() : i32 { return config::bDirt; }
+    fn treeThreshold() : f64 { return 0.985; }
+    fn treeKind() : i32 { return config::treeOak; }
+}

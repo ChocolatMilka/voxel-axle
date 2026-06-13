@@ -20,9 +20,9 @@ const nearPlane : f64 = 0.12;
 
 // ── Infinite world (streamed chunks) ────────────────────────
 const chunkSize : i32 = 16;
-const viewRadius : i32 = 4;  // chunks loaded each side → 9×9
-const span : i32 = 9;  // 2*viewRadius + 1
-const maxFacesPerChunk : i32 = 12000;
+const viewRadius : i32 = 6;  // chunks loaded each side → 13×13
+const span : i32 = 13;  // 2*viewRadius + 1
+const maxFacesPerChunk : i32 = 14000;
 const seaLevel : i32 = 24;
 const maxHeight : i32 = 96;
 // Full voxel field: each column is `worldHeight` voxels tall. Terrain is
@@ -38,8 +38,8 @@ const worldHeight : i32 = 128;
 // are mob skins. Bump `atlasTiles` (and the embedded hex) when you add
 // mob textures, then flip `useMobTextures` on.
 const tilePx : i32 = 64;
-const blockTiles : i32 = 11;
-const atlasTiles : i32 = 21;
+const blockTiles : i32 = 73;
+const atlasTiles : i32 = 83;
 const useMobTextures : bool = true;
 // Mip chain depth (64 → 32 → … → 1 = 7 levels). Distant faces sample a
 // coarser, pre-averaged level so textures don't shimmer when moving.
@@ -95,7 +95,7 @@ const regenDelayFrames : i32 = 420;  // ~7 s without damage before regen
 const regenEveryFrames : i32 = 90;  // +1 hp per this many frames
 
 // ── Render ──────────────────────────────────────────────────
-const renderDist : f64 = 64.0;
+const renderDist : f64 = 92.0;
 // Sky / distance fog: far faces fade to the sky colour so the distance
 // dissolves softly (Minecraft-style) instead of shimmering as a mush of
 // aliased texels at the render edge. Fog runs from `fogStart` to `fogEnd`
@@ -103,8 +103,8 @@ const renderDist : f64 = 64.0;
 const skyR : i32 = 150;
 const skyG : i32 = 198;
 const skyB : i32 = 240;
-const fogStart : f64 = 42.0;
-const fogEnd : f64 = 63.0;
+const fogStart : f64 = 66.0;
+const fogEnd : f64 = 90.0;
 
 // ── Tick rate ───────────────────────────────────────────────
 // The main loop is held to this many iterations per second by the frame
@@ -132,9 +132,60 @@ const bStone : i32 = 3;
 const bSand : i32 = 4;
 const bSnow : i32 = 5;
 const bWater : i32 = 6;
-const bWood : i32 = 7;
-const bLeaves : i32 = 8;
+const bWood : i32 = 7;       // oak log
+const bLeaves : i32 = 8;     // oak leaves
 const bGravel : i32 = 9;
+// Soils
+const bCoarseDirt : i32 = 10;
+const bPodzol : i32 = 11;
+const bMycelium : i32 = 12;
+const bRedSand : i32 = 13;
+const bClay : i32 = 14;
+const bIce : i32 = 15;
+const bPackedIce : i32 = 16;
+// Stones
+const bCobble : i32 = 17;
+const bMossyCobble : i32 = 18;
+const bGranite : i32 = 19;
+const bDiorite : i32 = 20;
+const bAndesite : i32 = 21;
+const bStoneBricks : i32 = 22;
+const bBricks : i32 = 23;
+const bSandstone : i32 = 24;
+const bRedSandstone : i32 = 25;
+const bTerracotta : i32 = 26;
+const bTerracottaOrange : i32 = 27;
+const bTerracottaWhite : i32 = 28;
+// Woods (log + leaves per species; oak is bWood/bLeaves above)
+const bWoodBirch : i32 = 29;
+const bLeavesBirch : i32 = 30;
+const bWoodSpruce : i32 = 31;
+const bLeavesSpruce : i32 = 32;
+const bWoodAcacia : i32 = 33;
+const bLeavesAcacia : i32 = 34;
+const bWoodJungle : i32 = 35;
+const bLeavesJungle : i32 = 36;
+const bWoodDarkOak : i32 = 37;
+const bLeavesDarkOak : i32 = 38;
+const bPlanks : i32 = 39;
+// Decoration
+const bCactus : i32 = 40;
+const bPumpkin : i32 = 41;
+const bMelon : i32 = 42;
+const bGlowstone : i32 = 43;
+// Ores
+const bCoalOre : i32 = 44;
+const bIronOre : i32 = 45;
+const bGoldOre : i32 = 46;
+const bDiamondOre : i32 = 47;
+const bRedstoneOre : i32 = 48;
+const bEmeraldOre : i32 = 49;
+const bLapisOre : i32 = 50;
+// Tinted grass variants (their own surface block per biome)
+const bGrassSavanna : i32 = 51;
+const bGrassJungle : i32 = 52;
+const bGrassSwamp : i32 = 53;
+const bGrassTaiga : i32 = 54;
 
 // ── Biome ids (Minecraft-inspired) ──────────────────────────
 const biOcean : i32 = 0;
@@ -145,6 +196,21 @@ const biDesert : i32 = 4;
 const biSavanna : i32 = 5;
 const biSnowy : i32 = 6;
 const biMountain : i32 = 7;
+const biTaiga : i32 = 8;
+const biJungle : i32 = 9;
+const biSwamp : i32 = 10;
+const biBadlands : i32 = 11;
+const biBirchForest : i32 = 12;
+const biFrozenOcean : i32 = 13;
+
+// ── Tree kinds (stamped by manager.stampTree) ───────────────
+const treeNone : i32 = 0;
+const treeOak : i32 = 1;
+const treeBirch : i32 = 2;
+const treeSpruce : i32 = 3;
+const treeAcacia : i32 = 4;
+const treeJungle : i32 = 5;
+const treeCactus : i32 = 6;
 
 // ── Mobs ────────────────────────────────────────────────────
 const mobCap : i32 = 32;
@@ -183,19 +249,93 @@ const attackDamage : i32 = 4;
 const attackCooldown : i32 = 18;
 const hurtFlashFrames : i32 = 10;  // frames a struck mob glows red
 
-// ── Mob atlas tiles (used when useMobTextures) ──────────────
-const tlChickenBody : i32 = 11;
-const tlChickenHead : i32 = 12;
-const tlSheepWool : i32 = 13;
-const tlSheepHead : i32 = 14;
-const tlCowBody : i32 = 15;
-const tlCowHead : i32 = 16;
-// Creeper: green skin + iconic face; the "gilet jaune" reskin is shown
-// while the fuse is lit (see config below and `drawCreeper`).
-const tlCreeperSkin : i32 = 17;
-const tlCreeperFace : i32 = 18;
-const tlChargeSkin : i32 = 19;
-const tlChargeFace : i32 = 20;
+// ── Atlas tile indices ──────────────────────────────────────
+// THESE MIRROR THE ORDER IN `bake_atlas.py` EXACTLY — keep in sync.
+// Block tiles 0..blockTiles-1, then mob tiles.
+const tlGrassTop : i32 = 0;
+const tlGrassSide : i32 = 1;
+const tlDirt : i32 = 2;
+const tlCoarseDirt : i32 = 3;
+const tlPodzolTop : i32 = 4;
+const tlPodzolSide : i32 = 5;
+const tlMyceliumTop : i32 = 6;
+const tlMyceliumSide : i32 = 7;
+const tlSand : i32 = 8;
+const tlRedSand : i32 = 9;
+const tlGravel : i32 = 10;
+const tlClay : i32 = 11;
+const tlSnow : i32 = 12;
+const tlIce : i32 = 13;
+const tlPackedIce : i32 = 14;
+const tlStone : i32 = 15;
+const tlCobble : i32 = 16;
+const tlMossyCobble : i32 = 17;
+const tlGranite : i32 = 18;
+const tlDiorite : i32 = 19;
+const tlAndesite : i32 = 20;
+const tlStoneBricks : i32 = 21;
+const tlBricks : i32 = 22;
+const tlSandstoneTop : i32 = 23;
+const tlSandstoneSide : i32 = 24;
+const tlSandstoneBottom : i32 = 25;
+const tlRedSandstoneTop : i32 = 26;
+const tlRedSandstoneSide : i32 = 27;
+const tlTerracotta : i32 = 28;
+const tlTerracottaOrange : i32 = 29;
+const tlTerracottaWhite : i32 = 30;
+const tlOakLogSide : i32 = 31;
+const tlOakLogTop : i32 = 32;
+const tlOakLeaves : i32 = 33;
+const tlPlanks : i32 = 34;
+const tlBirchLogSide : i32 = 35;
+const tlBirchLogTop : i32 = 36;
+const tlBirchLeaves : i32 = 37;
+const tlSpruceLogSide : i32 = 38;
+const tlSpruceLogTop : i32 = 39;
+const tlSpruceLeaves : i32 = 40;
+const tlAcaciaLogSide : i32 = 41;
+const tlAcaciaLogTop : i32 = 42;
+const tlAcaciaLeaves : i32 = 43;
+const tlJungleLogSide : i32 = 44;
+const tlJungleLogTop : i32 = 45;
+const tlJungleLeaves : i32 = 46;
+const tlDarkOakLogSide : i32 = 47;
+const tlDarkOakLogTop : i32 = 48;
+const tlDarkOakLeaves : i32 = 49;
+const tlCactusSide : i32 = 50;
+const tlCactusTop : i32 = 51;
+const tlPumpkinSide : i32 = 52;
+const tlPumpkinTop : i32 = 53;
+const tlMelonSide : i32 = 54;
+const tlMelonTop : i32 = 55;
+const tlGlowstone : i32 = 56;
+const tlWater : i32 = 57;
+const tlCoalOre : i32 = 58;
+const tlIronOre : i32 = 59;
+const tlGoldOre : i32 = 60;
+const tlDiamondOre : i32 = 61;
+const tlRedstoneOre : i32 = 62;
+const tlEmeraldOre : i32 = 63;
+const tlLapisOre : i32 = 64;
+const tlGrassTopSavanna : i32 = 65;
+const tlGrassSideSavanna : i32 = 66;
+const tlGrassTopJungle : i32 = 67;
+const tlGrassSideJungle : i32 = 68;
+const tlGrassTopSwamp : i32 = 69;
+const tlGrassSideSwamp : i32 = 70;
+const tlGrassTopTaiga : i32 = 71;
+const tlGrassSideTaiga : i32 = 72;
+// Mob tiles (after the block tiles).
+const tlChickenBody : i32 = 73;
+const tlChickenHead : i32 = 74;
+const tlSheepWool : i32 = 75;
+const tlSheepHead : i32 = 76;
+const tlCowBody : i32 = 77;
+const tlCowHead : i32 = 78;
+const tlCreeperSkin : i32 = 79;
+const tlCreeperFace : i32 = 80;
+const tlChargeSkin : i32 = 81;
+const tlChargeFace : i32 = 82;
 
 // ── Inventory hotbar ────────────────────────────────────────
 const hotbarSize : i32 = 9;       // number of slots (keys 1–9)

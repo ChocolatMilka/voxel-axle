@@ -1,0 +1,12 @@
+// Jungle — hot, very humid, dense tall trees on vivid grass.
+
+use crate::world::biomes::Biome;
+use crate::config;
+
+class Jungle extends Biome {
+    constructor() { super(); }
+    fn surface(height : i32) : i32 { return config::bGrassJungle; }
+    fn filler() : i32 { return config::bDirt; }
+    fn treeThreshold() : f64 { return 0.865; }
+    fn treeKind() : i32 { return config::treeJungle; }
+}

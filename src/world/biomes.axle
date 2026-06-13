@@ -1,0 +1,25 @@
+// Biome — base class every biome extends. Subclasses (under biomes/) override
+// only what differs; the defaults here describe a plain grass biome with no
+// trees.
+//
+// Axle resolves methods by the receiver's *declared* type (no virtual
+// dispatch), so the registry holds each biome as its concrete subclass type
+// and dispatches by id — see biomes/registry.axle.
+
+use crate::config;
+
+class Biome {
+    constructor() {}
+
+    /** Top block, given the column's surface height. */
+    fn surface(height : i32) : i32 { return config::bGrass; }
+
+    /** The few blocks just under the surface. */
+    fn filler() : i32 { return config::bDirt; }
+
+    /** A column grows a tree when its tree-hash exceeds this (1.1 = none). */
+    fn treeThreshold() : f64 { return 1.1; }
+
+    /** Which tree to stamp (see config::tree*). */
+    fn treeKind() : i32 { return config::treeNone; }
+}

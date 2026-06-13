@@ -1,0 +1,15 @@
+// Frozen ocean — same sea floor as the ocean; the water surface is capped
+// with ice in the generator (see manager.genVoxels).
+
+use crate::world::biomes::Biome;
+use crate::config;
+
+class FrozenOcean extends Biome {
+    constructor() { super(); }
+    fn surface(height : i32) : i32 {
+        if (height < config::seaLevel - 6) { return config::bGravel; }
+        return config::bSand;
+    }
+    fn filler() : i32 { return config::bSand; }
+    // treeThreshold / treeKind default to none.
+}

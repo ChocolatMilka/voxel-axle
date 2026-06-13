@@ -1,0 +1,12 @@
+// Plains — flat green grassland with sparse oaks.
+
+use crate::world::biomes::Biome;
+use crate::config;
+
+class Plains extends Biome {
+    constructor() { super(); }
+    fn surface(height : i32) : i32 { return config::bGrass; }
+    fn filler() : i32 { return config::bDirt; }
+    fn treeThreshold() : f64 { return 0.992; }
+    fn treeKind() : i32 { return config::treeOak; }
+}
