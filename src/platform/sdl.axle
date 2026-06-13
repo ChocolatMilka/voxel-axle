@@ -34,6 +34,7 @@ const SDL_RENDERER_ACCEL_VSYNC : i32 = 6;
 const SDL_PIXELFORMAT_ARGB8888 : i32 = 372645892;
 const SDL_TEXTUREACCESS_STREAMING : i32 = 1;
 const SDL_QUIT : i32 = 256;
+const SDL_MOUSEWHEEL : i32 = 1027;   // event type; wheel y is i32 at offset 20
 const SDL_BUTTON_RMASK : i32 = 4;
 
 const SC_A : i32 = 4;

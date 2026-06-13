@@ -1,12 +1,13 @@
 // hotbar — the inventory bar: a row of slots in a dark panel. Each slot
-// shows its block as a shaded colour swatch (light top edge, dark bottom
-// edge, to read as a little cube); the active slot is ringed in white.
-// Drawn at a caller-supplied origin so the HUD can lay it out.
+// shows its block's real texture (the atlas tile for its top face), nearest
+// -downscaled into the cell; the active slot is ringed in white. Drawn at a
+// caller-supplied origin so the HUD can lay it out.
 
 use crate::platform::mem::rgb;
+use crate::platform::mem::readI32;
+use crate::platform::mem::putPixel;
 use crate::gfx::color::fillRect;
-use crate::gfx::color::scaleRgb;
-use crate::world::blocks::color;
+use crate::world::blocks::tileFor;
 use crate::config;
 
 fn hotbarPanelW() : i32 {
@@ -17,8 +18,27 @@ fn hotbarPanelH() : i32 {
     return config::hotbarCell + 2 * config::hotbarPad;
 }
 
+/** Draw atlas `tile` nearest-downscaled into the `size`×`size` box at
+ *  (x, y) of the framebuffer. */
+fn drawTileIcon(base : i64, fbW : i32, fbH : i32, atlas : i64, tile : i32, x : i32, y : i32, size : i32) : void {
+    let tp : i32 = config::tilePx;
+    let py : i32 = 0;
+    while (py < size) {
+        let ty : i32 = py * tp / size;
+        let row : i32 = (tile * tp + ty) * tp;
+        let dy : i32 = (y + py) * fbW;
+        let px : i32 = 0;
+        while (px < size) {
+            let tx : i32 = px * tp / size;
+            putPixel(base, dy + x + px, readI32(atlas, ((row + tx) as i64) * 4));
+            px = px + 1;
+        }
+        py = py + 1;
+    }
+}
+
 /** Draw the hotbar with its panel top-left at (x0, y0). */
-fn drawHotbar(base : i64, fbW : i32, fbH : i32, x0 : i32, y0 : i32, hotbar : i32[], selected : i32) : void {
+fn drawHotbar(base : i64, fbW : i32, fbH : i32, x0 : i32, y0 : i32, atlas : i64, hotbar : i32[], selected : i32) : void {
     let cell : i32 = config::hotbarCell;
     let pad : i32 = config::hotbarPad;
     let n : i32 = config::hotbarSize;
@@ -33,10 +53,7 @@ fn drawHotbar(base : i64, fbW : i32, fbH : i32, x0 : i32, y0 : i32, hotbar : i32
         let cx : i32 = x0 + pad + i * (cell + pad);
         let cy : i32 = y0 + pad;
         fillRect(base, fbW, fbH, cx, cy, cell, cell, rgb(48, 48, 56));
-        let col : i32 = color(hotbar[i]);
-        fillRect(base, fbW, fbH, cx + 2, cy + 2, cell - 4, cell - 4, col);
-        fillRect(base, fbW, fbH, cx + 2, cy + 2, cell - 4, 3, scaleRgb(col, 1.35));
-        fillRect(base, fbW, fbH, cx + 2, cy + cell - 5, cell - 4, 3, scaleRgb(col, 0.6));
+        drawTileIcon(base, fbW, fbH, atlas, tileFor(hotbar[i], 2), cx + 2, cy + 2, cell - 4);
         i = i + 1;
     }
 

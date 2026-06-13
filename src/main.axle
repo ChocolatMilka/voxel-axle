@@ -43,6 +43,7 @@ use crate::platform::sdl::SDL_RENDERER_ACCEL_VSYNC;
 use crate::platform::sdl::SDL_PIXELFORMAT_ARGB8888;
 use crate::platform::sdl::SDL_TEXTUREACCESS_STREAMING;
 use crate::platform::sdl::SDL_QUIT;
+use crate::platform::sdl::SDL_MOUSEWHEEL;
 use crate::platform::sdl::SDL_BUTTON_RMASK;
 use crate::platform::sdl::SC_W;
 use crate::platform::sdl::SC_A;
@@ -144,11 +145,24 @@ fn main() : void {
     let wasRight : bool = false;
     let wasEsc : bool = false;
     let wasMenuClick : bool = false;
+    let sprintLatch : bool = false;
     let paused : bool = false;
     let running : bool = true;
     while (running) {
         while (SDL_PollEvent(asPtr(ev)) != 0) {
-            if (readI32(ev, 0) == SDL_QUIT) { running = false; }
+            let etype : i32 = readI32(ev, 0);
+            if (etype == SDL_QUIT) { running = false; }
+            else if (etype == SDL_MOUSEWHEEL) {
+                // Scroll the hotbar: wheel up = previous slot, down = next.
+                let wy : i32 = readI32(ev, 20);
+                if (wy != 0) {
+                    let ns : i32 = player.selected;
+                    if (wy > 0) { ns = ns - 1; } else { ns = ns + 1; }
+                    if (ns < 0) { ns = config::hotbarSize - 1; }
+                    if (ns >= config::hotbarSize) { ns = 0; }
+                    player.selectSlot(ns);
+                }
+            }
         }
 
         // Keep the framebuffer's aspect matched to the (resizable) window:
@@ -207,7 +221,12 @@ fn main() : void {
 
             let fwd : f64 = axis(kb, SC_W, SC_S);
             let strafe : f64 = axis(kb, SC_D, SC_A);
-            let sprint : bool = readU8(kb, SC_LCTRL as i64) != 0;
+            // Sprint latches on with Ctrl and stays on while you keep
+            // moving — releasing Ctrl doesn't stop the run, releasing the
+            // movement keys does.
+            if (readU8(kb, SC_LCTRL as i64) != 0) { sprintLatch = true; }
+            if (fwd == 0.0 && strafe == 0.0) { sprintLatch = false; }
+            let sprint : bool = sprintLatch;
             let up : bool = readU8(kb, SC_SPACE as i64) != 0;
             let down : bool = readU8(kb, SC_LSHIFT as i64) != 0;
 
@@ -293,7 +312,7 @@ fn main() : void {
             if (picker.hit == 1) {
                 renderer.drawSelection(player, pixels, zbuf, w, h, picker.bx, picker.by, picker.bz);
             }
-            drawHud(pixels, w, h, player.hp, player.maxHp, player.hotbar, player.selected);
+            drawHud(pixels, w, h, atlas, player.hp, player.maxHp, player.hotbar, player.selected);
             renderer.crosshair(pixels, w, h);
         } else {
             drawPauseMenu(pixels, w, h, hover);

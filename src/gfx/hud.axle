@@ -9,12 +9,12 @@ use crate::gfx::hotbar::hotbarPanelH;
 use crate::gfx::health::drawHealth;
 use crate::gfx::health::healthHeight;
 
-/** Draw the full HUD overlay. */
-fn drawHud(base : i64, fbW : i32, fbH : i32, hp : i32, maxHp : i32, hotbar : i32[], selected : i32) : void {
+/** Draw the full HUD overlay. `atlas` supplies the hotbar item textures. */
+fn drawHud(base : i64, fbW : i32, fbH : i32, atlas : i64, hp : i32, maxHp : i32, hotbar : i32[], selected : i32) : void {
     let pw : i32 = hotbarPanelW();
     let ph : i32 = hotbarPanelH();
     let hx : i32 = (fbW - pw) / 2;
     let hy : i32 = fbH - 8 - ph;
-    drawHotbar(base, fbW, fbH, hx, hy, hotbar, selected);
+    drawHotbar(base, fbW, fbH, hx, hy, atlas, hotbar, selected);
     drawHealth(base, fbW, fbH, hx, hy - healthHeight() - 6, hp, maxHp);
 }
