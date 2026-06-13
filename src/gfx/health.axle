@@ -1,0 +1,72 @@
+// health — the Minecraft-style heart row. Each heart is a 9×9 sprite with
+// a dark outline, a red body and a light highlight (drawn from a small
+// pixel mask), sitting on a grey "empty container" heart so missing
+// health reads as hollow hearts. Each heart = 2 hp; odd hp shows a
+// half-heart. Stateless: reads hp, paints pixels.
+
+use crate::platform::mem::rgb;
+use crate::gfx::color::fillRect;
+
+/** 9×9 heart, one digit per pixel: 0 empty, 1 outline, 3 body,
+ *  4 highlight (the shiny upper-left lobe). */
+fn heartMask() : string {
+    return "011000110144101331144313331133333331133333331013333310001333100000131000000010000";
+}
+
+fn heartScale() : i32 { return 2; }
+
+/** Pixel colour for a mask code, in the red (filled) or grey (empty)
+ *  palette. */
+fn heartColor(code : i32, filled : bool) : i32 {
+    if (filled) {
+        if (code == 1) { return rgb(54, 10, 10); }
+        if (code == 3) { return rgb(228, 40, 40); }
+        return rgb(255, 140, 140);
+    }
+    if (code == 1) { return rgb(22, 20, 26); }
+    if (code == 3) { return rgb(78, 78, 90); }
+    return rgb(108, 108, 122);
+}
+
+/** Draw one heart at (x, y). `fill`: 0 empty, 1 half (left side red),
+ *  2 full. The grey container is always drawn first, then the red
+ *  overlay for the filled portion. */
+fn drawHeart(base : i64, fbW : i32, fbH : i32, x : i32, y : i32, fill : i32) : void {
+    let scale : i32 = heartScale();
+    let mask : string = heartMask();
+    let r : i32 = 0;
+    while (r < 9) {
+        let c : i32 = 0;
+        while (c < 9) {
+            let code : i32 = mask.byteAt(r * 9 + c) - 48;
+            if (code != 0) {
+                let px : i32 = x + c * scale;
+                let py : i32 = y + r * scale;
+                fillRect(base, fbW, fbH, px, py, scale, scale, heartColor(code, false));
+                if (fill == 2 || (fill == 1 && c <= 4)) {
+                    fillRect(base, fbW, fbH, px, py, scale, scale, heartColor(code, true));
+                }
+            }
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+}
+
+/** Draw the heart row (`maxHp / 2` hearts) with its top-left at (x0, y0). */
+fn drawHealth(base : i64, fbW : i32, fbH : i32, x0 : i32, y0 : i32, hp : i32, maxHp : i32) : void {
+    let scale : i32 = heartScale();
+    let hearts : i32 = maxHp / 2;
+    let step : i32 = 9 * scale + 1;
+    let i : i32 = 0;
+    while (i < hearts) {
+        let fill : i32 = 0;
+        if (hp >= (i + 1) * 2) { fill = 2; }
+        else if (hp >= i * 2 + 1) { fill = 1; }
+        drawHeart(base, fbW, fbH, x0 + i * step, y0, fill);
+        i = i + 1;
+    }
+}
+
+/** Pixel height of the heart row (for HUD layout). */
+fn healthHeight() : i32 { return 9 * heartScale(); }

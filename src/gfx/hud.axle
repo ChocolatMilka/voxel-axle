@@ -1,61 +1,20 @@
-// hud — the on-screen overlay drawn straight into the framebuffer after
-// the world and mobs: a Minecraft-style row of hearts for the player's
-// health (each heart = 2 hp, with half-hearts), on a dark backing strip.
-// Stateless: it only reads the player's hp and paints pixels.
+// hud — composes the on-screen overlay: the hotbar along the bottom and
+// the heart row just above it (Minecraft layout, left-aligned with the
+// hotbar). Drawn straight into the framebuffer after the world and mobs.
+// Stateless: reads hp + the hotbar and paints pixels.
 
-use crate::platform::sdl::putPixel;
-use crate::platform::sdl::fillRect;
-use crate::platform::sdl::rgb;
-use crate::config;
+use crate::gfx::hotbar::drawHotbar;
+use crate::gfx::hotbar::hotbarPanelW;
+use crate::gfx::hotbar::hotbarPanelH;
+use crate::gfx::health::drawHealth;
+use crate::gfx::health::healthHeight;
 
-/** 11×10 heart mask: '1' is a filled pixel of the heart shape. */
-fn heartMask() : string {
-    return "0110001100011110111101111111111111111111101111111100011111110000111110000001110000000010000000000";
-}
-
-fn maskAt(r : i32, c : i32) : i32 {
-    let i : i32 = r * 11 + c;
-    return heartMask().byteAt(i);
-}
-
-/** Draw one heart at (x,y), scaled, in mode 0 = empty, 1 = half, 2 = full. */
-fn drawHeart(base : i64, fbW : i32, fbH : i32, x : i32, y : i32, scale : i32, mode : i32) : void {
-    let full : i32 = rgb(220, 48, 48);
-    let dark : i32 = rgb(72, 38, 40);
-    let r : i32 = 0;
-    while (r < 10) {
-        let c : i32 = 0;
-        while (c < 11) {
-            if (maskAt(r, c) == 49) {
-                let color : i32 = dark;
-                if (mode == 2) { color = full; }
-                else if (mode == 1 && c <= 4) { color = full; }
-                fillRect(base, fbW, fbH, x + c * scale, y + r * scale, scale, scale, color);
-            }
-            c = c + 1;
-        }
-        r = r + 1;
-    }
-}
-
-/** Draw the full health bar: `maxHp / 2` hearts reflecting `hp`. */
-fn drawHealth(base : i64, fbW : i32, fbH : i32, hp : i32, maxHp : i32) : void {
-    let scale : i32 = 2;
-    let hw : i32 = 11 * scale;
-    let hh : i32 = 10 * scale;
-    let hearts : i32 = maxHp / 2;
-    let step : i32 = hw + config::heartGap;
-    let x0 : i32 = config::hudMargin;
-    let y0 : i32 = fbH - config::hudMargin - hh;
-
-    fillRect(base, fbW, fbH, x0 - 6, y0 - 6, hearts * step + 8, hh + 12, rgb(18, 18, 22));
-
-    let i : i32 = 0;
-    while (i < hearts) {
-        let mode : i32 = 0;
-        if (hp >= (i + 1) * 2) { mode = 2; }
-        else if (hp >= i * 2 + 1) { mode = 1; }
-        drawHeart(base, fbW, fbH, x0 + i * step, y0, scale, mode);
-        i = i + 1;
-    }
+/** Draw the full HUD overlay. */
+fn drawHud(base : i64, fbW : i32, fbH : i32, hp : i32, maxHp : i32, hotbar : i32[], selected : i32) : void {
+    let pw : i32 = hotbarPanelW();
+    let ph : i32 = hotbarPanelH();
+    let hx : i32 = (fbW - pw) / 2;
+    let hy : i32 = fbH - 8 - ph;
+    drawHotbar(base, fbW, fbH, hx, hy, hotbar, selected);
+    drawHealth(base, fbW, fbH, hx, hy - healthHeight() - 6, hp, maxHp);
 }
