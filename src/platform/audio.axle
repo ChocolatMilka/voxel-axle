@@ -1,0 +1,59 @@
+// audio — minimal one-shot WAV playback over SDL2's audio device (so it
+// stays cross-platform, no extra deps). A `Sound` loads a .wav once and
+// `play()` (re)queues it on its own device. Loading or device failure is
+// silent (`ok = 0`) — the game runs fine without the file.
+//
+// Requires SDL to be initialised with SDL_INIT_AUDIO (see main).
+
+use crate::platform::mem::allocBytes;
+use crate::platform::mem::nullPtr;
+use crate::platform::mem::asPtr;
+use crate::platform::mem::isNull;
+use crate::platform::mem::readI32;
+use crate::platform::mem::readI64;
+
+@link_name("SDL_RWFromFile")       native fn SDL_RWFromFile(file : string, mode : string) : ptr;
+@link_name("SDL_LoadWAV_RW")       native fn SDL_LoadWAV_RW(rw : ptr, freesrc : i32, spec : ptr, audio_buf : ptr, audio_len : ptr) : ptr;
+@link_name("SDL_OpenAudioDevice")  native fn SDL_OpenAudioDevice(device : ptr, iscapture : i32, desired : ptr, obtained : ptr, allowed : i32) : i32;
+@link_name("SDL_QueueAudio")       native fn SDL_QueueAudio(dev : i32, data : ptr, len : i32) : i32;
+@link_name("SDL_ClearQueuedAudio") native fn SDL_ClearQueuedAudio(dev : i32) : void;
+@link_name("SDL_PauseAudioDevice") native fn SDL_PauseAudioDevice(dev : i32, pause : i32) : void;
+
+class Sound {
+    dev : i32,
+    buf : i64,
+    len : i32,
+    ok : i32,
+
+    constructor(path : string) {
+        this.dev = 0;
+        this.buf = 0;
+        this.len = 0;
+        this.ok = 0;
+        let spec : i64 = allocBytes(64);
+        let bufpp : i64 = allocBytes(8);
+        let lenp : i64 = allocBytes(8);
+        let rw : ptr = SDL_RWFromFile(path, "rb");
+        if (isNull(rw)) { return; }
+        let res : ptr = SDL_LoadWAV_RW(rw, 1, asPtr(spec), asPtr(bufpp), asPtr(lenp));
+        if (isNull(res)) { return; }
+        this.buf = readI64(bufpp, 0);
+        this.len = readI32(lenp, 0);
+        // Open a device matching the WAV's own format (obtained = NULL,
+        // allowed_changes = 0) so the raw queued data plays correctly.
+        let d : i32 = SDL_OpenAudioDevice(nullPtr(), 0, asPtr(spec), nullPtr(), 0);
+        if (d == 0) { return; }
+        this.dev = d;
+        SDL_PauseAudioDevice(d, 0);
+        this.ok = 1;
+    }
+
+    fn loaded() : bool { return this.ok == 1; }
+
+    /** (Re)start the clip from the top. */
+    fn play() : void {
+        if (this.ok == 0) { return; }
+        SDL_ClearQueuedAudio(this.dev);
+        SDL_QueueAudio(this.dev, asPtr(this.buf), this.len);
+    }
+}

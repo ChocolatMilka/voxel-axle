@@ -40,6 +40,13 @@ fn readI32(base : i64, off : i64) : i32 {
     }
 }
 
+fn readI64(base : i64, off : i64) : i64 {
+    unsafe {
+        let slot : ptr<i64> = (base + off) as ptr<i64>;
+        return *slot;
+    }
+}
+
 fn readU8(base : i64, off : i64) : i32 {
     unsafe {
         let slot : ptr<i8> = (base + off) as ptr<i8>;

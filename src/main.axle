@@ -36,6 +36,7 @@ use crate::platform::sdl::SDL_GetRelativeMouseState;
 use crate::platform::sdl::SDL_GetMouseState;
 use crate::platform::sdl::SDL_GetWindowSize;
 use crate::platform::sdl::SDL_INIT_VIDEO;
+use crate::platform::sdl::SDL_INIT_AUDIO;
 use crate::platform::sdl::SDL_WINDOWPOS_CENTERED;
 use crate::platform::sdl::SDL_WINDOW_SHOWN;
 use crate::platform::sdl::SDL_WINDOW_RESIZABLE;
@@ -66,6 +67,7 @@ use crate::platform::mem::readI32;
 use crate::platform::mem::readU8;
 use crate::platform::file::loadAtlas;
 use crate::platform::clock::GameClock;
+use crate::platform::audio::Sound;
 use crate::world::manager::ChunkManager;
 use crate::entities::player::Player;
 use crate::entities::mobs::MobManager;
@@ -95,7 +97,7 @@ fn main() : void {
     let h : i32 = config::renderH;
     let winW : i32 = config::screenW;
     let winH : i32 = config::screenH;
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) { Console.println("SDL_Init failed"); return; }
+    if (SDL_Init(SDL_INIT_VIDEO + SDL_INIT_AUDIO) != 0) { Console.println("SDL_Init failed"); return; }
     let win : ptr = SDL_CreateWindow("Axle Voxel — survival",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, winW, winH,
         SDL_WINDOW_SHOWN + SDL_WINDOW_RESIZABLE);
@@ -140,6 +142,13 @@ fn main() : void {
 
     let clock : GameClock = new GameClock();
     let picker : Picker = new Picker();
+    // Creeper SFX: the "charge" cry while it winds up, and the "exploded"
+    // echo on the blast. Loaded from sounds/ (or one dir up when run from
+    // target/); missing = silent, game unaffected.
+    let chargeSnd : Sound = new Sound("sounds/entity/creeper/charge.wav");
+    if (!chargeSnd.loaded()) { chargeSnd = new Sound("../sounds/entity/creeper/charge.wav"); }
+    let explodedSnd : Sound = new Sound("sounds/entity/creeper/exploded.wav");
+    if (!explodedSnd.loaded()) { explodedSnd = new Sound("../sounds/entity/creeper/exploded.wav"); }
     let attackCd : i32 = 0;
     let wasGmToggle : bool = false;
     let wasRight : bool = false;
@@ -247,6 +256,8 @@ fn main() : void {
                 if (attackCd > 0) { attackCd = attackCd - 1; }
                 stp = stp + 1;
             }
+            if (mobs.chargePending > 0) { chargeSnd.play(); mobs.chargePending = 0; }
+            if (mobs.boomPending > 0) { explodedSnd.play(); mobs.boomPending = 0; }
             player.refresh();
 
             man.ensureLoaded(chunkOf(player.posX), chunkOf(player.posZ));
