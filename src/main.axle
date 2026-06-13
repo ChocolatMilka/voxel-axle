@@ -1,20 +1,23 @@
 // voxel — a Minecraft-style survival world in Axle, software-rendered into
 // an SDL2 window. You are a real entity: gravity pulls you down, you stand
-// and walk on the solid streamed terrain, jump, swim, and take fall /
-// drowning damage with health that regenerates. The land is split into
-// Minecraft-like biomes (ocean, beach, plains, forest, desert, savanna,
-// snowy, mountains) with trees, and texture-skinned passive mobs (chickens,
-// sheep, cows) that wander, flee when struck, and collapse when killed.
+// and walk on the solid streamed terrain, jump, swim, take fall / drowning
+// damage with regenerating health, and can dig and place blocks in a full
+// voxel world. The land is split into Minecraft-like biomes with trees,
+// and texture-skinned passive mobs wander, flee when struck, and collapse
+// when killed.
 //
 // Controls:  Mouse look, W/A/S/D move, LCtrl sprint, Space jump / swim up,
-//            Left-click attack, Esc / close quit.
+//            Left-click dig / attack, Right-click place block,
+//            1-9 select hotbar slot, Esc / close quit.
 //
-// Build & run:  axle run      (SDL2.dll must sit next to the binary)
+// Build & run:  axle run      (SDL2.dll + atlas.raw must sit by the binary)
+//
+// This entry point stays thin: create the window + buffers, build the
+// world, place the player (see `game::spawn`), then run the
+// input → simulate → render loop paced by the frame clock. Block picking
+// lives in `game::ray`, the HUD in `gfx::hud`.
 
 use std::numeric::math::floorToInt;
-use std::numeric::math::sin;
-use std::numeric::math::cos;
-use crate::platform::sdl::cfree;
 use crate::platform::sdl::SDL_Init;
 use crate::platform::sdl::SDL_Quit;
 use crate::platform::sdl::SDL_CreateWindow;
@@ -37,6 +40,7 @@ use crate::platform::sdl::SDL_RENDERER_ACCEL_VSYNC;
 use crate::platform::sdl::SDL_PIXELFORMAT_ARGB8888;
 use crate::platform::sdl::SDL_TEXTUREACCESS_STREAMING;
 use crate::platform::sdl::SDL_QUIT;
+use crate::platform::sdl::SDL_BUTTON_RMASK;
 use crate::platform::sdl::SC_W;
 use crate::platform::sdl::SC_A;
 use crate::platform::sdl::SC_S;
@@ -47,19 +51,26 @@ use crate::platform::sdl::SC_LSHIFT;
 use crate::platform::sdl::SC_F3;
 use crate::platform::sdl::SC_F4;
 use crate::platform::sdl::SC_ESC;
-use crate::platform::sdl::nullPtr;
-use crate::platform::sdl::asPtr;
-use crate::platform::sdl::isNull;
-use crate::platform::sdl::allocBytes;
-use crate::platform::sdl::readI32;
-use crate::platform::sdl::readU8;
-use crate::platform::sdl::loadAtlas;
+use crate::platform::sdl::SC_1;
 use crate::platform::sdl::keyboardBase;
+use crate::platform::mem::cfree;
+use crate::platform::mem::nullPtr;
+use crate::platform::mem::asPtr;
+use crate::platform::mem::isNull;
+use crate::platform::mem::allocBytes;
+use crate::platform::mem::readI32;
+use crate::platform::mem::readU8;
+use crate::platform::file::loadAtlas;
+use crate::platform::clock::GameClock;
 use crate::world::manager::ChunkManager;
 use crate::entities::player::Player;
 use crate::entities::mobs::MobManager;
+use crate::game::start::Spawn;
+use crate::game::start::openYaw;
+use crate::game::ray::Picker;
+use crate::game::ray::cellInPlayer;
 use crate::gfx::render::Renderer;
-use crate::gfx::hud::drawHealth;
+use crate::gfx::hud::drawHud;
 use crate::config;
 
 fn axis(kb : i64, plus : i32, minus : i32) : f64 {
@@ -71,57 +82,6 @@ fn axis(kb : i64, plus : i32, minus : i32) : f64 {
 
 fn chunkOf(p : f64) : i32 {
     return floorToInt(p / (config::chunkSize as f64)) as i32;
-}
-
-/** A clearing to spawn in: the 3×3 columns around (gx, gz) are tree-free
- *  and within one block of height, so the player starts on flat open
- *  ground with a view rather than buried against a trunk. */
-fn openSpot(man : ChunkManager, gx : i32, gz : i32) : bool {
-    let h0 : i32 = man.columnHeight(gx, gz);
-    let dz : i32 = 0 - 1;
-    while (dz <= 1) {
-        let dx : i32 = 0 - 1;
-        while (dx <= 1) {
-            let cx : i32 = gx + dx;
-            let cz : i32 = gz + dz;
-            let hc : i32 = man.columnHeight(cx, cz);
-            if (man.collisionHeight(cx, cz) != hc) { return false; }
-            let d : i32 = hc - h0;
-            if (d < 0) { d = 0 - d; }
-            if (d > 1) { return false; }
-            dx = dx + 1;
-        }
-        dz = dz + 1;
-    }
-    return true;
-}
-
-/** Pick the spawn yaw whose forward ray stays open (tree-free, not
- *  rising) for the most blocks, so the player faces the clearing rather
- *  than a trunk. Forward for a yaw is (-sin, cos). */
-fn openYaw(man : ChunkManager, sx : i32, sz : i32, baseH : i32) : f64 {
-    let best : f64 = 0.0;
-    let bestScore : i32 = 0 - 1;
-    let k : i32 = 0;
-    while (k < 8) {
-        let yaw : f64 = (k as f64) * 0.7853981634;
-        let fwx : f64 = 0.0 - sin(yaw);
-        let fwz : f64 = cos(yaw);
-        let score : i32 = 0;
-        let blocked : bool = false;
-        let d : f64 = 1.5;
-        while (d < 8.0 && !blocked) {
-            let cx : i32 = floorToInt((sx as f64) + 0.5 + fwx * d) as i32;
-            let cz : i32 = floorToInt((sz as f64) + 0.5 + fwz * d) as i32;
-            let hc : i32 = man.columnHeight(cx, cz);
-            if (man.collisionHeight(cx, cz) != hc || hc > baseH + 1) { blocked = true; }
-            else { score = score + 1; }
-            d = d + 1.0;
-        }
-        if (score > bestScore) { bestScore = score; best = yaw; }
-        k = k + 1;
-    }
-    return best;
 }
 
 fn main() : void {
@@ -145,37 +105,22 @@ fn main() : void {
     let kb : i64 = keyboardBase();
     SDL_SetRelativeMouseMode(1);
 
-    Console.println("Survive! Mouse look, WASD move, Ctrl sprint, Space jump, click to attack, Esc quit.");
+    Console.println("Survive! Mouse look, WASD move, Ctrl sprint, Space jump. Left-click dig/attack, right-click place, 1-9 pick block. Esc quit.");
     let man : ChunkManager = new ChunkManager();
     man.ensureLoaded(0, 0);
 
-    // Spawn on the highest dry column near the origin — a hilltop vantage
-    // with an open view, rather than the foot of a slope.
-    let sx : i32 = 0;
-    let sz : i32 = 0;
-    let bestH : i32 = 0 - 1;
-    let gz : i32 = 0 - 40;
-    while (gz <= 40) {
-        let gx : i32 = 0 - 40;
-        while (gx <= 40) {
-            let hh : i32 = man.columnHeight(gx, gz);
-            if (hh > config::seaLevel + 2 && hh > bestH && openSpot(man, gx, gz)) { bestH = hh; sx = gx; sz = gz; }
-            gx = gx + 1;
-        }
-        gz = gz + 1;
-    }
-    if (bestH < 0) { bestH = config::seaLevel + 1; }
-    let spawnY : f64 = bestH as f64;
-    let player : Player = new Player((sx as f64) + 0.5, spawnY, (sz as f64) + 0.5);
-    player.yaw = openYaw(man, sx, sz, bestH);
+    // Choose an open hilltop to start on and a yaw facing the clearing.
+    let sp : Spawn = new Spawn();
+    sp.find(man);
+    let player : Player = new Player((sp.sx as f64) + 0.5, sp.h as f64, (sp.sz as f64) + 0.5);
+    player.yaw = openYaw(man, sp.sx, sp.sz, sp.h);
     player.refresh();
     man.ensureLoaded(chunkOf(player.posX), chunkOf(player.posZ));
 
     let mobs : MobManager = new MobManager();
     let renderer : Renderer = new Renderer();
 
-    // Block + mob texture atlas, loaded at runtime from `atlas.raw`
-    // (no longer embedded in the source).
+    // Block + mob texture atlas, loaded at runtime from `atlas.raw`.
     let tpx : i64 = config::tilePx as i64;
     let atlasBytes : i64 = tpx * tpx * 4 * (config::atlasTiles as i64);
     let atlas : i64 = allocBytes(atlasBytes);
@@ -184,8 +129,11 @@ fn main() : void {
     }
     renderer.setAtlas(atlas);
 
+    let clock : GameClock = new GameClock();
+    let picker : Picker = new Picker();
     let attackCd : i32 = 0;
     let wasGmToggle : bool = false;
+    let wasRight : bool = false;
     let running : bool = true;
     while (running) {
         while (SDL_PollEvent(asPtr(ev)) != 0) {
@@ -202,7 +150,7 @@ fn main() : void {
         }
         wasGmToggle = gmBoth;
 
-        // Mouse look (relative motion) + attack button.
+        // Mouse look (relative motion) + button state.
         let btn : i32 = SDL_GetRelativeMouseState(asPtr(mrel), asPtr(mrel + 4));
         let mdx : i32 = readI32(mrel, 0);
         let mdy : i32 = readI32(mrel, 4);
@@ -213,16 +161,49 @@ fn main() : void {
         let sprint : bool = readU8(kb, SC_LCTRL as i64) != 0;
         let up : bool = readU8(kb, SC_SPACE as i64) != 0;
         let down : bool = readU8(kb, SC_LSHIFT as i64) != 0;
-        player.update(man, fwd, strafe, sprint, up, down);
 
-        if (attackCd > 0) { attackCd = attackCd - 1; }
-        if ((btn & 1) != 0 && attackCd == 0) {
-            mobs.attackNearest(player);
-            attackCd = config::attackCooldown;
+        // Hotbar selection (number row 1–9).
+        let slot : i32 = 0;
+        while (slot < config::hotbarSize) {
+            if (readU8(kb, (SC_1 + slot) as i64) != 0) { player.selectSlot(slot); }
+            slot = slot + 1;
         }
 
+        // Fixed-timestep simulation: run as many fixed steps as the real
+        // elapsed time demands, so movement / jump advance at the same
+        // speed whatever the frame rate (extra steps catch up after a slow
+        // frame; zero steps when the frame came early).
+        let nsteps : i32 = clock.steps();
+        let st : i32 = 0;
+        while (st < nsteps) {
+            player.update(man, fwd, strafe, sprint, up, down);
+            mobs.update(man, player);
+            if (attackCd > 0) { attackCd = attackCd - 1; }
+            st = st + 1;
+        }
+        // Reflect this frame's mouse-look even on a zero-step frame so the
+        // camera turns smoothly and the look-ray is current.
+        player.refresh();
+
         man.ensureLoaded(chunkOf(player.posX), chunkOf(player.posZ));
-        mobs.update(man, player);
+
+        // Aim the look-ray once per frame; left-click breaks / attacks,
+        // right-click places (edge-triggered).
+        picker.cast(man, player);
+        if ((btn & 1) != 0 && attackCd == 0) {
+            let kind : i32 = mobs.attackNearest(player);
+            if (kind < 0 && picker.hit == 1) {
+                man.breakAt(picker.bx, picker.by, picker.bz);
+            }
+            attackCd = config::editCooldown;
+        }
+        let rightDown : bool = (btn & SDL_BUTTON_RMASK) != 0;
+        if (rightDown && !wasRight && picker.hit == 1) {
+            if (!cellInPlayer(player, picker.px, picker.py, picker.pz)) {
+                man.placeAt(picker.px, picker.py, picker.pz, player.heldBlock());
+            }
+        }
+        wasRight = rightDown;
 
         // Death → respawn at full health on the nearest ground.
         if (player.hp <= 0) {
@@ -237,15 +218,16 @@ fn main() : void {
 
         renderer.render(man, player, pixels, zbuf, w, h);
         renderer.renderMobs(mobs, player, pixels, zbuf, w, h);
-        drawHealth(pixels, w, h, player.hp, player.maxHp);
+        drawHud(pixels, w, h, player.hp, player.maxHp, player.hotbar, player.selected);
         renderer.crosshair(pixels, w, h);
 
         SDL_UpdateTexture(tex, nullPtr(), asPtr(pixels), w * 4);
         SDL_RenderClear(ren);
         SDL_RenderCopy(ren, tex, nullPtr(), nullPtr());
-        // PRESENTVSYNC paces the loop to the display; no extra sleep (a
-        // fixed delay would stack on top of vsync and halve the frame rate).
         SDL_RenderPresent(ren);
+        // Sleep any leftover frame budget so the CPU isn't pinned when
+        // v-sync is absent (PRESENTVSYNC alone is not guaranteed).
+        clock.cap();
     }
 
     cfree(asPtr(pixels));
