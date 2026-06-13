@@ -8,7 +8,7 @@
 //
 // Controls:  Mouse look, W/A/S/D move, LCtrl sprint, Space jump / swim up,
 //            Left-click dig / attack, Right-click place block,
-//            1-9 select hotbar slot, Esc / close quit.
+//            1-9 select hotbar slot, Esc pause menu, close quit.
 //
 // Build & run:  axle run      (SDL2.dll + atlas.raw must sit by the binary)
 //
@@ -33,9 +33,12 @@ use crate::platform::sdl::SDL_RenderPresent;
 use crate::platform::sdl::SDL_PollEvent;
 use crate::platform::sdl::SDL_SetRelativeMouseMode;
 use crate::platform::sdl::SDL_GetRelativeMouseState;
+use crate::platform::sdl::SDL_GetMouseState;
+use crate::platform::sdl::SDL_GetWindowSize;
 use crate::platform::sdl::SDL_INIT_VIDEO;
 use crate::platform::sdl::SDL_WINDOWPOS_CENTERED;
 use crate::platform::sdl::SDL_WINDOW_SHOWN;
+use crate::platform::sdl::SDL_WINDOW_RESIZABLE;
 use crate::platform::sdl::SDL_RENDERER_ACCEL_VSYNC;
 use crate::platform::sdl::SDL_PIXELFORMAT_ARGB8888;
 use crate::platform::sdl::SDL_TEXTUREACCESS_STREAMING;
@@ -71,6 +74,8 @@ use crate::game::ray::Picker;
 use crate::game::ray::cellInPlayer;
 use crate::gfx::render::Renderer;
 use crate::gfx::hud::drawHud;
+use crate::gfx::menu::drawPauseMenu;
+use crate::gfx::menu::menuHit;
 use crate::config;
 
 fn axis(kb : i64, plus : i32, minus : i32) : f64 {
@@ -91,7 +96,8 @@ fn main() : void {
     let winH : i32 = config::screenH;
     if (SDL_Init(SDL_INIT_VIDEO) != 0) { Console.println("SDL_Init failed"); return; }
     let win : ptr = SDL_CreateWindow("Axle Voxel — survival",
-        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, winW, winH, SDL_WINDOW_SHOWN);
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, winW, winH,
+        SDL_WINDOW_SHOWN + SDL_WINDOW_RESIZABLE);
     if (isNull(win)) { Console.println("window failed"); SDL_Quit(); return; }
     let ren : ptr = SDL_CreateRenderer(win, 0 - 1, SDL_RENDERER_ACCEL_VSYNC);
     if (isNull(ren)) { Console.println("renderer failed"); SDL_DestroyWindow(win); SDL_Quit(); return; }
@@ -102,10 +108,12 @@ fn main() : void {
     let zbuf : i64 = allocBytes((w as i64) * (h as i64) * 8);
     let ev : i64 = allocBytes(128);
     let mrel : i64 = allocBytes(16);
+    let mabs : i64 = allocBytes(16);   // absolute cursor for the pause menu
+    let wsz : i64 = allocBytes(16);    // current window size (for resize scaling)
     let kb : i64 = keyboardBase();
     SDL_SetRelativeMouseMode(1);
 
-    Console.println("Survive! Mouse look, WASD move, Ctrl sprint, Space jump. Left-click dig/attack, right-click place, 1-9 pick block. Esc quit.");
+    Console.println("Survive! Mouse look, WASD move, Ctrl sprint, Space jump. Left-click dig/attack, right-click place, 1-9 pick block. Esc pauses.");
     let man : ChunkManager = new ChunkManager();
     man.ensureLoaded(0, 0);
 
@@ -134,99 +142,168 @@ fn main() : void {
     let attackCd : i32 = 0;
     let wasGmToggle : bool = false;
     let wasRight : bool = false;
+    let wasEsc : bool = false;
+    let wasMenuClick : bool = false;
+    let paused : bool = false;
     let running : bool = true;
     while (running) {
         while (SDL_PollEvent(asPtr(ev)) != 0) {
             if (readI32(ev, 0) == SDL_QUIT) { running = false; }
         }
-        if (readU8(kb, SC_ESC as i64) != 0) { running = false; }
 
-        // F3 + F4 together toggles survival ↔ creative (latched on the edge).
-        let gmBoth : bool = readU8(kb, SC_F3 as i64) != 0 && readU8(kb, SC_F4 as i64) != 0;
-        if (gmBoth && !wasGmToggle) {
-            player.toggleGameMode();
-            if (player.creative == 1) { Console.println("Creative — fly: Space up, Shift down, Ctrl boost."); }
-            else { Console.println("Survival."); }
-        }
-        wasGmToggle = gmBoth;
-
-        // Mouse look (relative motion) + button state.
-        let btn : i32 = SDL_GetRelativeMouseState(asPtr(mrel), asPtr(mrel + 4));
-        let mdx : i32 = readI32(mrel, 0);
-        let mdy : i32 = readI32(mrel, 4);
-        player.look(0.0 - (mdx as f64) * config::mouseSens, 0.0 - (mdy as f64) * config::mouseSens);
-
-        let fwd : f64 = axis(kb, SC_W, SC_S);
-        let strafe : f64 = axis(kb, SC_D, SC_A);
-        let sprint : bool = readU8(kb, SC_LCTRL as i64) != 0;
-        let up : bool = readU8(kb, SC_SPACE as i64) != 0;
-        let down : bool = readU8(kb, SC_LSHIFT as i64) != 0;
-
-        // Hotbar selection (number row 1–9).
-        let slot : i32 = 0;
-        while (slot < config::hotbarSize) {
-            if (readU8(kb, (SC_1 + slot) as i64) != 0) { player.selectSlot(slot); }
-            slot = slot + 1;
-        }
-
-        // Fixed-timestep simulation: run as many fixed steps as the real
-        // elapsed time demands, so movement / jump advance at the same
-        // speed whatever the frame rate (extra steps catch up after a slow
-        // frame; zero steps when the frame came early).
-        let nsteps : i32 = clock.steps();
-        let st : i32 = 0;
-        while (st < nsteps) {
-            player.update(man, fwd, strafe, sprint, up, down);
-            mobs.update(man, player);
-            if (attackCd > 0) { attackCd = attackCd - 1; }
-            st = st + 1;
-        }
-        // Reflect this frame's mouse-look even on a zero-step frame so the
-        // camera turns smoothly and the look-ray is current.
-        player.refresh();
-
-        man.ensureLoaded(chunkOf(player.posX), chunkOf(player.posZ));
-
-        // Aim the look-ray once per frame; left-click breaks / attacks,
-        // right-click places (edge-triggered).
-        picker.cast(man, player);
-        if ((btn & 1) != 0 && attackCd == 0) {
-            let kind : i32 = mobs.attackNearest(player);
-            if (kind < 0 && picker.hit == 1) {
-                man.breakAt(picker.bx, picker.by, picker.bz);
-            }
-            attackCd = config::editCooldown;
-        }
-        let rightDown : bool = (btn & SDL_BUTTON_RMASK) != 0;
-        if (rightDown && !wasRight && picker.hit == 1) {
-            if (!cellInPlayer(player, picker.px, picker.py, picker.pz)) {
-                man.placeAt(picker.px, picker.py, picker.pz, player.heldBlock());
+        // Keep the framebuffer's aspect matched to the (resizable) window:
+        // render height is fixed, width tracks the window ratio, so the
+        // view scales without stretching and the FOV stays correct.
+        SDL_GetWindowSize(win, asPtr(wsz), asPtr(wsz + 4));
+        let winCW : i32 = readI32(wsz, 0);
+        let winCH : i32 = readI32(wsz, 4);
+        if (winCW >= 1 && winCH >= 1) {
+            let desiredW : i32 = h * winCW / winCH;
+            if (desiredW < 256) { desiredW = 256; }
+            if (desiredW > 1280) { desiredW = 1280; }
+            if (desiredW != w) {
+                cfree(asPtr(pixels));
+                cfree(asPtr(zbuf));
+                w = desiredW;
+                pixels = allocBytes((w as i64) * (h as i64) * 4);
+                zbuf = allocBytes((w as i64) * (h as i64) * 8);
+                SDL_DestroyTexture(tex);
+                tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, h);
+                renderer.setViewWidth(w);
             }
         }
-        wasRight = rightDown;
 
-        // Death → respawn at full health on the nearest ground.
-        if (player.hp <= 0) {
-            player.hp = config::playerMaxHp;
-            player.velY = 0.0;
-            player.airTicks = 0;
-            player.sinceHurt = 0;
-            player.posY = man.columnHeight(floorToInt(player.posX) as i32, floorToInt(player.posZ) as i32) as f64;
+        // Esc toggles the pause menu (edge-triggered). Pausing frees the
+        // cursor for the menu; resuming re-grabs it and discards the
+        // accumulated look delta so the camera doesn't jump.
+        let escDown : bool = readU8(kb, SC_ESC as i64) != 0;
+        if (escDown && !wasEsc) {
+            paused = !paused;
+            if (paused) {
+                SDL_SetRelativeMouseMode(0);
+            } else {
+                SDL_SetRelativeMouseMode(1);
+                SDL_GetRelativeMouseState(asPtr(mrel), asPtr(mrel + 4));
+            }
+        }
+        wasEsc = escDown;
+
+        let hover : i32 = 0 - 1;
+        if (!paused) {
+            // ── Running: input → fixed-timestep simulation → editing ──
+            // F3 + F4 together toggles survival ↔ creative (edge-latched).
+            let gmBoth : bool = readU8(kb, SC_F3 as i64) != 0 && readU8(kb, SC_F4 as i64) != 0;
+            if (gmBoth && !wasGmToggle) {
+                player.toggleGameMode();
+                if (player.creative == 1) { Console.println("Creative — fly: Space up, Shift down, Ctrl boost."); }
+                else { Console.println("Survival."); }
+            }
+            wasGmToggle = gmBoth;
+
+            let btn : i32 = SDL_GetRelativeMouseState(asPtr(mrel), asPtr(mrel + 4));
+            let mdx : i32 = readI32(mrel, 0);
+            let mdy : i32 = readI32(mrel, 4);
+            player.look(0.0 - (mdx as f64) * config::mouseSens, 0.0 - (mdy as f64) * config::mouseSens);
+
+            let fwd : f64 = axis(kb, SC_W, SC_S);
+            let strafe : f64 = axis(kb, SC_D, SC_A);
+            let sprint : bool = readU8(kb, SC_LCTRL as i64) != 0;
+            let up : bool = readU8(kb, SC_SPACE as i64) != 0;
+            let down : bool = readU8(kb, SC_LSHIFT as i64) != 0;
+
+            // Hotbar selection (number row 1–9).
+            let slot : i32 = 0;
+            while (slot < config::hotbarSize) {
+                if (readU8(kb, (SC_1 + slot) as i64) != 0) { player.selectSlot(slot); }
+                slot = slot + 1;
+            }
+
+            // Fixed-timestep simulation: as many fixed steps as the real
+            // elapsed time demands (frame-rate independent).
+            let nsteps : i32 = clock.steps();
+            let stp : i32 = 0;
+            while (stp < nsteps) {
+                player.update(man, fwd, strafe, sprint, up, down);
+                mobs.update(man, player);
+                if (attackCd > 0) { attackCd = attackCd - 1; }
+                stp = stp + 1;
+            }
             player.refresh();
-            Console.println("You died — respawned.");
+
+            man.ensureLoaded(chunkOf(player.posX), chunkOf(player.posZ));
+
+            // Aim once; left-click breaks / attacks, right-click places.
+            picker.cast(man, player);
+            if ((btn & 1) != 0 && attackCd == 0) {
+                let kind : i32 = mobs.attackNearest(player);
+                if (kind < 0 && picker.hit == 1) {
+                    man.breakAt(picker.bx, picker.by, picker.bz);
+                }
+                attackCd = config::editCooldown;
+            }
+            let rightDown : bool = (btn & SDL_BUTTON_RMASK) != 0;
+            if (rightDown && !wasRight && picker.hit == 1) {
+                if (!cellInPlayer(player, picker.px, picker.py, picker.pz)) {
+                    man.placeAt(picker.px, picker.py, picker.pz, player.heldBlock());
+                }
+            }
+            wasRight = rightDown;
+
+            // Death → respawn at full health on the nearest ground.
+            if (player.hp <= 0) {
+                player.hp = config::playerMaxHp;
+                player.velY = 0.0;
+                player.airTicks = 0;
+                player.sinceHurt = 0;
+                player.posY = man.columnHeight(floorToInt(player.posX) as i32, floorToInt(player.posZ) as i32) as f64;
+                player.refresh();
+                Console.println("You died — respawned.");
+            }
+        } else {
+            // ── Paused: drive the menu with the free cursor. The window is
+            // resizable, so map the window-space cursor into the 640×400
+            // framebuffer the menu is laid out in. ──
+            let mbtn : i32 = SDL_GetMouseState(asPtr(mabs), asPtr(mabs + 4));
+            SDL_GetWindowSize(win, asPtr(wsz), asPtr(wsz + 4));
+            let cwW : i32 = readI32(wsz, 0);
+            let cwH : i32 = readI32(wsz, 4);
+            if (cwW < 1) { cwW = 1; }
+            if (cwH < 1) { cwH = 1; }
+            let fbx : i32 = readI32(mabs, 0) * w / cwW;
+            let fby : i32 = readI32(mabs, 4) * h / cwH;
+            hover = menuHit(w, h, fbx, fby);
+            let click : bool = (mbtn & 1) != 0;
+            if (click && !wasMenuClick && hover >= 0) {
+                if (hover == 0) {
+                    paused = false;
+                    SDL_SetRelativeMouseMode(1);
+                    SDL_GetRelativeMouseState(asPtr(mrel), asPtr(mrel + 4));
+                } else {
+                    running = false;
+                }
+            }
+            wasMenuClick = click;
         }
 
+        // ── Render: the world always (frozen while paused), then the HUD
+        // + crosshair, or the pause overlay. ──
         renderer.render(man, player, pixels, zbuf, w, h);
         renderer.renderMobs(mobs, player, pixels, zbuf, w, h);
-        drawHud(pixels, w, h, player.hp, player.maxHp, player.hotbar, player.selected);
-        renderer.crosshair(pixels, w, h);
+        if (!paused) {
+            if (picker.hit == 1) {
+                renderer.drawSelection(player, pixels, zbuf, w, h, picker.bx, picker.by, picker.bz);
+            }
+            drawHud(pixels, w, h, player.hp, player.maxHp, player.hotbar, player.selected);
+            renderer.crosshair(pixels, w, h);
+        } else {
+            drawPauseMenu(pixels, w, h, hover);
+        }
 
         SDL_UpdateTexture(tex, nullPtr(), asPtr(pixels), w * 4);
         SDL_RenderClear(ren);
         SDL_RenderCopy(ren, tex, nullPtr(), nullPtr());
         SDL_RenderPresent(ren);
-        // Sleep any leftover frame budget so the CPU isn't pinned when
-        // v-sync is absent (PRESENTVSYNC alone is not guaranteed).
+        // Hold the loop to the tick rate (CPU cap independent of v-sync).
         clock.cap();
     }
 
@@ -234,6 +311,8 @@ fn main() : void {
     cfree(asPtr(zbuf));
     cfree(asPtr(ev));
     cfree(asPtr(mrel));
+    cfree(asPtr(mabs));
+    cfree(asPtr(wsz));
     SDL_DestroyTexture(tex);
     SDL_DestroyRenderer(ren);
     SDL_DestroyWindow(win);

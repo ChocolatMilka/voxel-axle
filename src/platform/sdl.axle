@@ -23,10 +23,13 @@ use crate::platform::mem::nullPtr;
 @link_name("SDL_GetTicks")         native fn SDL_GetTicks() : i32;
 @link_name("SDL_SetRelativeMouseMode")  native fn SDL_SetRelativeMouseMode(enabled : i32) : i32;
 @link_name("SDL_GetRelativeMouseState") native fn SDL_GetRelativeMouseState(x : ptr, y : ptr) : i32;
+@link_name("SDL_GetMouseState")         native fn SDL_GetMouseState(x : ptr, y : ptr) : i32;
+@link_name("SDL_GetWindowSize")         native fn SDL_GetWindowSize(win : ptr, w : ptr, h : ptr) : void;
 
 const SDL_INIT_VIDEO : i32 = 32;
 const SDL_WINDOWPOS_CENTERED : i32 = 805240832;
 const SDL_WINDOW_SHOWN : i32 = 4;
+const SDL_WINDOW_RESIZABLE : i32 = 32;
 const SDL_RENDERER_ACCEL_VSYNC : i32 = 6;
 const SDL_PIXELFORMAT_ARGB8888 : i32 = 372645892;
 const SDL_TEXTUREACCESS_STREAMING : i32 = 1;

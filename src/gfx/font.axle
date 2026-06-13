@@ -1,0 +1,95 @@
+// font — a compact 5×7 bitmap font for HUD / menu text. Each glyph is 7
+// rows of 5 bits ('1' = lit pixel), concatenated into a 35-char string.
+// Covers A–Z (lowercase folds to uppercase), 0–9, space, '-' and '.';
+// anything else renders as a blank space.
+
+use crate::gfx::color::fillRect;
+
+/** Map an ASCII byte to a glyph index (A-Z 0-25, 0-9 26-35, space 36,
+ *  '-' 37, '.' 38). */
+fn glyphIndex(c : i32) : i32 {
+    if (c >= 65 && c <= 90) { return c - 65; }
+    if (c >= 97 && c <= 122) { return c - 97; }
+    if (c >= 48 && c <= 57) { return 26 + (c - 48); }
+    if (c == 45) { return 37; }
+    if (c == 46) { return 38; }
+    return 36;
+}
+
+/** The 35-bit pattern for a glyph index. */
+fn glyphBits(gi : i32) : string {
+    if (gi == 0)  { return "01110100011000111111100011000110001"; } // A
+    if (gi == 1)  { return "11110100011000111110100011000111110"; } // B
+    if (gi == 2)  { return "01110100011000010000100001000101110"; } // C
+    if (gi == 3)  { return "11110100011000110001100011000111110"; } // D
+    if (gi == 4)  { return "11111100001000011110100001000011111"; } // E
+    if (gi == 5)  { return "11111100001000011110100001000010000"; } // F
+    if (gi == 6)  { return "01110100011000010111100011000101111"; } // G
+    if (gi == 7)  { return "10001100011000111111100011000110001"; } // H
+    if (gi == 8)  { return "11111001000010000100001000010011111"; } // I
+    if (gi == 9)  { return "00111000100001000010000101001001100"; } // J
+    if (gi == 10) { return "10001100101010011000101001001010001"; } // K
+    if (gi == 11) { return "10000100001000010000100001000011111"; } // L
+    if (gi == 12) { return "10001110111010110101100011000110001"; } // M
+    if (gi == 13) { return "10001100011100110101100111000110001"; } // N
+    if (gi == 14) { return "01110100011000110001100011000101110"; } // O
+    if (gi == 15) { return "11110100011000111110100001000010000"; } // P
+    if (gi == 16) { return "01110100011000110001101011001001101"; } // Q
+    if (gi == 17) { return "11110100011000111110101001001010001"; } // R
+    if (gi == 18) { return "01111100001000001110000010000111110"; } // S
+    if (gi == 19) { return "11111001000010000100001000010000100"; } // T
+    if (gi == 20) { return "10001100011000110001100011000101110"; } // U
+    if (gi == 21) { return "10001100011000110001100010101000100"; } // V
+    if (gi == 22) { return "10001100011000110101101011101110001"; } // W
+    if (gi == 23) { return "10001100010101000100010101000110001"; } // X
+    if (gi == 24) { return "10001100010101000100001000010000100"; } // Y
+    if (gi == 25) { return "11111000010001000100010001000011111"; } // Z
+    if (gi == 26) { return "01110100011001110101110011000101110"; } // 0
+    if (gi == 27) { return "00100011000010000100001000010001110"; } // 1
+    if (gi == 28) { return "01110100010000100010001000100011111"; } // 2
+    if (gi == 29) { return "11111000100010000010000011000101110"; } // 3
+    if (gi == 30) { return "00010001100101010010111110001000010"; } // 4
+    if (gi == 31) { return "11111100001111000001000011000101110"; } // 5
+    if (gi == 32) { return "00110010001000011110100011000101110"; } // 6
+    if (gi == 33) { return "11111000010001000100010000100001000"; } // 7
+    if (gi == 34) { return "01110100011000101110100011000101110"; } // 8
+    if (gi == 35) { return "01110100011000101111000010001001100"; } // 9
+    if (gi == 37) { return "00000000000000011111000000000000000"; } // -
+    if (gi == 38) { return "00000000000000000000000000011000110"; } // .
+    return "00000000000000000000000000000000000";                  // space
+}
+
+/** Pixel width of `s` rendered at `scale` (5px glyphs, 1px gaps). */
+fn textWidth(s : string, scale : i32) : i32 {
+    let n : i32 = s.length() as i32;
+    if (n <= 0) { return 0; }
+    return (n * 6 - 1) * scale;
+}
+
+/** Draw one glyph at (x, y), each lit pixel a `scale`×`scale` block. */
+fn drawGlyph(base : i64, fbW : i32, fbH : i32, x : i32, y : i32, scale : i32, color : i32, gi : i32) : void {
+    let bits : string = glyphBits(gi);
+    let r : i32 = 0;
+    while (r < 7) {
+        let c : i32 = 0;
+        while (c < 5) {
+            if (bits.byteAt(r * 5 + c) == 49) {
+                fillRect(base, fbW, fbH, x + c * scale, y + r * scale, scale, scale, color);
+            }
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+}
+
+/** Draw `s` left-aligned at (x, y). */
+fn drawText(base : i64, fbW : i32, fbH : i32, x : i32, y : i32, scale : i32, color : i32, s : string) : void {
+    let n : i32 = s.length() as i32;
+    let cx : i32 = x;
+    let i : i32 = 0;
+    while (i < n) {
+        drawGlyph(base, fbW, fbH, cx, y, scale, color, glyphIndex(s.byteAt(i)));
+        cx = cx + 6 * scale;
+        i = i + 1;
+    }
+}
