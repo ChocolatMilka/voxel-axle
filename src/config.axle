@@ -22,9 +22,16 @@ const nearPlane : f64 = 0.12;
 const chunkSize : i32 = 16;
 const viewRadius : i32 = 4;  // chunks loaded each side → 9×9
 const span : i32 = 9;  // 2*viewRadius + 1
-const maxFacesPerChunk : i32 = 9000;
+const maxFacesPerChunk : i32 = 12000;
 const seaLevel : i32 = 24;
 const maxHeight : i32 = 96;
+// Full voxel field: each column is `worldHeight` voxels tall. Terrain is
+// still generated up to `maxHeight`; the headroom above lets the player
+// build/stack. Each column is filled to the top with air above the
+// terrain/trees, so neighbour lookups in the mesher never read
+// uninitialised memory; the mesher only scans up to a chunk's recorded
+// `maxFY` (highest non-air voxel), so the empty sky costs nothing.
+const worldHeight : i32 = 128;
 
 // ── Texture atlas (vertical strip of square tiles) ──────────
 // The first `blockTiles` tiles are block faces; any tiles above that
@@ -81,7 +88,17 @@ const regenEveryFrames : i32 = 90;  // +1 hp per this many frames
 
 // ── Render ──────────────────────────────────────────────────
 const renderDist : f64 = 64.0;
-const frameMillis : i32 = 16;
+
+// ── Tick rate ───────────────────────────────────────────────
+// The main loop is held to this many iterations per second by the frame
+// clock (`platform::clock`). Physics/AI constants are tuned for this
+// rate, and capping it stops the CPU spinning at hundreds of fps when
+// v-sync is unavailable or disabled. 60 matches a typical display.
+const tickHz : i32 = 60;
+
+// ── Block editing (dig / place) ─────────────────────────────
+const reachDist : f64 = 5.0;     // how far the look-ray reaches, in blocks
+const editCooldown : i32 = 10;   // frames between repeated digs/places
 
 // ── Directional light ───────────────────────────────────────
 const lightX : f64 = 0.35;
@@ -150,7 +167,7 @@ const tlSheepHead : i32 = 14;
 const tlCowBody : i32 = 15;
 const tlCowHead : i32 = 16;
 
-// ── HUD ─────────────────────────────────────────────────────
-const heartPx : i32 = 16;
-const heartGap : i32 = 2;
-const hudMargin : i32 = 16;
+// ── Inventory hotbar ────────────────────────────────────────
+const hotbarSize : i32 = 9;       // number of slots (keys 1–9)
+const hotbarCell : i32 = 22;      // slot size in framebuffer pixels
+const hotbarPad : i32 = 3;        // padding inside the panel / between cells
