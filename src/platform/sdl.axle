@@ -57,16 +57,28 @@ const SC_DOWN : i32 = 81;
 // Number row: SDL scancodes for 1..9 are contiguous (1 = 30 … 9 = 38).
 const SC_1 : i32 = 30;
 
+/**
+ * Base pointer to SDL's keyboard state array (as i64).
+ * @return address of the keyboard state buffer
+ */
 fn keyboardBase() : i64 {
-    unsafe { return SDL_GetKeyboardState(nullPtr()) as i64; }
+    unsafe {
+        return SDL_GetKeyboardState(nullPtr()) as i64;
+    }
 }
 
-/** Milliseconds since SDL_Init — for frame timing. */
+/**
+ * Milliseconds since SDL_Init — for frame timing.
+ * @return milliseconds elapsed since SDL_Init
+ */
 fn ticks() : i32 {
     return SDL_GetTicks();
 }
 
-/** Sleep `ms` milliseconds (yields the CPU). */
+/**
+ * Sleep `ms` milliseconds (yields the CPU).
+ * @param ms  number of milliseconds to sleep
+ */
 fn delay(ms : i32) : void {
     SDL_Delay(ms);
 }

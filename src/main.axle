@@ -18,94 +18,82 @@
 // lives in `game::ray`, the HUD in `gfx::hud`.
 
 use std::numeric::math::floorToInt;
-use crate::platform::sdl::SDL_Init;
-use crate::platform::sdl::SDL_Quit;
-use crate::platform::sdl::SDL_CreateWindow;
-use crate::platform::sdl::SDL_DestroyWindow;
-use crate::platform::sdl::SDL_CreateRenderer;
-use crate::platform::sdl::SDL_DestroyRenderer;
-use crate::platform::sdl::SDL_CreateTexture;
-use crate::platform::sdl::SDL_DestroyTexture;
-use crate::platform::sdl::SDL_UpdateTexture;
-use crate::platform::sdl::SDL_RenderClear;
-use crate::platform::sdl::SDL_RenderCopy;
-use crate::platform::sdl::SDL_RenderPresent;
-use crate::platform::sdl::SDL_PollEvent;
-use crate::platform::sdl::SDL_SetRelativeMouseMode;
-use crate::platform::sdl::SDL_GetRelativeMouseState;
-use crate::platform::sdl::SDL_GetMouseState;
-use crate::platform::sdl::SDL_GetWindowSize;
-use crate::platform::sdl::SDL_INIT_VIDEO;
-use crate::platform::sdl::SDL_INIT_AUDIO;
-use crate::platform::sdl::SDL_WINDOWPOS_CENTERED;
-use crate::platform::sdl::SDL_WINDOW_SHOWN;
-use crate::platform::sdl::SDL_WINDOW_RESIZABLE;
-use crate::platform::sdl::SDL_RENDERER_ACCEL_VSYNC;
-use crate::platform::sdl::SDL_PIXELFORMAT_ARGB8888;
-use crate::platform::sdl::SDL_TEXTUREACCESS_STREAMING;
-use crate::platform::sdl::SDL_QUIT;
-use crate::platform::sdl::SDL_MOUSEWHEEL;
-use crate::platform::sdl::SDL_BUTTON_RMASK;
-use crate::platform::sdl::SC_W;
-use crate::platform::sdl::SC_A;
-use crate::platform::sdl::SC_S;
-use crate::platform::sdl::SC_D;
-use crate::platform::sdl::SC_SPACE;
-use crate::platform::sdl::SC_LCTRL;
-use crate::platform::sdl::SC_LSHIFT;
-use crate::platform::sdl::SC_F3;
-use crate::platform::sdl::SC_F4;
-use crate::platform::sdl::SC_ESC;
-use crate::platform::sdl::SC_1;
-use crate::platform::sdl::keyboardBase;
-use crate::platform::mem::cfree;
-use crate::platform::mem::nullPtr;
-use crate::platform::mem::asPtr;
-use crate::platform::mem::isNull;
-use crate::platform::mem::allocBytes;
-use crate::platform::mem::readI32;
-use crate::platform::mem::readU8;
+use crate::platform::sdl::{SDL_Init, SDL_Quit, SDL_CreateWindow, SDL_DestroyWindow, SDL_CreateRenderer, SDL_DestroyRenderer, SDL_CreateTexture, SDL_DestroyTexture, SDL_UpdateTexture, SDL_RenderClear, SDL_RenderCopy, SDL_RenderPresent, SDL_PollEvent, SDL_SetRelativeMouseMode, SDL_GetRelativeMouseState, SDL_GetMouseState, SDL_GetWindowSize, SDL_INIT_VIDEO, SDL_INIT_AUDIO, SDL_WINDOWPOS_CENTERED, SDL_WINDOW_SHOWN, SDL_WINDOW_RESIZABLE, SDL_RENDERER_ACCEL_VSYNC, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, SDL_QUIT, SDL_MOUSEWHEEL, SDL_BUTTON_RMASK, SC_W, SC_A, SC_S, SC_D, SC_SPACE, SC_LCTRL, SC_LSHIFT, SC_F3, SC_F4, SC_ESC, SC_1, keyboardBase};
+use crate::platform::mem::{cfree, nullPtr, asPtr, isNull, allocBytes, readI32, readU8};
 use crate::platform::file::loadAtlas;
 use crate::platform::clock::GameClock;
 use crate::platform::audio::Sound;
 use crate::world::manager::ChunkManager;
 use crate::entities::player::Player;
 use crate::entities::mobs::MobManager;
-use crate::game::start::Spawn;
-use crate::game::start::openYaw;
-use crate::game::ray::Picker;
-use crate::game::ray::cellInPlayer;
+use crate::game::start::{Spawn, openYaw};
+use crate::game::ray::{Picker, cellInPlayer};
 use crate::gfx::render::Renderer;
 use crate::gfx::hud::drawHud;
-use crate::gfx::menu::drawPauseMenu;
-use crate::gfx::menu::menuHit;
+use crate::gfx::menu::{drawPauseMenu, menuHit};
 use crate::config;
 
+/**
+ * Reads two keyboard scancodes as a -1/0/+1 movement axis.
+ * @param kb     base address of the SDL keyboard state array
+ * @param plus   scancode that contributes +1 when held
+ * @param minus  scancode that contributes -1 when held
+ * @return the combined axis value (-1.0, 0.0, or 1.0)
+ */
 fn axis(kb : i64, plus : i32, minus : i32) : f64 {
     let v : f64 = 0.0;
-    if (readU8(kb, plus as i64) != 0) { v = v + 1.0; }
-    if (readU8(kb, minus as i64) != 0) { v = v - 1.0; }
+    if (readU8(kb, plus as i64) != 0) {
+        v = v + 1.0;
+    }
+    if (readU8(kb, minus as i64) != 0) {
+        v = v - 1.0;
+    }
     return v;
 }
 
+/**
+ * Converts a world coordinate to its containing chunk index.
+ * @param p  a world-space coordinate along one axis
+ * @return the chunk index that contains that coordinate
+ */
 fn chunkOf(p : f64) : i32 {
     return floorToInt(p / (config::chunkSize as f64)) as i32;
 }
 
+/**
+ * Program entry point: builds the window, world and player, then runs the
+ * input → simulate → render loop until the player quits.
+ */
 fn main() : void {
     let w : i32 = config::renderW;
     let h : i32 = config::renderH;
     let winW : i32 = config::screenW;
     let winH : i32 = config::screenH;
-    if (SDL_Init(SDL_INIT_VIDEO + SDL_INIT_AUDIO) != 0) { Console.println("SDL_Init failed"); return; }
+    if (SDL_Init(SDL_INIT_VIDEO + SDL_INIT_AUDIO) != 0) {
+        Console.println("SDL_Init failed");
+        return;
+    }
     let win : ptr = SDL_CreateWindow("Axle Voxel — survival",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, winW, winH,
         SDL_WINDOW_SHOWN + SDL_WINDOW_RESIZABLE);
-    if (isNull(win)) { Console.println("window failed"); SDL_Quit(); return; }
+    if (isNull(win)) {
+        Console.println("window failed");
+        SDL_Quit();
+        return;
+    }
     let ren : ptr = SDL_CreateRenderer(win, 0 - 1, SDL_RENDERER_ACCEL_VSYNC);
-    if (isNull(ren)) { Console.println("renderer failed"); SDL_DestroyWindow(win); SDL_Quit(); return; }
+    if (isNull(ren)) {
+        Console.println("renderer failed");
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+        return;
+    }
     let tex : ptr = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, h);
-    if (isNull(tex)) { Console.println("texture failed"); SDL_Quit(); return; }
+    if (isNull(tex)) {
+        Console.println("texture failed");
+        SDL_Quit();
+        return;
+    }
 
     let pixels : i64 = allocBytes((w as i64) * (h as i64) * 4);
     let zbuf : i64 = allocBytes((w as i64) * (h as i64) * 8);
@@ -146,9 +134,13 @@ fn main() : void {
     // echo on the blast. Loaded from sounds/ (or one dir up when run from
     // target/); missing = silent, game unaffected.
     let chargeSnd : Sound = new Sound("sounds/entity/creeper/charge.wav");
-    if (!chargeSnd.loaded()) { chargeSnd = new Sound("../sounds/entity/creeper/charge.wav"); }
+    if (!chargeSnd.loaded()) {
+        chargeSnd = new Sound("../sounds/entity/creeper/charge.wav");
+    }
     let explodedSnd : Sound = new Sound("sounds/entity/creeper/exploded.wav");
-    if (!explodedSnd.loaded()) { explodedSnd = new Sound("../sounds/entity/creeper/exploded.wav"); }
+    if (!explodedSnd.loaded()) {
+        explodedSnd = new Sound("../sounds/entity/creeper/exploded.wav");
+    }
     let attackCd : i32 = 0;
     let wasGmToggle : bool = false;
     let wasRight : bool = false;
@@ -160,15 +152,24 @@ fn main() : void {
     while (running) {
         while (SDL_PollEvent(asPtr(ev)) != 0) {
             let etype : i32 = readI32(ev, 0);
-            if (etype == SDL_QUIT) { running = false; }
-            else if (etype == SDL_MOUSEWHEEL) {
+            if (etype == SDL_QUIT) {
+                running = false;
+            } else if (etype == SDL_MOUSEWHEEL) {
                 // Scroll the hotbar: wheel up = previous slot, down = next.
                 let wy : i32 = readI32(ev, 20);
                 if (wy != 0) {
                     let ns : i32 = player.selected;
-                    if (wy > 0) { ns = ns - 1; } else { ns = ns + 1; }
-                    if (ns < 0) { ns = config::hotbarSize - 1; }
-                    if (ns >= config::hotbarSize) { ns = 0; }
+                    if (wy > 0) {
+                        ns = ns - 1;
+                    } else {
+                        ns = ns + 1;
+                    }
+                    if (ns < 0) {
+                        ns = config::hotbarSize - 1;
+                    }
+                    if (ns >= config::hotbarSize) {
+                        ns = 0;
+                    }
                     player.selectSlot(ns);
                 }
             }
@@ -182,8 +183,12 @@ fn main() : void {
         let winCH : i32 = readI32(wsz, 4);
         if (winCW >= 1 && winCH >= 1) {
             let desiredW : i32 = h * winCW / winCH;
-            if (desiredW < 256) { desiredW = 256; }
-            if (desiredW > 1280) { desiredW = 1280; }
+            if (desiredW < 256) {
+                desiredW = 256;
+            }
+            if (desiredW > 1280) {
+                desiredW = 1280;
+            }
             if (desiredW != w) {
                 cfree(asPtr(pixels));
                 cfree(asPtr(zbuf));
@@ -218,8 +223,11 @@ fn main() : void {
             let gmBoth : bool = readU8(kb, SC_F3 as i64) != 0 && readU8(kb, SC_F4 as i64) != 0;
             if (gmBoth && !wasGmToggle) {
                 player.toggleGameMode();
-                if (player.creative == 1) { Console.println("Creative — fly: Space up, Shift down, Ctrl boost."); }
-                else { Console.println("Survival."); }
+                if (player.creative == 1) {
+                    Console.println("Creative — fly: Space up, Shift down, Ctrl boost.");
+                } else {
+                    Console.println("Survival.");
+                }
             }
             wasGmToggle = gmBoth;
 
@@ -233,8 +241,12 @@ fn main() : void {
             // Sprint latches on with Ctrl and stays on while you keep
             // moving — releasing Ctrl doesn't stop the run, releasing the
             // movement keys does.
-            if (readU8(kb, SC_LCTRL as i64) != 0) { sprintLatch = true; }
-            if (fwd == 0.0 && strafe == 0.0) { sprintLatch = false; }
+            if (readU8(kb, SC_LCTRL as i64) != 0) {
+                sprintLatch = true;
+            }
+            if (fwd == 0.0 && strafe == 0.0) {
+                sprintLatch = false;
+            }
             let sprint : bool = sprintLatch;
             let up : bool = readU8(kb, SC_SPACE as i64) != 0;
             let down : bool = readU8(kb, SC_LSHIFT as i64) != 0;
@@ -242,7 +254,9 @@ fn main() : void {
             // Hotbar selection (number row 1–9).
             let slot : i32 = 0;
             while (slot < config::hotbarSize) {
-                if (readU8(kb, (SC_1 + slot) as i64) != 0) { player.selectSlot(slot); }
+                if (readU8(kb, (SC_1 + slot) as i64) != 0) {
+                    player.selectSlot(slot);
+                }
                 slot = slot + 1;
             }
 
@@ -253,11 +267,19 @@ fn main() : void {
             while (stp < nsteps) {
                 player.update(man, fwd, strafe, sprint, up, down);
                 mobs.update(man, player);
-                if (attackCd > 0) { attackCd = attackCd - 1; }
+                if (attackCd > 0) {
+                    attackCd = attackCd - 1;
+                }
                 stp = stp + 1;
             }
-            if (mobs.chargePending > 0) { chargeSnd.play(); mobs.chargePending = 0; }
-            if (mobs.boomPending > 0) { explodedSnd.play(); mobs.boomPending = 0; }
+            if (mobs.chargePending > 0) {
+                chargeSnd.play();
+                mobs.chargePending = 0;
+            }
+            if (mobs.boomPending > 0) {
+                explodedSnd.play();
+                mobs.boomPending = 0;
+            }
             player.refresh();
 
             man.ensureLoaded(chunkOf(player.posX), chunkOf(player.posZ));
@@ -297,8 +319,12 @@ fn main() : void {
             SDL_GetWindowSize(win, asPtr(wsz), asPtr(wsz + 4));
             let cwW : i32 = readI32(wsz, 0);
             let cwH : i32 = readI32(wsz, 4);
-            if (cwW < 1) { cwW = 1; }
-            if (cwH < 1) { cwH = 1; }
+            if (cwW < 1) {
+                cwW = 1;
+            }
+            if (cwH < 1) {
+                cwH = 1;
+            }
             let fbx : i32 = readI32(mabs, 0) * w / cwW;
             let fby : i32 = readI32(mabs, 4) * h / cwH;
             hover = menuHit(w, h, fbx, fby);

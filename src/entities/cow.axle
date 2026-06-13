@@ -4,6 +4,7 @@ use crate::entities::mob::Mob;
 use crate::config;
 
 class Cow extends Mob {
+    /** Create a cow at (x, y, z). */
     constructor(x : f64, y : f64, z : f64) {
         super(x, y, z, config::mobCow, config::mobCowHp);
         this.speed = config::mobCowSpeed;

@@ -12,8 +12,7 @@
 // the CPU at hundreds of fps when v-sync is missing or disabled
 // (`SDL_RenderPresent` alone is not a guaranteed cap).
 
-use crate::platform::sdl::ticks;
-use crate::platform::sdl::delay;
+use crate::platform::sdl::{ticks, delay};
 use crate::config;
 
 class GameClock {
@@ -23,6 +22,9 @@ class GameClock {
     acc : i32,
     capLast : i32,
 
+    /**
+     * Start the clock at the current time with an empty accumulator.
+     */
     constructor() {
         this.msPerTick = 1000 / config::tickHz;
         this.maxAccum = this.msPerTick * 8;   // cap catch-up to 8 steps
@@ -31,21 +33,30 @@ class GameClock {
         this.capLast = ticks();
     }
 
-    /** Number of fixed simulation steps to run this frame. */
+    /**
+     * Number of fixed simulation steps to run this frame.
+     * @return how many fixed simulation steps are due this frame
+     */
     fn steps() : i32 {
         let now : i32 = ticks();
         let dt : i32 = now - this.accLast;
         this.accLast = now;
-        if (dt < 0) { dt = 0; }
+        if (dt < 0) {
+            dt = 0;
+        }
         this.acc = this.acc + dt;
-        if (this.acc > this.maxAccum) { this.acc = this.maxAccum; }
+        if (this.acc > this.maxAccum) {
+            this.acc = this.maxAccum;
+        }
         let n : i32 = this.acc / this.msPerTick;
         this.acc = this.acc - n * this.msPerTick;
         return n;
     }
 
-    /** Sleep any unused frame budget to hold the loop near `tickHz` and
-     *  keep the CPU idle between frames. */
+    /**
+     * Sleep any unused frame budget to hold the loop near `tickHz` and
+     * keep the CPU idle between frames.
+     */
     fn cap() : void {
         let now : i32 = ticks();
         let dt : i32 = now - this.capLast;

@@ -4,14 +4,38 @@ use crate::world::biomes::Biome;
 use crate::config;
 
 class Badlands extends Biome {
-    constructor() { super(); }
+    /**
+     * Construct the badlands biome.
+     */
+    constructor() {
+        super();
+    }
+
+    /**
+     * Top block: red sand near the waterline, otherwise banded terracotta.
+     * @param height  the column's surface height
+     * @return the surface block id
+     */
     fn surface(height : i32) : i32 {
-        if (height <= config::seaLevel + 2) { return config::bRedSand; }
+        if (height <= config::seaLevel + 2) {
+            return config::bRedSand;
+        }
         let band : i32 = (height / 3) % 3;
-        if (band == 0) { return config::bTerracotta; }
-        if (band == 1) { return config::bTerracottaOrange; }
+        if (band == 0) {
+            return config::bTerracotta;
+        }
+        if (band == 1) {
+            return config::bTerracottaOrange;
+        }
         return config::bTerracottaWhite;
     }
-    fn filler() : i32 { return config::bRedSandstone; }
+
+    /**
+     * Sub-surface filler block.
+     * @return the filler block id
+     */
+    fn filler() : i32 {
+        return config::bRedSandstone;
+    }
     // treeThreshold / treeKind default to none.
 }

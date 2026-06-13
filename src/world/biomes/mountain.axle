@@ -4,13 +4,49 @@ use crate::world::biomes::Biome;
 use crate::config;
 
 class Mountain extends Biome {
-    constructor() { super(); }
+    /**
+     * Construct the mountain biome.
+     */
+    constructor() {
+        super();
+    }
+
+    /**
+     * Top block: snow on peaks, bare stone higher up, grass at the foot.
+     * @param height  the column's surface height
+     * @return the surface block id
+     */
     fn surface(height : i32) : i32 {
-        if (height > config::seaLevel + 44) { return config::bSnow; }
-        if (height > config::seaLevel + 38) { return config::bStone; }
+        if (height > config::seaLevel + 44) {
+            return config::bSnow;
+        }
+        if (height > config::seaLevel + 38) {
+            return config::bStone;
+        }
         return config::bGrass;
     }
-    fn filler() : i32 { return config::bStone; }
-    fn treeThreshold() : f64 { return 1.05; }    // rare
-    fn treeKind() : i32 { return config::treeSpruce; }
+
+    /**
+     * Sub-surface filler block.
+     * @return the filler block id
+     */
+    fn filler() : i32 {
+        return config::bStone;
+    }
+
+    /**
+     * A column grows a tree when its tree-hash exceeds this.
+     * @return the tree-placement threshold
+     */
+    fn treeThreshold() : f64 {
+        return 1.05;    // rare
+    }
+
+    /**
+     * Which tree to stamp.
+     * @return the tree kind id
+     */
+    fn treeKind() : i32 {
+        return config::treeSpruce;
+    }
 }

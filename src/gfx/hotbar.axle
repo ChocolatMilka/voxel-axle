@@ -3,23 +3,39 @@
 // -downscaled into the cell; the active slot is ringed in white. Drawn at a
 // caller-supplied origin so the HUD can lay it out.
 
-use crate::platform::mem::rgb;
-use crate::platform::mem::readI32;
-use crate::platform::mem::putPixel;
+use crate::platform::mem::{rgb, readI32, putPixel};
 use crate::gfx::color::fillRect;
 use crate::world::blocks::tileFor;
 use crate::config;
 
+/**
+ * Pixel width of the hotbar panel.
+ * @return the panel width in pixels.
+ */
 fn hotbarPanelW() : i32 {
     return config::hotbarSize * config::hotbarCell + (config::hotbarSize + 1) * config::hotbarPad;
 }
 
+/**
+ * Pixel height of the hotbar panel.
+ * @return the panel height in pixels.
+ */
 fn hotbarPanelH() : i32 {
     return config::hotbarCell + 2 * config::hotbarPad;
 }
 
-/** Draw atlas `tile` nearest-downscaled into the `size`×`size` box at
- *  (x, y) of the framebuffer. */
+/**
+ * Draw atlas `tile` nearest-downscaled into the `size`×`size` box at (x, y)
+ * of the framebuffer.
+ * @param base   framebuffer base pointer.
+ * @param fbW    framebuffer width.
+ * @param fbH    framebuffer height.
+ * @param atlas  the texture atlas.
+ * @param tile   the atlas tile index.
+ * @param x      box left.
+ * @param y      box top.
+ * @param size   box side length.
+ */
 fn drawTileIcon(base : i64, fbW : i32, fbH : i32, atlas : i64, tile : i32, x : i32, y : i32, size : i32) : void {
     let tp : i32 = config::tilePx;
     let py : i32 = 0;
@@ -37,7 +53,17 @@ fn drawTileIcon(base : i64, fbW : i32, fbH : i32, atlas : i64, tile : i32, x : i
     }
 }
 
-/** Draw the hotbar with its panel top-left at (x0, y0). */
+/**
+ * Draw the hotbar with its panel top-left at (x0, y0).
+ * @param base      framebuffer base pointer.
+ * @param fbW       framebuffer width.
+ * @param fbH       framebuffer height.
+ * @param x0        panel left.
+ * @param y0        panel top.
+ * @param atlas     the texture atlas.
+ * @param hotbar    hotbar slot block ids.
+ * @param selected  index of the active hotbar slot.
+ */
 fn drawHotbar(base : i64, fbW : i32, fbH : i32, x0 : i32, y0 : i32, atlas : i64, hotbar : i32[], selected : i32) : void {
     let cell : i32 = config::hotbarCell;
     let pad : i32 = config::hotbarPad;

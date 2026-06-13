@@ -9,17 +9,41 @@
 use crate::config;
 
 class Biome {
+    /**
+     * Construct the base biome.
+     */
     constructor() {}
 
-    /** Top block, given the column's surface height. */
-    fn surface(height : i32) : i32 { return config::bGrass; }
+    /**
+     * Top block, given the column's surface height.
+     * @param height  the column's surface height
+     * @return the surface block id
+     */
+    fn surface(height : i32) : i32 {
+        return config::bGrass;
+    }
 
-    /** The few blocks just under the surface. */
-    fn filler() : i32 { return config::bDirt; }
+    /**
+     * The few blocks just under the surface.
+     * @return the filler block id
+     */
+    fn filler() : i32 {
+        return config::bDirt;
+    }
 
-    /** A column grows a tree when its tree-hash exceeds this (1.1 = none). */
-    fn treeThreshold() : f64 { return 1.1; }
+    /**
+     * A column grows a tree when its tree-hash exceeds this (1.1 = none).
+     * @return the tree-placement threshold
+     */
+    fn treeThreshold() : f64 {
+        return 1.1;
+    }
 
-    /** Which tree to stamp (see config::tree*). */
-    fn treeKind() : i32 { return config::treeNone; }
+    /**
+     * Which tree to stamp (see config::tree*).
+     * @return the tree kind id
+     */
+    fn treeKind() : i32 {
+        return config::treeNone;
+    }
 }

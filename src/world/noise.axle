@@ -12,9 +12,15 @@
 use std::numeric::math::floorToInt;
 use crate::config;
 
-/** Hash a lattice point (ix, iy) with seed `s` into [0,1). Pure integer
- *  bit-mix; `i32` multiply wraps on overflow, which is exactly what a hash
- *  wants. */
+/**
+ * Hash a lattice point (ix, iy) with seed `s` into [0,1). Pure integer
+ * bit-mix; `i32` multiply wraps on overflow, which is exactly what a hash
+ * wants.
+ * @param ix  the lattice x coordinate
+ * @param iy  the lattice y coordinate
+ * @param s   the noise seed
+ * @return the hashed value in [0,1)
+ */
 fn hashI(ix : i32, iy : i32, s : i32) : f64 {
     let n : i32 = ix * 374761393 + iy * 668265263 + s * 1442695041;
     n = (n ^ (n >> 13)) * 1274126177;
@@ -22,10 +28,22 @@ fn hashI(ix : i32, iy : i32, s : i32) : f64 {
     return ((n & 0x7FFFFFFF) as f64) / 2147483647.0;
 }
 
+/**
+ * Smootherstep easing curve for noise interpolation.
+ * @param t  the interpolation parameter
+ * @return the eased value
+ */
 fn smooth(t : f64) : f64 {
     return t * t * (3.0 - 2.0 * t);
 }
 
+/**
+ * Smooth-interpolated value noise sampled at (x, y) with seed `s`.
+ * @param x  the sample x coordinate
+ * @param y  the sample y coordinate
+ * @param s  the noise seed
+ * @return the interpolated noise value
+ */
 fn valueNoise(x : f64, y : f64, s : i32) : f64 {
     let xi : i32 = floorToInt(x) as i32;
     let yi : i32 = floorToInt(y) as i32;
@@ -42,6 +60,14 @@ fn valueNoise(x : f64, y : f64, s : i32) : f64 {
     return ab + (cd - ab) * v;
 }
 
+/**
+ * Fractional Brownian motion: sum of `oct` value-noise octaves.
+ * @param x    the sample x coordinate
+ * @param y    the sample y coordinate
+ * @param s    the noise seed
+ * @param oct  the number of octaves
+ * @return the normalized fbm value
+ */
 fn fbm(x : f64, y : f64, s : i32, oct : i32) : f64 {
     let total : f64 = 0.0;
     let amp : f64 = 1.0;
@@ -58,20 +84,36 @@ fn fbm(x : f64, y : f64, s : i32, oct : i32) : f64 {
     return total / norm;
 }
 
-/** Scatter value in [0,1) at world point (wx, wz) with seed `s` — the
- *  generic single-sample hash used for tree placement and mob RNG. */
+/**
+ * Scatter value in [0,1) at world point (wx, wz) with seed `s` — the
+ * generic single-sample hash used for tree placement and mob RNG.
+ * @param wx  the world x coordinate
+ * @param wz  the world z coordinate
+ * @param s   the noise seed
+ * @return the scatter value in [0,1)
+ */
 fn hash2(wx : f64, wz : f64, s : i32) : f64 {
     return hashI(floorToInt(wx) as i32, floorToInt(wz) as i32, s);
 }
 
-/** Continentalness in [0,1): low = ocean, high = mountains. */
+/**
+ * Continentalness in [0,1): low = ocean, high = mountains.
+ * @param wx  the world x coordinate
+ * @param wz  the world z coordinate
+ * @return the continentalness value in [0,1)
+ */
 fn continentalness(wx : f64, wz : f64) : f64 {
     let wxx : f64 = wx + (fbm(wx * config::warpScale, wz * config::warpScale, config::seedI + 11, 2) - 0.5) * 34.0;
     let wzz : f64 = wz + (fbm(wx * config::warpScale + 9.0, wz * config::warpScale + 9.0, config::seedI + 23, 2) - 0.5) * 34.0;
     return fbm(wxx * config::contScale, wzz * config::contScale, config::seedI, 3);
 }
 
-/** Terrain surface height (blocks) at world column (wx, wz). */
+/**
+ * Terrain surface height (blocks) at world column (wx, wz).
+ * @param wx  the world x coordinate
+ * @param wz  the world z coordinate
+ * @return the terrain surface height in blocks
+ */
 fn terrainHeight(wx : f64, wz : f64) : f64 {
     let cont : f64 = continentalness(wx, wz);
     let hills : f64 = fbm(wx * config::hillScale, wz * config::hillScale, config::seedI + 99, 3);
@@ -84,17 +126,32 @@ fn terrainHeight(wx : f64, wz : f64) : f64 {
     return h;
 }
 
-/** Temperature in [0,1) (drives biome choice). */
+/**
+ * Temperature in [0,1) (drives biome choice).
+ * @param wx  the world x coordinate
+ * @param wz  the world z coordinate
+ * @return the temperature value in [0,1)
+ */
 fn temperature(wx : f64, wz : f64) : f64 {
     return fbm(wx * config::tempScale, wz * config::tempScale, config::seedI + 555, 2);
 }
 
-/** Humidity / rainfall in [0,1) (second biome axis, like Minecraft). */
+/**
+ * Humidity / rainfall in [0,1) (second biome axis, like Minecraft).
+ * @param wx  the world x coordinate
+ * @param wz  the world z coordinate
+ * @return the humidity value in [0,1)
+ */
 fn humidity(wx : f64, wz : f64) : f64 {
     return fbm(wx * config::humidScale + 41.0, wz * config::humidScale - 17.0, config::seedI + 808, 2);
 }
 
-/** Scatter value in [0,1) for tree placement. */
+/**
+ * Scatter value in [0,1) for tree placement.
+ * @param wx  the world x coordinate
+ * @param wz  the world z coordinate
+ * @return the tree-placement scatter value in [0,1)
+ */
 fn treeHash(wx : f64, wz : f64) : f64 {
     return hash2(wx, wz, config::seedI * 3);
 }

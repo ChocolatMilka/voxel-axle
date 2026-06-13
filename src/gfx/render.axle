@@ -8,24 +8,10 @@
 // `useMobTextures` is on). The mob pass shares the world's z-buffer, so
 // terrain correctly occludes animals behind it.
 
-use std::numeric::math::sin;
-use std::numeric::math::cos;
-use std::numeric::math::floorToInt;
-use std::numeric::math::sqrt;
-use crate::platform::mem::allocBytes;
-use crate::platform::mem::getF64;
-use crate::platform::mem::setF64;
-use crate::platform::mem::putPixel;
-use crate::platform::mem::rgb;
-use crate::gfx::color::scaleRgb;
-use crate::gfx::color::tintIf;
-use crate::gfx::raster::rasterTriTex;
-use crate::gfx::raster::rasterTri;
-use crate::gfx::raster::clearFrame;
-use crate::gfx::raster::buildMipChain;
-use crate::gfx::raster::mipChainTexels;
-use crate::gfx::raster::mipLevelOffset;
-use crate::gfx::raster::mipLevelSize;
+use std::numeric::math::{sin, cos, floorToInt, sqrt};
+use crate::platform::mem::{allocBytes, getF64, setF64, putPixel, rgb};
+use crate::gfx::color::{scaleRgb, tintIf};
+use crate::gfx::raster::{rasterTriTex, rasterTri, clearFrame, buildMipChain, mipChainTexels, mipLevelOffset, mipLevelSize};
 use crate::entities::player::Player;
 use crate::world::manager::ChunkManager;
 use crate::entities::mobs::MobManager;
@@ -58,6 +44,10 @@ class Renderer {
                  // updated on resize so the aspect / FOV track the window
     mips : i64,  // mip chain of the atlas (built in setAtlas)
 
+    /**
+     * Build a Renderer: allocate the projection / clipping scratch buffers,
+     * set the projection width from config, and fill the face corner table.
+     */
     constructor() {
         this.hw = config::halfW;
         this.mips = 0;
@@ -89,6 +79,10 @@ class Renderer {
         this.fillTable();
     }
 
+    /**
+     * Set the atlas base pointer and (re)build its mip chain.
+     * @param base  base address of the loaded atlas texels
+     */
     fn setAtlas(base : i64) : void {
         this.atlas = base;
         if (this.mips == 0) {
@@ -97,14 +91,28 @@ class Renderer {
         buildMipChain(base, this.mips);
     }
 
-    /** Match the projection to a framebuffer `renderW` wide. Height /
-     *  vertical FOV stay fixed (focal, halfH are constant), so widening
-     *  the window widens the horizontal field of view instead of
-     *  stretching — the view stays to scale. */
+    /**
+     * Match the projection to a framebuffer `renderW` wide. Height /
+     * vertical FOV stay fixed (focal, halfH are constant), so widening
+     * the window widens the horizontal field of view instead of
+     * stretching — the view stays to scale.
+     * @param renderW  framebuffer width in pixels
+     */
     fn setViewWidth(renderW : i32) : void {
         this.hw = (renderW as f64) * 0.5;
     }
 
+    /**
+     * Store one face corner's block-space offset and tile UV into the
+     * corner / UV tables.
+     * @param dir  face direction index (0..5)
+     * @param k    corner index within the face (0..3)
+     * @param ox   x offset of the corner in block space
+     * @param oy   y offset of the corner in block space
+     * @param oz   z offset of the corner in block space
+     * @param u    tile u coordinate for the corner
+     * @param v    tile v coordinate for the corner
+     */
     fn setCorner(dir : i32, k : i32, ox : i32, oy : i32, oz : i32, u : i32, v : i32) : void {
         let b : i32 = (dir * 4 + k) * 3;
         this.coff[b] = ox;
@@ -115,16 +123,44 @@ class Renderer {
         this.uvv[q] = v;
     }
 
+    /**
+     * Fill the per-direction face corner / UV tables for all 6 cube faces.
+     */
     fn fillTable() : void {
-        this.setCorner(0, 0, 1, 0, 0, 0, 1); this.setCorner(0, 1, 1, 0, 1, 1, 1); this.setCorner(0, 2, 1, 1, 1, 1, 0); this.setCorner(0, 3, 1, 1, 0, 0, 0);
-        this.setCorner(1, 0, 0, 0, 0, 0, 1); this.setCorner(1, 1, 0, 1, 0, 0, 0); this.setCorner(1, 2, 0, 1, 1, 1, 0); this.setCorner(1, 3, 0, 0, 1, 1, 1);
-        this.setCorner(2, 0, 0, 1, 0, 0, 0); this.setCorner(2, 1, 1, 1, 0, 1, 0); this.setCorner(2, 2, 1, 1, 1, 1, 1); this.setCorner(2, 3, 0, 1, 1, 0, 1);
-        this.setCorner(3, 0, 0, 0, 0, 0, 0); this.setCorner(3, 1, 0, 0, 1, 0, 1); this.setCorner(3, 2, 1, 0, 1, 1, 1); this.setCorner(3, 3, 1, 0, 0, 1, 0);
-        this.setCorner(4, 0, 0, 0, 1, 0, 1); this.setCorner(4, 1, 1, 0, 1, 1, 1); this.setCorner(4, 2, 1, 1, 1, 1, 0); this.setCorner(4, 3, 0, 1, 1, 0, 0);
-        this.setCorner(5, 0, 0, 0, 0, 0, 1); this.setCorner(5, 1, 0, 1, 0, 0, 0); this.setCorner(5, 2, 1, 1, 0, 1, 0); this.setCorner(5, 3, 1, 0, 0, 1, 1);
+        this.setCorner(0, 0, 1, 0, 0, 0, 1);
+        this.setCorner(0, 1, 1, 0, 1, 1, 1);
+        this.setCorner(0, 2, 1, 1, 1, 1, 0);
+        this.setCorner(0, 3, 1, 1, 0, 0, 0);
+        this.setCorner(1, 0, 0, 0, 0, 0, 1);
+        this.setCorner(1, 1, 0, 1, 0, 0, 0);
+        this.setCorner(1, 2, 0, 1, 1, 1, 0);
+        this.setCorner(1, 3, 0, 0, 1, 1, 1);
+        this.setCorner(2, 0, 0, 1, 0, 0, 0);
+        this.setCorner(2, 1, 1, 1, 0, 1, 0);
+        this.setCorner(2, 2, 1, 1, 1, 1, 1);
+        this.setCorner(2, 3, 0, 1, 1, 0, 1);
+        this.setCorner(3, 0, 0, 0, 0, 0, 0);
+        this.setCorner(3, 1, 0, 0, 1, 0, 1);
+        this.setCorner(3, 2, 1, 0, 1, 1, 1);
+        this.setCorner(3, 3, 1, 0, 0, 1, 0);
+        this.setCorner(4, 0, 0, 0, 1, 0, 1);
+        this.setCorner(4, 1, 1, 0, 1, 1, 1);
+        this.setCorner(4, 2, 1, 1, 1, 1, 0);
+        this.setCorner(4, 3, 0, 1, 1, 0, 0);
+        this.setCorner(5, 0, 0, 0, 0, 0, 1);
+        this.setCorner(5, 1, 0, 1, 0, 0, 0);
+        this.setCorner(5, 2, 1, 1, 0, 1, 0);
+        this.setCorner(5, 3, 1, 0, 0, 1, 1);
     }
 
-    /** Project one world point into screen + inverse depth, into slot k. */
+    /**
+     * Project one world point into screen + inverse depth, into slot k.
+     * @param p   player providing the eye position and orientation
+     * @param wx  world x of the point
+     * @param wy  world y of the point
+     * @param wz  world z of the point
+     * @param k   scratch slot index to store the result in
+     */
     fn projectPoint(p : Player, wx : f64, wy : f64, wz : f64, k : i32) : void {
         let dx : f64 = wx - p.eyeX;
         let dy : f64 = wy - p.eyeY;
@@ -144,17 +180,32 @@ class Renderer {
         this.cvis[k] = 1;
     }
 
-    /** Lambert term for a face normal, lifted by ambient. */
+    /**
+     * Lambert term for a face normal, lifted by ambient.
+     * @param nx  normal x
+     * @param ny  normal y
+     * @param nz  normal z
+     * @return brightness factor in [ambient, 1]
+     */
     fn shadeN(nx : f64, ny : f64, nz : f64) : f64 {
         let ndl : f64 = nx * config::lightX + ny * config::lightY + nz * config::lightZ;
-        if (ndl < 0.0) { ndl = 0.0; }
+        if (ndl < 0.0) {
+            ndl = 0.0;
+        }
         return config::ambient + (1.0 - config::ambient) * ndl;
     }
 
-    /** Transform a world point into camera space (post yaw + pitch) and
-     *  store (x, depth-z) into the `ca*` input buffers at slot k. The y is
-     *  the pitch-rotated height; depth is `caz`. No perspective divide yet
-     *  — that happens after near-plane clipping. */
+    /**
+     * Transform a world point into camera space (post yaw + pitch) and
+     * store (x, depth-z) into the `ca*` input buffers at slot k. The y is
+     * the pitch-rotated height; depth is `caz`. No perspective divide yet
+     * — that happens after near-plane clipping.
+     * @param p   player providing the eye position and orientation
+     * @param wx  world x of the point
+     * @param wy  world y of the point
+     * @param wz  world z of the point
+     * @param k   scratch slot index to store the result in
+     */
     fn toCam(p : Player, wx : f64, wy : f64, wz : f64, k : i32) : void {
         let dx : f64 = wx - p.eyeX;
         let dy : f64 = wy - p.eyeY;
@@ -166,8 +217,14 @@ class Renderer {
         setF64(this.caz, k, dy * p.sinp + rz * p.cosp);
     }
 
-    /** Write the linear blend of input vertices j and i at parameter t
-     *  (the near-plane crossing) into output slot o. */
+    /**
+     * Write the linear blend of input vertices j and i at parameter t
+     * (the near-plane crossing) into output slot o.
+     * @param j  first input vertex slot
+     * @param i  second input vertex slot
+     * @param t  blend parameter (0 at j, 1 at i)
+     * @param o  output vertex slot
+     */
     fn emitLerp(j : i32, i : i32, t : f64, o : i32) : void {
         setF64(this.cbx, o, getF64(this.cax, j) + (getF64(this.cax, i) - getF64(this.cax, j)) * t);
         setF64(this.cby, o, getF64(this.cay, j) + (getF64(this.cay, i) - getF64(this.cay, j)) * t);
@@ -176,7 +233,11 @@ class Renderer {
         setF64(this.cbv, o, getF64(this.cav, j) + (getF64(this.cav, i) - getF64(this.cav, j)) * t);
     }
 
-    /** Copy input vertex i to output slot o. */
+    /**
+     * Copy input vertex i to output slot o.
+     * @param i  input vertex slot
+     * @param o  output vertex slot
+     */
     fn copyVert(i : i32, o : i32) : void {
         setF64(this.cbx, o, getF64(this.cax, i));
         setF64(this.cby, o, getF64(this.cay, i));
@@ -185,12 +246,15 @@ class Renderer {
         setF64(this.cbv, o, getF64(this.cav, i));
     }
 
-    /** Clip the `nIn`-vertex camera-space polygon in `ca*` against the
-     *  near plane (depth ≥ nearPlane) into `cb*` (Sutherland–Hodgman),
-     *  interpolating position + UV at each crossing. Returns the output
-     *  vertex count. Replacing the old "drop the whole face if any corner
-     *  is too close" rule is what removes the holes / texture smear when
-     *  the camera hugs a block. */
+    /**
+     * Clip the `nIn`-vertex camera-space polygon in `ca*` against the
+     * near plane (depth ≥ nearPlane) into `cb*` (Sutherland–Hodgman),
+     * interpolating position + UV at each crossing. Replacing the old
+     * "drop the whole face if any corner is too close" rule is what
+     * removes the holes / texture smear when the camera hugs a block.
+     * @param nIn  number of input vertices in the `ca*` buffers
+     * @return number of output vertices written to the `cb*` buffers
+     */
     fn clipNear(nIn : i32) : i32 {
         let outN : i32 = 0;
         let j : i32 = nIn - 1;
@@ -215,6 +279,16 @@ class Renderer {
         return outN;
     }
 
+    /**
+     * Project, cull, shade and rasterize one baked world face.
+     * @param man     chunk manager holding the baked face arrays
+     * @param idx     index of the face to draw
+     * @param p       player providing the eye position and orientation
+     * @param pixels  framebuffer pixel buffer
+     * @param zbuf    depth buffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     */
     fn renderFace(man : ChunkManager, idx : i32, p : Player, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
         let x : i32 = man.fx[idx];
         let y : i32 = man.fy[idx];
@@ -223,12 +297,19 @@ class Renderer {
         let nx : f64 = 0.0;
         let ny : f64 = 0.0;
         let nz : f64 = 0.0;
-        if (dir == 0) { nx = 1.0; }
-        else if (dir == 1) { nx = 0.0 - 1.0; }
-        else if (dir == 2) { ny = 1.0; }
-        else if (dir == 3) { ny = 0.0 - 1.0; }
-        else if (dir == 4) { nz = 1.0; }
-        else { nz = 0.0 - 1.0; }
+        if (dir == 0) {
+            nx = 1.0;
+        } else if (dir == 1) {
+            nx = 0.0 - 1.0;
+        } else if (dir == 2) {
+            ny = 1.0;
+        } else if (dir == 3) {
+            ny = 0.0 - 1.0;
+        } else if (dir == 4) {
+            nz = 1.0;
+        } else {
+            nz = 0.0 - 1.0;
+        }
 
         let fcx : f64 = (x as f64) + 0.5 + nx * 0.5;
         let fcy : f64 = (y as f64) + 0.5 + ny * 0.5;
@@ -236,8 +317,12 @@ class Renderer {
         let vx : f64 = p.eyeX - fcx;
         let vy : f64 = p.eyeY - fcy;
         let vz : f64 = p.eyeZ - fcz;
-        if (vx * nx + vy * ny + vz * nz <= 0.0) { return; }
-        if (vx * vx + vz * vz > config::renderDist * config::renderDist) { return; }
+        if (vx * nx + vy * ny + vz * nz <= 0.0) {
+            return;
+        }
+        if (vx * vx + vz * vz > config::renderDist * config::renderDist) {
+            return;
+        }
 
         // Load the 4 corners into camera space + their tile UVs.
         let q : i32 = dir * 4;
@@ -252,7 +337,9 @@ class Renderer {
 
         // Clip against the near plane, then project the surviving polygon.
         let n : i32 = this.clipNear(4);
-        if (n < 3) { return; }
+        if (n < 3) {
+            return;
+        }
         let bright : f64 = this.shadeN(nx, ny, nz);
         let tile : i32 = man.ftile[idx];
         // Pick the mip level from the face distance (texels per screen
@@ -262,17 +349,26 @@ class Renderer {
         let tpp2 : f64 = (config::tilePx as f64) * (config::tilePx as f64) * d2 / (config::focal * config::focal);
         let mip : i32 = 0;
         let lim : f64 = 4.0;
-        while (mip < config::mipLevels - 1 && tpp2 >= lim) { lim = lim * 4.0; mip = mip + 1; }
+        while (mip < config::mipLevels - 1 && tpp2 >= lim) {
+            lim = lim * 4.0;
+            mip = mip + 1;
+        }
         let lvlBase : i32 = mipLevelOffset(mip);
         let lvlSz : i32 = mipLevelSize(mip);
         // Sharpness for sharp-bilinear = output pixels per texel of the
         // chosen mip (≈ projected face size / texels). Clamped so very
         // near faces stay crisp without numeric blow-up.
         let dd : f64 = sqrt(d2);
-        if (dd < 0.001) { dd = 0.001; }
+        if (dd < 0.001) {
+            dd = 0.001;
+        }
         let sharp : f64 = config::focal / (dd * (lvlSz as f64));
-        if (sharp < 1.0) { sharp = 1.0; }
-        if (sharp > 16.0) { sharp = 16.0; }
+        if (sharp < 1.0) {
+            sharp = 1.0;
+        }
+        if (sharp > 16.0) {
+            sharp = 16.0;
+        }
         let v : i32 = 0;
         while (v < n) {
             let rz2 : f64 = getF64(this.cbz, v);
@@ -294,11 +390,17 @@ class Renderer {
         }
     }
 
-    /** A chunk is worth drawing only if any part of it is in front of the
-     *  camera and within render distance. We test the chunk centre against
-     *  the view forward with a margin of the chunk's half-diagonal, so a
-     *  whole chunk behind the player is skipped without touching its
-     *  thousands of faces — the biggest per-frame win. */
+    /**
+     * A chunk is worth drawing only if any part of it is in front of the
+     * camera and within render distance. We test the chunk centre against
+     * the view forward with a margin of the chunk's half-diagonal, so a
+     * whole chunk behind the player is skipped without touching its
+     * thousands of faces — the biggest per-frame win.
+     * @param p   player providing the eye position and orientation
+     * @param cx  chunk x index
+     * @param cz  chunk z index
+     * @return true if the chunk should be drawn
+     */
     fn chunkVisible(p : Player, cx : i32, cz : i32) : bool {
         let s : f64 = config::chunkSize as f64;
         let wx : f64 = (cx as f64) * s + s * 0.5;
@@ -307,13 +409,24 @@ class Renderer {
         let dz : f64 = wz - p.eyeZ;
         let dist2 : f64 = dx * dx + dz * dz;
         let far : f64 = config::renderDist + s;
-        if (dist2 > far * far) { return false; }
+        if (dist2 > far * far) {
+            return false;
+        }
         // forward = (-siny, cosy); keep chunks whose centre is ahead or
         // within a half-diagonal (~0.71·chunk) behind the eye.
         let ahead : f64 = dx * (0.0 - p.siny) + dz * p.cosy;
         return ahead > 0.0 - s;
     }
 
+    /**
+     * Clear the frame and draw every visible loaded chunk's faces.
+     * @param man     chunk manager holding the loaded chunks and faces
+     * @param p       player providing the eye position and orientation
+     * @param pixels  framebuffer pixel buffer
+     * @param zbuf    depth buffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     */
     fn render(man : ChunkManager, p : Player, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
         clearFrame(pixels, zbuf, w, h, rgb(150, 198, 240));
         let slots : i32 = config::span * config::span;
@@ -332,9 +445,34 @@ class Renderer {
         }
     }
 
-    /** One face of a mob box: project 4 corners, backface-cull against the
-     *  eye, then fill atlas-textured (or flat-shaded). `hurt` tints the
-     *  face red for the damage flash. */
+    /**
+     * One face of a mob box: project 4 corners, backface-cull against the
+     * eye, then fill atlas-textured (or flat-shaded). `hurt` tints the
+     * face red for the damage flash.
+     * @param p       player providing the eye position and orientation
+     * @param pixels  framebuffer pixel buffer
+     * @param zbuf    depth buffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     * @param ax      world x of corner a
+     * @param ay      world y of corner a
+     * @param az      world z of corner a
+     * @param bx      world x of corner b
+     * @param by      world y of corner b
+     * @param bz      world z of corner b
+     * @param cx      world x of corner c
+     * @param cy      world y of corner c
+     * @param cz      world z of corner c
+     * @param dx      world x of corner d
+     * @param dy      world y of corner d
+     * @param dz      world z of corner d
+     * @param nx      face normal x
+     * @param ny      face normal y
+     * @param nz      face normal z
+     * @param color   flat fill color (used when untextured)
+     * @param tile    atlas tile index, or negative for flat-shaded
+     * @param hurt    true to tint the face red for the damage flash
+     */
     fn drawQuad(p : Player, pixels : i64, zbuf : i64, w : i32, h : i32,
         ax : f64, ay : f64, az : f64, bx : f64, by : f64, bz : f64,
         cx : f64, cy : f64, cz : f64, dx : f64, dy : f64, dz : f64,
@@ -342,27 +480,45 @@ class Renderer {
         let mx : f64 = (ax + bx + cx + dx) * 0.25;
         let my : f64 = (ay + by + cy + dy) * 0.25;
         let mz : f64 = (az + bz + cz + dz) * 0.25;
-        if ((p.eyeX - mx) * nx + (p.eyeY - my) * ny + (p.eyeZ - mz) * nz <= 0.0) { return; }
+        if ((p.eyeX - mx) * nx + (p.eyeY - my) * ny + (p.eyeZ - mz) * nz <= 0.0) {
+            return;
+        }
 
         this.projectPoint(p, ax, ay, az, 0);
         this.projectPoint(p, bx, by, bz, 1);
         this.projectPoint(p, cx, cy, cz, 2);
         this.projectPoint(p, dx, dy, dz, 3);
-        if (this.cvis[0] == 0 || this.cvis[1] == 0 || this.cvis[2] == 0 || this.cvis[3] == 0) { return; }
+        if (this.cvis[0] == 0 || this.cvis[1] == 0 || this.cvis[2] == 0 || this.cvis[3] == 0) {
+            return;
+        }
 
         // Mobs are little multi-box models: the full terrain light contrast
         // (0.5..1.0) makes every box edge read as a hard seam. Compress it
         // toward bright so adjacent faces blend and the model looks rounded
         // rather than crated. (drawQuad is mob-only; terrain is unaffected.)
         let bright : f64 = 0.80 + 0.20 * this.shadeN(nx, ny, nz);
-        let sx0 : f64 = getF64(this.csx, 0); let sy0 : f64 = getF64(this.csy, 0); let iz0 : f64 = getF64(this.ciz, 0);
-        let sx1 : f64 = getF64(this.csx, 1); let sy1 : f64 = getF64(this.csy, 1); let iz1 : f64 = getF64(this.ciz, 1);
-        let sx2 : f64 = getF64(this.csx, 2); let sy2 : f64 = getF64(this.csy, 2); let iz2 : f64 = getF64(this.ciz, 2);
-        let sx3 : f64 = getF64(this.csx, 3); let sy3 : f64 = getF64(this.csy, 3); let iz3 : f64 = getF64(this.ciz, 3);
+        let sx0 : f64 = getF64(this.csx, 0);
+        let sy0 : f64 = getF64(this.csy, 0);
+        let iz0 : f64 = getF64(this.ciz, 0);
+        let sx1 : f64 = getF64(this.csx, 1);
+        let sy1 : f64 = getF64(this.csy, 1);
+        let iz1 : f64 = getF64(this.ciz, 1);
+        let sx2 : f64 = getF64(this.csx, 2);
+        let sy2 : f64 = getF64(this.csy, 2);
+        let iz2 : f64 = getF64(this.ciz, 2);
+        let sx3 : f64 = getF64(this.csx, 3);
+        let sy3 : f64 = getF64(this.csy, 3);
+        let iz3 : f64 = getF64(this.ciz, 3);
 
         if (config::useMobTextures && tile >= 0) {
-            let tr : f64 = bright; let tg : f64 = bright; let tb : f64 = bright;
-            if (hurt) { tr = bright + 0.6; tg = bright * 0.4; tb = bright * 0.4; }
+            let tr : f64 = bright;
+            let tg : f64 = bright;
+            let tb : f64 = bright;
+            if (hurt) {
+                tr = bright + 0.6;
+                tg = bright * 0.4;
+                tb = bright * 0.4;
+            }
             rasterTriTex(pixels, zbuf, w, h,
                 sx0, sy0, iz0, 0.0, 1.0, sx1, sy1, iz1, 1.0, 1.0, sx2, sy2, iz2, 1.0, 0.0,
                 this.mips, tile, 0, config::tilePx, 4.0, tr, tg, tb);
@@ -376,8 +532,25 @@ class Renderer {
         }
     }
 
-    /** One face of an oriented box: the 4 vertices are corner indices into
-     *  the `ob*` world-corner buffers filled by `drawObox`. */
+    /**
+     * One face of an oriented box: the 4 vertices are corner indices into
+     * the `ob*` world-corner buffers filled by `drawObox`.
+     * @param p       player providing the eye position and orientation
+     * @param pixels  framebuffer pixel buffer
+     * @param zbuf    depth buffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     * @param i0      corner index for vertex 0
+     * @param i1      corner index for vertex 1
+     * @param i2      corner index for vertex 2
+     * @param i3      corner index for vertex 3
+     * @param nx      face normal x
+     * @param ny      face normal y
+     * @param nz      face normal z
+     * @param color   flat fill color (used when untextured)
+     * @param tile    atlas tile index, or negative for flat-shaded
+     * @param hurt    true to tint the face red for the damage flash
+     */
     fn oquad(p : Player, pixels : i64, zbuf : i64, w : i32, h : i32,
         i0 : i32, i1 : i32, i2 : i32, i3 : i32,
         nx : f64, ny : f64, nz : f64, color : i32, tile : i32, hurt : bool) : void {
@@ -389,18 +562,37 @@ class Renderer {
             nx, ny, nz, color, tile, hurt);
     }
 
-    /** Draw one body part as an **oriented** box: the part is positioned in
-     *  the mob's own frame — `mr` right, `my` up above the feet, `mf`
-     *  forward — with half-extents `hr/hy/hf`, then the whole box is rotated
-     *  by the mob's heading. So the head/body/legs turn together as a rigid
-     *  model instead of the head orbiting an axis-aligned body. The +forward
-     *  face carries `faceTile` (the animal's face), the rest `skinTile`.
-     *  Death collapses the box (sink + squash + topple along the heading). */
+    /**
+     * Draw one body part as an **oriented** box: the part is positioned in
+     * the mob's own frame — `mr` right, `my` up above the feet, `mf`
+     * forward — with half-extents `hr/hy/hf`, then the whole box is rotated
+     * by the mob's heading. So the head/body/legs turn together as a rigid
+     * model instead of the head orbiting an axis-aligned body. The +forward
+     * face carries `faceTile` (the animal's face), the rest `skinTile`.
+     * Death collapses the box (sink + squash + topple along the heading).
+     * @param p         player providing the eye position and orientation
+     * @param m         mob whose frame the box is placed in
+     * @param pixels    framebuffer pixel buffer
+     * @param zbuf      depth buffer
+     * @param w         framebuffer width
+     * @param h         framebuffer height
+     * @param mr        right offset of the box centre in the mob frame
+     * @param my        up offset of the box centre above the feet
+     * @param mf        forward offset of the box centre in the mob frame
+     * @param hr        half-extent along right
+     * @param hy        half-extent along up
+     * @param hf        half-extent along forward
+     * @param color     flat fill color (used when untextured)
+     * @param skinTile  atlas tile for the non-forward faces
+     * @param faceTile  atlas tile for the +forward face
+     */
     fn drawObox(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32,
         mr : f64, my : f64, mf : f64, hr : f64, hy : f64, hf : f64,
         color : i32, skinTile : i32, faceTile : i32) : void {
-        let fwdx : f64 = cos(m.heading); let fwdz : f64 = sin(m.heading);
-        let rgtx : f64 = sin(m.heading); let rgtz : f64 = 0.0 - cos(m.heading);
+        let fwdx : f64 = cos(m.heading);
+        let fwdz : f64 = sin(m.heading);
+        let rgtx : f64 = sin(m.heading);
+        let rgtz : f64 = 0.0 - cos(m.heading);
         // Death: topple onto one side like Minecraft — rotate the whole
         // model up→right about the feet by up to ~90° as the collapse
         // plays out, instead of sinking straight down. `lr`, `lu` are the
@@ -414,9 +606,18 @@ class Renderer {
         let lift : f64 = 0.15 * st;
         let ci : i32 = 0;
         while (ci < 8) {
-            let sr : f64 = 0.0 - 1.0; if ((ci & 1) != 0) { sr = 1.0; }
-            let su : f64 = 0.0 - 1.0; if ((ci & 2) != 0) { su = 1.0; }
-            let sf : f64 = 0.0 - 1.0; if ((ci & 4) != 0) { sf = 1.0; }
+            let sr : f64 = 0.0 - 1.0;
+            if ((ci & 1) != 0) {
+                sr = 1.0;
+            }
+            let su : f64 = 0.0 - 1.0;
+            if ((ci & 2) != 0) {
+                su = 1.0;
+            }
+            let sf : f64 = 0.0 - 1.0;
+            if ((ci & 4) != 0) {
+                sf = 1.0;
+            }
             let lr0 : f64 = mr + sr * hr;
             let hun : f64 = my + su * hy;
             let lf : f64 = mf + sf * hf;
@@ -432,8 +633,12 @@ class Renderer {
         // forward axis is the rotation axis, so forward normals are
         // unchanged), keeping backface culling correct while the body
         // lies down.
-        let rnx : f64 = ct * rgtx; let rny : f64 = 0.0 - st; let rnz : f64 = ct * rgtz;
-        let unx : f64 = st * rgtx; let uny : f64 = ct;       let unz : f64 = st * rgtz;
+        let rnx : f64 = ct * rgtx;
+        let rny : f64 = 0.0 - st;
+        let rnz : f64 = ct * rgtz;
+        let unx : f64 = st * rgtx;
+        let uny : f64 = ct;
+        let unz : f64 = st * rgtz;
         this.oquad(p, pixels, zbuf, w, h, 1, 5, 7, 3, rnx, rny, rnz, color, skinTile, hurt);
         this.oquad(p, pixels, zbuf, w, h, 4, 0, 2, 6, 0.0 - rnx, 0.0 - rny, 0.0 - rnz, color, skinTile, hurt);
         this.oquad(p, pixels, zbuf, w, h, 2, 3, 7, 6, unx, uny, unz, color, skinTile, hurt);
@@ -445,6 +650,16 @@ class Renderer {
         }
     }
 
+    /**
+     * Draw a chicken as a stack of oriented boxes (legs, body, head, beak,
+     * wattle).
+     * @param p       player providing the eye position and orientation
+     * @param m       chicken mob to draw
+     * @param pixels  framebuffer pixel buffer
+     * @param zbuf    depth buffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     */
     fn drawChicken(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
         let sw : f64 = sin(m.walkPhase) * 0.08;   // forward leg stride
         let leg : i32 = rgb(232, 150, 40);
@@ -457,6 +672,16 @@ class Renderer {
         this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 0.58, 0.08, 0.05, 0.06, 0.04, rgb(200, 40, 40), 0 - 1, 0 - 1);
     }
 
+    /**
+     * Draw a sheep as a stack of oriented boxes (four legs, woolly body,
+     * head).
+     * @param p       player providing the eye position and orientation
+     * @param m       sheep mob to draw
+     * @param pixels  framebuffer pixel buffer
+     * @param zbuf    depth buffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     */
     fn drawSheep(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
         let sw : f64 = sin(m.walkPhase) * 0.11;
         let leg : i32 = rgb(54, 46, 40);
@@ -468,6 +693,15 @@ class Renderer {
         this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 0.54, 0.46, 0.15, 0.15, 0.14, rgb(226, 222, 214), config::tlSheepWool, config::tlSheepHead);
     }
 
+    /**
+     * Draw a cow as a stack of oriented boxes (four legs, body, head).
+     * @param p       player providing the eye position and orientation
+     * @param m       cow mob to draw
+     * @param pixels  framebuffer pixel buffer
+     * @param zbuf    depth buffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     */
     fn drawCow(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
         let sw : f64 = sin(m.walkPhase) * 0.12;
         let leg : i32 = rgb(70, 54, 44);
@@ -479,11 +713,19 @@ class Renderer {
         this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 0.64, 0.58, 0.18, 0.18, 0.18, rgb(110, 86, 66), config::tlCowBody, config::tlCowHead);
     }
 
-    /** Creeper: textured from the atlas. Normally the green creeper skin
-     *  with its iconic face on the head's forward face; once the fuse is
-     *  lit it swaps to the "gilet jaune" charge skin/face, swells to 1.25x
-     *  and strobes white (faster as the blast nears), Minecraft-style. The
-     *  `color` args are the lighting base (and the fallback if blank). */
+    /**
+     * Creeper: textured from the atlas. Normally the green creeper skin
+     * with its iconic face on the head's forward face; once the fuse is
+     * lit it swaps to the "gilet jaune" charge skin/face, swells to 1.25x
+     * and strobes white (faster as the blast nears), Minecraft-style. The
+     * `color` args are the lighting base (and the fallback if blank).
+     * @param p       player providing the eye position and orientation
+     * @param m       creeper mob to draw
+     * @param pixels  framebuffer pixel buffer
+     * @param zbuf    depth buffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     */
     fn drawCreeper(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
         let sw : f64 = sin(m.walkPhase) * 0.10;
 
@@ -510,7 +752,9 @@ class Renderer {
             leg = rgb(170, 140, 28);
             s = 1.25;
             let period : i32 = 2 + m.fuse / 40;
-            if ((m.fuse / period) % 4 == 0) { flash = true; }
+            if ((m.fuse / period) % 4 == 0) {
+                flash = true;
+            }
         }
         if (flash) {
             let wht : i32 = rgb(242, 248, 242);
@@ -532,19 +776,46 @@ class Renderer {
         this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 1.06 * s, 0.0, 0.18 * s, 0.18 * s, 0.18 * s, body, skin, face);
     }
 
+    /**
+     * Draw every mob of every species, sharing the world's z-buffer.
+     * @param mm      mob manager holding the per-species arrays
+     * @param p       player providing the eye position and orientation
+     * @param pixels  framebuffer pixel buffer
+     * @param zbuf    depth buffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     */
     fn renderMobs(mm : MobManager, p : Player, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
         // One typed array per species; draw funcs take the base Mob (the
         // accessors upcast), reading only inherited fields.
         let i : i32 = 0;
-        while (i < mm.chN) { this.drawChicken(p, mm.chickenAt(i), pixels, zbuf, w, h); i = i + 1; }
+        while (i < mm.chN) {
+            this.drawChicken(p, mm.chickenAt(i), pixels, zbuf, w, h);
+            i = i + 1;
+        }
         i = 0;
-        while (i < mm.shN) { this.drawSheep(p, mm.sheepAt(i), pixels, zbuf, w, h); i = i + 1; }
+        while (i < mm.shN) {
+            this.drawSheep(p, mm.sheepAt(i), pixels, zbuf, w, h);
+            i = i + 1;
+        }
         i = 0;
-        while (i < mm.coN) { this.drawCow(p, mm.cowAt(i), pixels, zbuf, w, h); i = i + 1; }
+        while (i < mm.coN) {
+            this.drawCow(p, mm.cowAt(i), pixels, zbuf, w, h);
+            i = i + 1;
+        }
         i = 0;
-        while (i < mm.crN) { this.drawCreeper(p, mm.creeperAt(i), pixels, zbuf, w, h); i = i + 1; }
+        while (i < mm.crN) {
+            this.drawCreeper(p, mm.creeperAt(i), pixels, zbuf, w, h);
+            i = i + 1;
+        }
     }
 
+    /**
+     * Draw the centre-screen crosshair.
+     * @param pixels  framebuffer pixel buffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     */
     fn crosshair(pixels : i64, w : i32, h : i32) : void {
         let cx : i32 = w / 2;
         let cy : i32 = h / 2;
@@ -557,8 +828,16 @@ class Renderer {
         }
     }
 
-    /** Project a world point to screen slot `k`, storing screen x/y and
-     *  inverse depth; false (sentinel x) if behind the near plane. */
+    /**
+     * Project a world point to screen slot `k`, storing screen x/y and
+     * inverse depth; false (sentinel x) if behind the near plane.
+     * @param p   player providing the eye position and orientation
+     * @param wx  world x of the point
+     * @param wy  world y of the point
+     * @param wz  world z of the point
+     * @param k   scratch slot index to store the result in
+     * @return true if the point is in front of the near plane
+     */
     fn projCorner(p : Player, wx : f64, wy : f64, wz : f64, k : i32) : bool {
         let dx : f64 = wx - p.eyeX;
         let dy : f64 = wy - p.eyeY;
@@ -567,16 +846,28 @@ class Renderer {
         let rz : f64 = (0.0 - dx) * p.siny + dz * p.cosy;
         let ry2 : f64 = dy * p.cosp - rz * p.sinp;
         let rz2 : f64 = dy * p.sinp + rz * p.cosp;
-        if (rz2 < config::nearPlane) { return false; }
+        if (rz2 < config::nearPlane) {
+            return false;
+        }
         setF64(this.csx, k, this.hw + config::focal * rx / rz2);
         setF64(this.csy, k, config::halfH - config::focal * ry2 / rz2);
         setF64(this.ciz, k, 1.0 / rz2);
         return true;
     }
 
-    /** Stamp a soft 2×2 dot at (px, py) if its inverse depth `iz` is not
-     *  behind the z-buffer — so the outline only shows on visible faces
-     *  (no back edges bleeding through). */
+    /**
+     * Stamp a soft 2×2 dot at (px, py) if its inverse depth `iz` is not
+     * behind the z-buffer — so the outline only shows on visible faces
+     * (no back edges bleeding through).
+     * @param pixels  framebuffer pixel buffer
+     * @param zbuf    depth buffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     * @param px      dot top-left x
+     * @param py      dot top-left y
+     * @param iz      inverse depth of the dot
+     * @param color   dot color
+     */
     fn selDot(pixels : i64, zbuf : i64, w : i32, h : i32, px : i32, py : i32, iz : f64, color : i32) : void {
         let yy : i32 = py;
         while (yy <= py + 1) {
@@ -596,22 +887,43 @@ class Renderer {
         }
     }
 
-    /** Depth-tested thick line between projected corners a and b. */
+    /**
+     * Depth-tested thick line between projected corners a and b.
+     * @param pixels  framebuffer pixel buffer
+     * @param zbuf    depth buffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     * @param a       first projected corner slot
+     * @param b       second projected corner slot
+     * @param color   line color
+     */
     fn selEdge(pixels : i64, zbuf : i64, w : i32, h : i32, a : i32, b : i32, color : i32) : void {
         let ax : f64 = getF64(this.csx, a);
         let bx : f64 = getF64(this.csx, b);
-        if (ax < 0.0 - 1.0e8 || bx < 0.0 - 1.0e8) { return; }
+        if (ax < 0.0 - 1.0e8 || bx < 0.0 - 1.0e8) {
+            return;
+        }
         let ay : f64 = getF64(this.csy, a);
         let by : f64 = getF64(this.csy, b);
         let aiz : f64 = getF64(this.ciz, a);
         let biz : f64 = getF64(this.ciz, b);
         let ddx : f64 = bx - ax;
         let ddy : f64 = by - ay;
-        let adx : f64 = ddx; if (adx < 0.0) { adx = 0.0 - adx; }
-        let ady : f64 = ddy; if (ady < 0.0) { ady = 0.0 - ady; }
+        let adx : f64 = ddx;
+        if (adx < 0.0) {
+            adx = 0.0 - adx;
+        }
+        let ady : f64 = ddy;
+        if (ady < 0.0) {
+            ady = 0.0 - ady;
+        }
         let steps : i32 = floorToInt(adx) as i32;
-        if (floorToInt(ady) as i32 > steps) { steps = floorToInt(ady) as i32; }
-        if (steps < 1) { steps = 1; }
+        if (floorToInt(ady) as i32 > steps) {
+            steps = floorToInt(ady) as i32;
+        }
+        if (steps < 1) {
+            steps = 1;
+        }
         let inv : f64 = 1.0 / (steps as f64);
         let i : i32 = 0;
         while (i <= steps) {
@@ -624,10 +936,20 @@ class Renderer {
         }
     }
 
-    /** Minecraft-style selection box: a soft, depth-tested wireframe on
-     *  the targeted block (bx, by, bz). Hidden (back) edges are culled by
-     *  the z-buffer so it reads as an outline on the block, not a
-     *  see-through cage. */
+    /**
+     * Minecraft-style selection box: a soft, depth-tested wireframe on
+     * the targeted block (bx, by, bz). Hidden (back) edges are culled by
+     * the z-buffer so it reads as an outline on the block, not a
+     * see-through cage.
+     * @param p       player providing the eye position and orientation
+     * @param pixels  framebuffer pixel buffer
+     * @param zbuf    depth buffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     * @param bx      targeted block x
+     * @param by      targeted block y
+     * @param bz      targeted block z
+     */
     fn drawSelection(p : Player, pixels : i64, zbuf : i64, w : i32, h : i32, bx : i32, by : i32, bz : i32) : void {
         let k : i32 = 0;
         while (k < 8) {
@@ -640,11 +962,17 @@ class Renderer {
             k = k + 1;
         }
         let col : i32 = rgb(36, 38, 44);
-        this.selEdge(pixels, zbuf, w, h, 0, 1, col); this.selEdge(pixels, zbuf, w, h, 2, 3, col);
-        this.selEdge(pixels, zbuf, w, h, 4, 5, col); this.selEdge(pixels, zbuf, w, h, 6, 7, col);
-        this.selEdge(pixels, zbuf, w, h, 0, 2, col); this.selEdge(pixels, zbuf, w, h, 1, 3, col);
-        this.selEdge(pixels, zbuf, w, h, 4, 6, col); this.selEdge(pixels, zbuf, w, h, 5, 7, col);
-        this.selEdge(pixels, zbuf, w, h, 0, 4, col); this.selEdge(pixels, zbuf, w, h, 1, 5, col);
-        this.selEdge(pixels, zbuf, w, h, 2, 6, col); this.selEdge(pixels, zbuf, w, h, 3, 7, col);
+        this.selEdge(pixels, zbuf, w, h, 0, 1, col);
+        this.selEdge(pixels, zbuf, w, h, 2, 3, col);
+        this.selEdge(pixels, zbuf, w, h, 4, 5, col);
+        this.selEdge(pixels, zbuf, w, h, 6, 7, col);
+        this.selEdge(pixels, zbuf, w, h, 0, 2, col);
+        this.selEdge(pixels, zbuf, w, h, 1, 3, col);
+        this.selEdge(pixels, zbuf, w, h, 4, 6, col);
+        this.selEdge(pixels, zbuf, w, h, 5, 7, col);
+        this.selEdge(pixels, zbuf, w, h, 0, 4, col);
+        this.selEdge(pixels, zbuf, w, h, 1, 5, col);
+        this.selEdge(pixels, zbuf, w, h, 2, 6, col);
+        this.selEdge(pixels, zbuf, w, h, 3, 7, col);
     }
 }

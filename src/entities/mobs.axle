@@ -5,9 +5,7 @@
 // and resolves the player's melee against the nearest mob in view. The
 // world has no RNG, so the manager threads its own counter through a hash.
 
-use std::numeric::math::sin;
-use std::numeric::math::cos;
-use std::numeric::math::floorToInt;
+use std::numeric::math::{sin, cos, floorToInt};
 use crate::entities::mob::Mob;
 use crate::entities::chicken::Chicken;
 use crate::entities::sheep::Sheep;
@@ -31,6 +29,7 @@ class MobManager {
     boomPending : i32,    // creeper detonations this frame (for the SFX)
     chargePending : i32,  // creepers that lit their fuse this frame
 
+    /** Create an empty mob manager with per-species arrays allocated. */
     constructor() {
         this.chickens = malloc<Chicken>(config::mobCap);
         this.sheep = malloc<Sheep>(config::mobCap);
@@ -45,56 +44,133 @@ class MobManager {
         this.chargePending = 0;
     }
 
-    /** Next pseudo-random value in [0,1). */
+    /**
+     * Next pseudo-random value in [0,1).
+     * @return the next pseudo-random value in [0,1)
+     */
     fn rand() : f64 {
         this.rc = this.rc + 1.0;
         return hash2(this.rc, this.rc * 1.3 + 7.0, config::seedI + 4242);
     }
 
-    fn total() : i32 { return this.chN + this.shN + this.coN + this.crN; }
+    /**
+     * Total live mob count across all species.
+     * @return the sum of the per-species counts
+     */
+    fn total() : i32 {
+        return this.chN + this.shN + this.coN + this.crN;
+    }
 
-    /** The element at (arr, idx) as a base Mob, for the shared melee path
-     *  (arr: 0 chicken, 1 sheep, 2 cow, 3 creeper). */
+    /**
+     * The element at (arr, idx) as a base Mob, for the shared melee path
+     * (arr: 0 chicken, 1 sheep, 2 cow, 3 creeper).
+     * @param arr  species array selector (0 chicken, 1 sheep, 2 cow, 3 creeper)
+     * @param idx  index within that species array
+     * @return the selected mob as a base Mob
+     */
     fn pick(arr : i32, idx : i32) : Mob {
-        if (arr == 0) { return this.chickens[idx] as Mob; }
-        if (arr == 1) { return this.sheep[idx] as Mob; }
-        if (arr == 2) { return this.cows[idx] as Mob; }
+        if (arr == 0) {
+            return this.chickens[idx] as Mob;
+        }
+        if (arr == 1) {
+            return this.sheep[idx] as Mob;
+        }
+        if (arr == 2) {
+            return this.cows[idx] as Mob;
+        }
         return this.creepers[idx] as Mob;
     }
 
     // ── Render accessors (so the renderer needs only the Mob type) ──
-    fn chickenAt(i : i32) : Mob { return this.chickens[i] as Mob; }
-    fn sheepAt(i : i32) : Mob { return this.sheep[i] as Mob; }
-    fn cowAt(i : i32) : Mob { return this.cows[i] as Mob; }
-    fn creeperAt(i : i32) : Mob { return this.creepers[i] as Mob; }
+    /**
+     * The chicken at index i as a base Mob.
+     * @param i  index into the chicken array
+     * @return the chicken as a base Mob
+     */
+    fn chickenAt(i : i32) : Mob {
+        return this.chickens[i] as Mob;
+    }
 
-    /** Try to place one creature on land in the spawn ring around the
-     *  player. Returns whether it found a dry column. */
+    /**
+     * The sheep at index i as a base Mob.
+     * @param i  index into the sheep array
+     * @return the sheep as a base Mob
+     */
+    fn sheepAt(i : i32) : Mob {
+        return this.sheep[i] as Mob;
+    }
+
+    /**
+     * The cow at index i as a base Mob.
+     * @param i  index into the cow array
+     * @return the cow as a base Mob
+     */
+    fn cowAt(i : i32) : Mob {
+        return this.cows[i] as Mob;
+    }
+
+    /**
+     * The creeper at index i as a base Mob.
+     * @param i  index into the creeper array
+     * @return the creeper as a base Mob
+     */
+    fn creeperAt(i : i32) : Mob {
+        return this.creepers[i] as Mob;
+    }
+
+    /**
+     * Try to place one creature on land in the spawn ring around the
+     * player. Returns whether it found a dry column.
+     * @param world   the chunk manager that provides column heights
+     * @param player  the player the spawn ring is centered on
+     * @return true if a dry column was found and a creature placed
+     */
     fn spawnOne(world : ChunkManager, player : Player) : bool {
-        if (this.total() >= config::mobCap) { return false; }
+        if (this.total() >= config::mobCap) {
+            return false;
+        }
         let a : f64 = this.rand() * 6.2831853;
         let span : f64 = (config::mobSpawnRadius - config::mobSpawnMin) as f64;
         let r : f64 = (config::mobSpawnMin as f64) + this.rand() * span;
         let wx : f64 = player.posX + cos(a) * r;
         let wz : f64 = player.posZ + sin(a) * r;
         let surf : i32 = world.columnHeight(floorToInt(wx) as i32, floorToInt(wz) as i32);
-        if (surf <= config::seaLevel) { return false; }
+        if (surf <= config::seaLevel) {
+            return false;
+        }
         let y : f64 = surf as f64;
         let pick : f64 = this.rand();
         if (pick > 0.72) {
-            if (this.crN < config::mobCap) { this.creepers[this.crN] = new Creeper(wx, y, wz); this.crN = this.crN + 1; }
+            if (this.crN < config::mobCap) {
+                this.creepers[this.crN] = new Creeper(wx, y, wz);
+                this.crN = this.crN + 1;
+            }
         } else if (pick > 0.50) {
-            if (this.coN < config::mobCap) { this.cows[this.coN] = new Cow(wx, y, wz); this.coN = this.coN + 1; }
+            if (this.coN < config::mobCap) {
+                this.cows[this.coN] = new Cow(wx, y, wz);
+                this.coN = this.coN + 1;
+            }
         } else if (pick > 0.25) {
-            if (this.shN < config::mobCap) { this.sheep[this.shN] = new Sheep(wx, y, wz); this.shN = this.shN + 1; }
+            if (this.shN < config::mobCap) {
+                this.sheep[this.shN] = new Sheep(wx, y, wz);
+                this.shN = this.shN + 1;
+            }
         } else {
-            if (this.chN < config::mobCap) { this.chickens[this.chN] = new Chicken(wx, y, wz); this.chN = this.chN + 1; }
+            if (this.chN < config::mobCap) {
+                this.chickens[this.chN] = new Chicken(wx, y, wz);
+                this.chN = this.chN + 1;
+            }
         }
         return true;
     }
 
-    /** Cull a mob: remove a finished corpse, or a live one that wandered out
-     *  of range (a dying one stays so its animation plays through). */
+    /**
+     * Cull a mob: remove a finished corpse, or a live one that wandered out
+     * of range (a dying one stays so its animation plays through).
+     * @param m       the mob to test
+     * @param player  the player whose position bounds the keep range
+     * @return true if the mob should be removed
+     */
     fn cull(m : Mob, player : Player) : bool {
         let dx : f64 = m.posX - player.posX;
         let dz : f64 = m.posZ - player.posZ;
@@ -102,42 +178,74 @@ class MobManager {
         return m.deathDone() || (!m.isDying() && dx * dx + dz * dz > despawn2);
     }
 
-    /** Step AI, cull distant/dead mobs, and top the population back up. */
+    /**
+     * Step AI, cull distant/dead mobs, and top the population back up.
+     * @param world   the chunk manager the mobs live in
+     * @param player  the player driving spawn/cull ranges and creeper AI
+     */
     fn update(world : ChunkManager, player : Player) : void {
         let i : i32 = 0;
-        while (i < this.chN) { this.chickens[i].wander(world, this.rand()); i = i + 1; }
+        while (i < this.chN) {
+            this.chickens[i].wander(world, this.rand());
+            i = i + 1;
+        }
         i = 0;
-        while (i < this.shN) { this.sheep[i].wander(world, this.rand()); i = i + 1; }
+        while (i < this.shN) {
+            this.sheep[i].wander(world, this.rand());
+            i = i + 1;
+        }
         i = 0;
-        while (i < this.coN) { this.cows[i].wander(world, this.rand()); i = i + 1; }
+        while (i < this.coN) {
+            this.cows[i].wander(world, this.rand());
+            i = i + 1;
+        }
         i = 0;
         while (i < this.crN) {
             let rc : i32 = this.creepers[i].step(world, player);
-            if (rc == 1) { this.boomPending = this.boomPending + 1; }
-            else if (rc == 2) { this.chargePending = this.chargePending + 1; }
+            if (rc == 1) {
+                this.boomPending = this.boomPending + 1;
+            } else if (rc == 2) {
+                this.chargePending = this.chargePending + 1;
+            }
             i = i + 1;
         }
 
         // Cull each array (swap-with-last compaction).
         let j : i32 = 0;
         while (j < this.chN) {
-            if (this.cull(this.chickens[j] as Mob, player)) { this.chN = this.chN - 1; this.chickens[j] = this.chickens[this.chN]; }
-            else { j = j + 1; }
+            if (this.cull(this.chickens[j] as Mob, player)) {
+                this.chN = this.chN - 1;
+                this.chickens[j] = this.chickens[this.chN];
+            } else {
+                j = j + 1;
+            }
         }
         j = 0;
         while (j < this.shN) {
-            if (this.cull(this.sheep[j] as Mob, player)) { this.shN = this.shN - 1; this.sheep[j] = this.sheep[this.shN]; }
-            else { j = j + 1; }
+            if (this.cull(this.sheep[j] as Mob, player)) {
+                this.shN = this.shN - 1;
+                this.sheep[j] = this.sheep[this.shN];
+            } else {
+                j = j + 1;
+            }
         }
         j = 0;
         while (j < this.coN) {
-            if (this.cull(this.cows[j] as Mob, player)) { this.coN = this.coN - 1; this.cows[j] = this.cows[this.coN]; }
-            else { j = j + 1; }
+            if (this.cull(this.cows[j] as Mob, player)) {
+                this.coN = this.coN - 1;
+                this.cows[j] = this.cows[this.coN];
+            } else {
+                j = j + 1;
+            }
         }
         j = 0;
         while (j < this.crN) {
-            if (this.cull(this.creepers[j] as Mob, player)) { this.crN = this.crN - 1; this.creepers[j] = this.creepers[this.crN]; }
-            else { j = j + 1; }
+            if (this.cull(this.creepers[j] as Mob, player)) {
+                this.crN = this.crN - 1;
+                this.creepers[j] = this.creepers[this.crN];
+            } else {
+                j = j + 1;
+            }
         }
 
         let tries : i32 = 0;
@@ -147,19 +255,35 @@ class MobManager {
         }
     }
 
-    /** Consider one mob as a melee candidate; returns whether it beats the
-     *  current best (closer, in front, alive). */
+    /**
+     * Consider one mob as a melee candidate; returns whether it beats the
+     * current best (closer, in front, alive).
+     * @param m       the candidate mob
+     * @param player  the attacking player
+     * @param fwdx    x component of the player's forward direction
+     * @param fwdz    z component of the player's forward direction
+     * @param bestD   the current best squared distance to beat
+     * @return true if this mob is a closer, in-front, living candidate
+     */
     fn better(m : Mob, player : Player, fwdx : f64, fwdz : f64, bestD : f64) : bool {
-        if (m.isDying()) { return false; }
+        if (m.isDying()) {
+            return false;
+        }
         let dx : f64 = m.posX - player.posX;
         let dz : f64 = m.posZ - player.posZ;
         let d2 : f64 = dx * dx + dz * dz;
-        if (d2 > bestD) { return false; }
+        if (d2 > bestD) {
+            return false;
+        }
         return (dx * fwdx + dz * fwdz) > 0.0;
     }
 
-    /** Melee the nearest living mob in front of the player within range.
-     *  Returns the struck mob's kind, or -1 if nothing was hit. */
+    /**
+     * Melee the nearest living mob in front of the player within range.
+     * Returns the struck mob's kind, or -1 if nothing was hit.
+     * @param player  the attacking player
+     * @return the struck mob's kind, or -1 if nothing was hit
+     */
     fn attackNearest(player : Player) : i32 {
         let fwdx : f64 = 0.0 - player.siny;
         let fwdz : f64 = player.cosy;
@@ -170,8 +294,11 @@ class MobManager {
         while (i < this.chN) {
             let m : Mob = this.chickens[i] as Mob;
             if (this.better(m, player, fwdx, fwdz, bestD)) {
-                let dx : f64 = m.posX - player.posX; let dz : f64 = m.posZ - player.posZ;
-                bestD = dx * dx + dz * dz; bestArr = 0; bestIdx = i;
+                let dx : f64 = m.posX - player.posX;
+                let dz : f64 = m.posZ - player.posZ;
+                bestD = dx * dx + dz * dz;
+                bestArr = 0;
+                bestIdx = i;
             }
             i = i + 1;
         }
@@ -179,8 +306,11 @@ class MobManager {
         while (i < this.shN) {
             let m : Mob = this.sheep[i] as Mob;
             if (this.better(m, player, fwdx, fwdz, bestD)) {
-                let dx : f64 = m.posX - player.posX; let dz : f64 = m.posZ - player.posZ;
-                bestD = dx * dx + dz * dz; bestArr = 1; bestIdx = i;
+                let dx : f64 = m.posX - player.posX;
+                let dz : f64 = m.posZ - player.posZ;
+                bestD = dx * dx + dz * dz;
+                bestArr = 1;
+                bestIdx = i;
             }
             i = i + 1;
         }
@@ -188,8 +318,11 @@ class MobManager {
         while (i < this.coN) {
             let m : Mob = this.cows[i] as Mob;
             if (this.better(m, player, fwdx, fwdz, bestD)) {
-                let dx : f64 = m.posX - player.posX; let dz : f64 = m.posZ - player.posZ;
-                bestD = dx * dx + dz * dz; bestArr = 2; bestIdx = i;
+                let dx : f64 = m.posX - player.posX;
+                let dz : f64 = m.posZ - player.posZ;
+                bestD = dx * dx + dz * dz;
+                bestArr = 2;
+                bestIdx = i;
             }
             i = i + 1;
         }
@@ -197,13 +330,18 @@ class MobManager {
         while (i < this.crN) {
             let m : Mob = this.creepers[i] as Mob;
             if (this.better(m, player, fwdx, fwdz, bestD)) {
-                let dx : f64 = m.posX - player.posX; let dz : f64 = m.posZ - player.posZ;
-                bestD = dx * dx + dz * dz; bestArr = 3; bestIdx = i;
+                let dx : f64 = m.posX - player.posX;
+                let dz : f64 = m.posZ - player.posZ;
+                bestD = dx * dx + dz * dz;
+                bestArr = 3;
+                bestIdx = i;
             }
             i = i + 1;
         }
 
-        if (bestArr < 0) { return 0 - 1; }
+        if (bestArr < 0) {
+            return 0 - 1;
+        }
         let target : Mob = this.pick(bestArr, bestIdx);
         target.damage(config::attackDamage);
         target.flashHurt();

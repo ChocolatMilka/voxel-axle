@@ -7,30 +7,60 @@
 use crate::platform::mem::rgb;
 use crate::gfx::color::fillRect;
 
-/** 9×9 heart, one digit per pixel: 0 empty, 1 outline, 3 body,
- *  4 highlight (the shiny upper-left lobe). */
+/**
+ * 9×9 heart, one digit per pixel: 0 empty, 1 outline, 3 body, 4 highlight
+ * (the shiny upper-left lobe).
+ * @return the 81-char heart mask string.
+ */
 fn heartMask() : string {
     return "011000110144101331144313331133333331133333331013333310001333100000131000000010000";
 }
 
-fn heartScale() : i32 { return 2; }
+/**
+ * Pixel scale of a heart sprite.
+ * @return the pixel scale.
+ */
+fn heartScale() : i32 {
+    return 2;
+}
 
-/** Pixel colour for a mask code, in the red (filled) or grey (empty)
- *  palette. */
+/**
+ * Pixel colour for a mask code, in the red (filled) or grey (empty)
+ * palette.
+ * @param code    the mask code.
+ * @param filled  whether to use the filled (red) palette.
+ * @return the ARGB-packed colour.
+ */
 fn heartColor(code : i32, filled : bool) : i32 {
     if (filled) {
-        if (code == 1) { return rgb(54, 10, 10); }
-        if (code == 3) { return rgb(228, 40, 40); }
+        if (code == 1) {
+            return rgb(54, 10, 10);
+        }
+        if (code == 3) {
+            return rgb(228, 40, 40);
+        }
         return rgb(255, 140, 140);
     }
-    if (code == 1) { return rgb(22, 20, 26); }
-    if (code == 3) { return rgb(78, 78, 90); }
+    if (code == 1) {
+        return rgb(22, 20, 26);
+    }
+    if (code == 3) {
+        return rgb(78, 78, 90);
+    }
     return rgb(108, 108, 122);
 }
 
-/** Draw one heart at (x, y). `fill`: 0 empty, 1 half (left side red),
- *  2 full. The grey container is always drawn first, then the red
- *  overlay for the filled portion. */
+/**
+ * Draw one heart at (x, y). `fill`: 0 empty, 1 half (left side red), 2
+ * full. The grey container is always drawn first, then the red overlay for
+ * the filled portion.
+ * @param base  framebuffer base pointer.
+ * @param fbW   framebuffer width.
+ * @param fbH   framebuffer height.
+ * @param x     heart left.
+ * @param y     heart top.
+ * @param fill  fill level: 0 empty, 1 half, 2 full.
+ */
 fn drawHeart(base : i64, fbW : i32, fbH : i32, x : i32, y : i32, fill : i32) : void {
     let scale : i32 = heartScale();
     let mask : string = heartMask();
@@ -53,7 +83,16 @@ fn drawHeart(base : i64, fbW : i32, fbH : i32, x : i32, y : i32, fill : i32) : v
     }
 }
 
-/** Draw the heart row (`maxHp / 2` hearts) with its top-left at (x0, y0). */
+/**
+ * Draw the heart row (`maxHp / 2` hearts) with its top-left at (x0, y0).
+ * @param base   framebuffer base pointer.
+ * @param fbW    framebuffer width.
+ * @param fbH    framebuffer height.
+ * @param x0     row left.
+ * @param y0     row top.
+ * @param hp     current health.
+ * @param maxHp  maximum health.
+ */
 fn drawHealth(base : i64, fbW : i32, fbH : i32, x0 : i32, y0 : i32, hp : i32, maxHp : i32) : void {
     let scale : i32 = heartScale();
     let hearts : i32 = maxHp / 2;
@@ -61,12 +100,20 @@ fn drawHealth(base : i64, fbW : i32, fbH : i32, x0 : i32, y0 : i32, hp : i32, ma
     let i : i32 = 0;
     while (i < hearts) {
         let fill : i32 = 0;
-        if (hp >= (i + 1) * 2) { fill = 2; }
-        else if (hp >= i * 2 + 1) { fill = 1; }
+        if (hp >= (i + 1) * 2) {
+            fill = 2;
+        } else if (hp >= i * 2 + 1) {
+            fill = 1;
+        }
         drawHeart(base, fbW, fbH, x0 + i * step, y0, fill);
         i = i + 1;
     }
 }
 
-/** Pixel height of the heart row (for HUD layout). */
-fn healthHeight() : i32 { return 9 * heartScale(); }
+/**
+ * Pixel height of the heart row (for HUD layout).
+ * @return the heart row height in pixels.
+ */
+fn healthHeight() : i32 {
+    return 9 * heartScale();
+}

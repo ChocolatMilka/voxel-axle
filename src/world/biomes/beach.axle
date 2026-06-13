@@ -4,8 +4,28 @@ use crate::world::biomes::Biome;
 use crate::config;
 
 class Beach extends Biome {
-    constructor() { super(); }
-    fn surface(height : i32) : i32 { return config::bSand; }
-    fn filler() : i32 { return config::bSand; }
+    /**
+     * Construct the beach biome.
+     */
+    constructor() {
+        super();
+    }
+
+    /**
+     * Top block: sand.
+     * @param height  the column's surface height
+     * @return the surface block id
+     */
+    fn surface(height : i32) : i32 {
+        return config::bSand;
+    }
+
+    /**
+     * Sub-surface filler block.
+     * @return the filler block id
+     */
+    fn filler() : i32 {
+        return config::bSand;
+    }
     // treeThreshold / treeKind default to none.
 }

@@ -4,35 +4,112 @@
 // 640×400 framebuffer; `main` maps the window-space cursor into it.
 
 use crate::platform::mem::rgb;
-use crate::gfx::color::fillRect;
-use crate::gfx::color::dimScreen;
-use crate::gfx::font::drawText;
-use crate::gfx::font::textWidth;
+use crate::gfx::color::{fillRect, dimScreen};
+use crate::gfx::font::{drawText, textWidth};
 
-fn panelW() : i32 { return 300; }
-fn panelH() : i32 { return 200; }
-fn panelX(fbW : i32) : i32 { return (fbW - panelW()) / 2; }
-fn panelY(fbH : i32) : i32 { return (fbH - panelH()) / 2; }
+/**
+ * Pixel width of the pause panel.
+ * @return the panel width in pixels.
+ */
+fn panelW() : i32 {
+    return 300;
+}
 
-fn btnW() : i32 { return 220; }
-fn btnH() : i32 { return 36; }
-fn btnX(fbW : i32) : i32 { return (fbW - btnW()) / 2; }
-fn btnY(fbH : i32, i : i32) : i32 { return panelY(fbH) + 96 + i * (btnH() + 16); }
+/**
+ * Pixel height of the pause panel.
+ * @return the panel height in pixels.
+ */
+fn panelH() : i32 {
+    return 200;
+}
 
-/** Button index (0 = Resume, 1 = Quit) under framebuffer point (mx, my),
- *  or -1 if none. */
+/**
+ * Left edge of the centred pause panel.
+ * @param fbW  framebuffer width.
+ * @return the panel left in pixels.
+ */
+fn panelX(fbW : i32) : i32 {
+    return (fbW - panelW()) / 2;
+}
+
+/**
+ * Top edge of the centred pause panel.
+ * @param fbH  framebuffer height.
+ * @return the panel top in pixels.
+ */
+fn panelY(fbH : i32) : i32 {
+    return (fbH - panelH()) / 2;
+}
+
+/**
+ * Pixel width of a menu button.
+ * @return the button width in pixels.
+ */
+fn btnW() : i32 {
+    return 220;
+}
+
+/**
+ * Pixel height of a menu button.
+ * @return the button height in pixels.
+ */
+fn btnH() : i32 {
+    return 36;
+}
+
+/**
+ * Left edge of the centred menu buttons.
+ * @param fbW  framebuffer width.
+ * @return the button left in pixels.
+ */
+fn btnX(fbW : i32) : i32 {
+    return (fbW - btnW()) / 2;
+}
+
+/**
+ * Top edge of button `i`.
+ * @param fbH  framebuffer height.
+ * @param i    the button index.
+ * @return the button top in pixels.
+ */
+fn btnY(fbH : i32, i : i32) : i32 {
+    return panelY(fbH) + 96 + i * (btnH() + 16);
+}
+
+/**
+ * Button index (0 = Resume, 1 = Quit) under framebuffer point (mx, my), or
+ * -1 if none.
+ * @param fbW  framebuffer width.
+ * @param fbH  framebuffer height.
+ * @param mx   cursor x in framebuffer space.
+ * @param my   cursor y in framebuffer space.
+ * @return the button index, or -1 if none.
+ */
 fn menuHit(fbW : i32, fbH : i32, mx : i32, my : i32) : i32 {
     let i : i32 = 0;
     while (i < 2) {
         let bx : i32 = btnX(fbW);
         let by : i32 = btnY(fbH, i);
-        if (mx >= bx && mx < bx + btnW() && my >= by && my < by + btnH()) { return i; }
+        if (mx >= bx && mx < bx + btnW() && my >= by && my < by + btnH()) {
+            return i;
+        }
         i = i + 1;
     }
     return 0 - 1;
 }
 
-/** A panel border drawn as four `t`-thick edges. */
+/**
+ * A panel border drawn as four `t`-thick edges.
+ * @param base   framebuffer base pointer.
+ * @param fbW    framebuffer width.
+ * @param fbH    framebuffer height.
+ * @param x      border left.
+ * @param y      border top.
+ * @param ww     border width.
+ * @param hh     border height.
+ * @param t      edge thickness.
+ * @param color  border colour.
+ */
 fn border(base : i64, fbW : i32, fbH : i32, x : i32, y : i32, ww : i32, hh : i32, t : i32, color : i32) : void {
     fillRect(base, fbW, fbH, x, y, ww, t, color);
     fillRect(base, fbW, fbH, x, y + hh - t, ww, t, color);
@@ -40,6 +117,15 @@ fn border(base : i64, fbW : i32, fbH : i32, x : i32, y : i32, ww : i32, hh : i32
     fillRect(base, fbW, fbH, x + ww - t, y, t, hh, color);
 }
 
+/**
+ * Draw button `i` with `label`, highlighted when hovered.
+ * @param base   framebuffer base pointer.
+ * @param fbW    framebuffer width.
+ * @param fbH    framebuffer height.
+ * @param i      the button index.
+ * @param label  the button label.
+ * @param hover  index of the hovered button.
+ */
 fn drawButton(base : i64, fbW : i32, fbH : i32, i : i32, label : string, hover : i32) : void {
     let bx : i32 = btnX(fbW);
     let by : i32 = btnY(fbH, i);
@@ -47,7 +133,11 @@ fn drawButton(base : i64, fbW : i32, fbH : i32, i : i32, label : string, hover :
     let bg : i32 = rgb(44, 48, 58);
     let edge : i32 = rgb(70, 76, 90);
     let txt : i32 = rgb(210, 214, 224);
-    if (on) { bg = rgb(86, 180, 90); edge = rgb(150, 230, 150); txt = rgb(16, 22, 16); }
+    if (on) {
+        bg = rgb(86, 180, 90);
+        edge = rgb(150, 230, 150);
+        txt = rgb(16, 22, 16);
+    }
     fillRect(base, fbW, fbH, bx, by, btnW(), btnH(), bg);
     border(base, fbW, fbH, bx, by, btnW(), btnH(), 2, edge);
     let sc : i32 = 2;
@@ -55,7 +145,13 @@ fn drawButton(base : i64, fbW : i32, fbH : i32, i : i32, label : string, hover :
     drawText(base, fbW, fbH, bx + (btnW() - tw) / 2, by + (btnH() - 7 * sc) / 2, sc, txt, label);
 }
 
-/** Draw the whole pause overlay, highlighting the hovered button. */
+/**
+ * Draw the whole pause overlay, highlighting the hovered button.
+ * @param base   framebuffer base pointer.
+ * @param fbW    framebuffer width.
+ * @param fbH    framebuffer height.
+ * @param hover  index of the hovered button.
+ */
 fn drawPauseMenu(base : i64, fbW : i32, fbH : i32, hover : i32) : void {
     dimScreen(base, fbW, fbH, 0.35);
 

@@ -6,9 +6,7 @@
 // floating fly-camera any more — where you look is where you walk, and
 // gravity always has a say.
 
-use std::numeric::math::sin;
-use std::numeric::math::cos;
-use std::numeric::math::floorToInt;
+use std::numeric::math::{sin, cos, floorToInt};
 use crate::entities::entity::Entity;
 use crate::world::manager::ChunkManager;
 use crate::config;
@@ -31,6 +29,7 @@ class Player extends Entity {
     hotbar : i32[],   // block id held in each inventory slot
     selected : i32,   // active hotbar slot (0-based)
 
+    /** Construct a player at (x, y, z) with a stocked hotbar and full HP. */
     constructor(x : f64, y : f64, z : f64) {
         this.posX = x;
         this.posY = y;
@@ -73,21 +72,35 @@ class Player extends Entity {
         this.selected = 0;
     }
 
-    /** Select hotbar slot `i` (ignored if out of range). */
+    /**
+     * Select hotbar slot `i` (ignored if out of range).
+     * @param i  hotbar slot index to activate
+     */
     fn selectSlot(i : i32) : void {
-        if (i >= 0 && i < config::hotbarSize) { this.selected = i; }
+        if (i >= 0 && i < config::hotbarSize) {
+            this.selected = i;
+        }
     }
 
-    /** The block id currently held for placing. */
+    /**
+     * The block id currently held for placing.
+     * @return block id in the active hotbar slot
+     */
     fn heldBlock() : i32 {
         return this.hotbar[this.selected];
     }
 
-    /** Toggle survival ↔ creative. Creative enables free flight; entering
-     *  it cancels any fall, leaving it restores normal gravity. */
+    /**
+     * Toggle survival ↔ creative. Creative enables free flight; entering
+     * it cancels any fall, leaving it restores normal gravity.
+     */
     fn toggleGameMode() : void {
-        if (this.creative == 0) { this.creative = 1; this.velY = 0.0; }
-        else { this.creative = 0; }
+        if (this.creative == 0) {
+            this.creative = 1;
+            this.velY = 0.0;
+        } else {
+            this.creative = 0;
+        }
     }
 
     /** Recompute look trig and the eye position the renderer projects from. */
@@ -101,27 +114,51 @@ class Player extends Entity {
         this.eyeZ = this.posZ;
     }
 
+    /**
+     * Apply a relative look delta, clamping pitch to the configured range.
+     * @param dyaw    yaw change in radians
+     * @param dpitch  pitch change in radians
+     */
     fn look(dyaw : f64, dpitch : f64) : void {
         this.yaw = this.yaw + dyaw;
         this.pitch = this.pitch + dpitch;
-        if (this.pitch > config::pitchMax) { this.pitch = config::pitchMax; }
-        if (this.pitch < 0.0 - config::pitchMax) { this.pitch = 0.0 - config::pitchMax; }
+        if (this.pitch > config::pitchMax) {
+            this.pitch = config::pitchMax;
+        }
+        if (this.pitch < 0.0 - config::pitchMax) {
+            this.pitch = 0.0 - config::pitchMax;
+        }
     }
 
-    /** Damage that also restarts the regeneration delay. */
+    /**
+     * Damage that also restarts the regeneration delay.
+     * @param d  points of damage to apply
+     */
     fn hurt(d : i32) : void {
         this.damage(d);
         this.sinceHurt = 0;
     }
 
+    /**
+     * Is the eye below sea level (so the player is submerged)?
+     * @return true when the eye height is under the sea level
+     */
     fn isUnderwater() : bool {
         return (this.posY + config::eyeHeight) < (config::seaLevel as f64);
     }
 
-    /** Full per-frame update. `fwd`/`strafe` are in [-1,1]; `up`/`down`
-     *  drive vertical flight in creative. Survival applies gravity + the
-     *  survival effects (fall / drown / regen); creative flies freely with
-     *  no damage. Refreshes the camera at the end. */
+    /**
+     * Full per-frame update. `fwd`/`strafe` are in [-1,1]; `up`/`down`
+     * drive vertical flight in creative. Survival applies gravity + the
+     * survival effects (fall / drown / regen); creative flies freely with
+     * no damage. Refreshes the camera at the end.
+     * @param world   chunk manager queried for solid voxels
+     * @param fwd     forward intent in [-1, 1]
+     * @param strafe  strafe intent in [-1, 1]
+     * @param sprint  whether the sprint modifier is held
+     * @param up      whether the up / jump input is held
+     * @param down    whether the down input is held
+     */
     fn update(world : ChunkManager, fwd : f64, strafe : f64, sprint : bool,
         up : bool, down : bool) : void {
         if (this.creative == 1) {
@@ -132,8 +169,11 @@ class Player extends Entity {
 
         let water : bool = this.isUnderwater();
         let speed : f64 = config::walkSpeed;
-        if (water) { speed = config::swimSpeed; }
-        else if (sprint) { speed = config::sprintSpeed; }
+        if (water) {
+            speed = config::swimSpeed;
+        } else if (sprint) {
+            speed = config::sprintSpeed;
+        }
 
         let dx : f64 = (0.0 - this.siny) * fwd + this.cosy * strafe;
         let dz : f64 = this.cosy * fwd + this.siny * strafe;
@@ -142,7 +182,9 @@ class Player extends Entity {
 
         if (water) {
             this.velY = this.velY * 0.5;
-            if (up) { this.velY = 0.11; }
+            if (up) {
+                this.velY = 0.11;
+            }
         } else if (up && this.onGround == 1) {
             this.velY = config::jumpVel;
         }
@@ -152,22 +194,40 @@ class Player extends Entity {
         this.refresh();
     }
 
-    /** Creative free flight: no gravity, faster horizontal movement,
-     *  Space/Shift for up/down, blocked by walls but never sinks below
-     *  the ground under the feet. */
+    /**
+     * Creative free flight: no gravity, faster horizontal movement,
+     * Space/Shift for up/down, blocked by walls but never sinks below
+     * the ground under the feet.
+     * @param world   chunk manager queried for solid voxels
+     * @param fwd     forward intent in [-1, 1]
+     * @param strafe  strafe intent in [-1, 1]
+     * @param sprint  whether the sprint modifier is held
+     * @param up      whether the up input is held
+     * @param down    whether the down input is held
+     */
     fn fly(world : ChunkManager, fwd : f64, strafe : f64, sprint : bool,
         up : bool, down : bool) : void {
         let speed : f64 = config::flySpeed;
-        if (sprint) { speed = config::flySprintSpeed; }
+        if (sprint) {
+            speed = config::flySprintSpeed;
+        }
         let dx : f64 = ((0.0 - this.siny) * fwd + this.cosy * strafe) * speed;
         let dz : f64 = (this.cosy * fwd + this.siny * strafe) * speed;
         this.velY = 0.0;
         this.onGround = 0;
         // Horizontal move with voxel collision (no auto-step in flight).
-        if (!this.collidesAt(world, this.posX + dx, this.posY, this.posZ)) { this.posX = this.posX + dx; }
-        if (!this.collidesAt(world, this.posX, this.posY, this.posZ + dz)) { this.posZ = this.posZ + dz; }
-        if (up) { this.posY = this.posY + config::flyVertSpeed; }
-        if (down) { this.posY = this.posY - config::flyVertSpeed; }
+        if (!this.collidesAt(world, this.posX + dx, this.posY, this.posZ)) {
+            this.posX = this.posX + dx;
+        }
+        if (!this.collidesAt(world, this.posX, this.posY, this.posZ + dz)) {
+            this.posZ = this.posZ + dz;
+        }
+        if (up) {
+            this.posY = this.posY + config::flyVertSpeed;
+        }
+        if (down) {
+            this.posY = this.posY - config::flyVertSpeed;
+        }
         // Don't sink into the ground: if the body intersects blocks, lift
         // the feet onto the highest support beneath them.
         if (this.collidesAt(world, this.posX, this.posY, this.posZ)) {
@@ -178,7 +238,10 @@ class Player extends Entity {
         }
     }
 
-    /** Fall damage, drowning and regeneration based on this frame's state. */
+    /**
+     * Fall damage, drowning and regeneration based on this frame's state.
+     * @param water  whether the player is currently submerged
+     */
     fn survive(water : bool) : void {
         this.sinceHurt = this.sinceHurt + 1;
 
@@ -186,7 +249,9 @@ class Player extends Entity {
         // the distance dropped from the apex).
         if (!water && this.impact > config::safeFallDist) {
             let dmg : i32 = floorToInt((this.impact - config::safeFallDist) * config::fallDamagePerBlock) as i32;
-            if (dmg > 0) { this.hurt(dmg); }
+            if (dmg > 0) {
+                this.hurt(dmg);
+            }
         }
 
         if (water) {

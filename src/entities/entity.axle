@@ -31,6 +31,7 @@ class Entity {
     apexY : f64,         // highest Y since leaving the ground (for fall distance)
     stepUp : f64,        // pending visual step-up offset (camera eases it to 0)
 
+    /** Construct an entity at (x, y, z) with the given max (and current) HP. */
     constructor(x : f64, y : f64, z : f64, maxHp : i32) {
         this.posX = x;
         this.posY = y;
@@ -48,27 +49,48 @@ class Entity {
         this.stepUp = 0.0;
     }
 
-    /** Apply `d` points of damage; clamps at zero. */
+    /**
+     * Apply `d` points of damage; clamps at zero.
+     * @param d  points of damage to subtract
+     */
     fn damage(d : i32) : void {
         this.hp = this.hp - d;
-        if (this.hp < 0) { this.hp = 0; }
+        if (this.hp < 0) {
+            this.hp = 0;
+        }
     }
 
-    /** Restore `d` points, never above max. */
+    /**
+     * Restore `d` points, never above max.
+     * @param d  points of health to add
+     */
     fn heal(d : i32) : void {
         this.hp = this.hp + d;
-        if (this.hp > this.maxHp) { this.hp = this.maxHp; }
+        if (this.hp > this.maxHp) {
+            this.hp = this.maxHp;
+        }
     }
 
+    /**
+     * Is this entity still alive (HP above zero)?
+     * @return true while HP is greater than zero
+     */
     fn isAlive() : bool {
         return this.hp > 0;
     }
 
-    /** Does the body AABB at (px, py, pz) overlap any collidable voxel?
-     *  The body is a `radius`-wide column `height` tall with feet at py.
-     *  Each block is tested individually, so the world is a real voxel
-     *  field — you stand on leaves, walk through canopy gaps, and can't
-     *  pass into any solid block. */
+    /**
+     * Does the body AABB at (px, py, pz) overlap any collidable voxel?
+     * The body is a `radius`-wide column `height` tall with feet at py.
+     * Each block is tested individually, so the world is a real voxel
+     * field — you stand on leaves, walk through canopy gaps, and can't
+     * pass into any solid block.
+     * @param world  chunk manager queried for solid voxels
+     * @param px     candidate body-centre X
+     * @param py     candidate foot height
+     * @param pz     candidate body-centre Z
+     * @return true if any voxel under the body footprint is solid
+     */
     fn collidesAt(world : ChunkManager, px : f64, py : f64, pz : f64) : bool {
         let r : f64 = this.radius;
         let eps : f64 = 0.0001;
@@ -84,7 +106,9 @@ class Entity {
             while (x <= x1) {
                 let z : i32 = z0;
                 while (z <= z1) {
-                    if (world.solidAt(x, y, z)) { return true; }
+                    if (world.solidAt(x, y, z)) {
+                        return true;
+                    }
                     z = z + 1;
                 }
                 x = x + 1;
@@ -94,9 +118,17 @@ class Entity {
         return false;
     }
 
-    /** Top surface Y (voxelY+1) of the highest collidable voxel under the
-     *  footprint within world-Y rows [yLo, yHi]; a very low value if none.
-     *  Used to snap the feet onto a ledge / the ground. */
+    /**
+     * Top surface Y (voxelY+1) of the highest collidable voxel under the
+     * footprint within world-Y rows [yLo, yHi]; a very low value if none.
+     * Used to snap the feet onto a ledge / the ground.
+     * @param world  chunk manager queried for solid voxels
+     * @param px     body-centre X
+     * @param pz     body-centre Z
+     * @param yLo    lowest world-Y row to scan
+     * @param yHi    highest world-Y row to scan
+     * @return top surface Y of the highest support, or a very low value if none
+     */
     fn supportTop(world : ChunkManager, px : f64, pz : f64, yLo : i32, yHi : i32) : f64 {
         let r : f64 = this.radius;
         let eps : f64 = 0.0001;
@@ -112,7 +144,9 @@ class Entity {
                 let y : i32 = yHi;
                 while (y >= yLo) {
                     if (world.solidAt(x, y, z)) {
-                        if (y + 1 > best) { best = y + 1; }
+                        if (y + 1 > best) {
+                            best = y + 1;
+                        }
                         y = yLo - 1;
                     } else {
                         y = y - 1;
@@ -125,12 +159,21 @@ class Entity {
         return best as f64;
     }
 
-    /** Move along X, blocked by solid voxels; auto-step a ≤ stepHeight
-     *  ledge when grounded. */
+    /**
+     * Move along X, blocked by solid voxels; auto-step a ≤ stepHeight
+     * ledge when grounded.
+     * @param world  chunk manager queried for solid voxels
+     * @param dx     signed X displacement to apply
+     */
     fn moveX(world : ChunkManager, dx : f64) : void {
-        if (dx == 0.0) { return; }
+        if (dx == 0.0) {
+            return;
+        }
         let nx : f64 = this.posX + dx;
-        if (!this.collidesAt(world, nx, this.posY, this.posZ)) { this.posX = nx; return; }
+        if (!this.collidesAt(world, nx, this.posY, this.posZ)) {
+            this.posX = nx;
+            return;
+        }
         if (this.onGround == 1) {
             let stepY : f64 = this.posY + config::stepHeight;
             if (!this.collidesAt(world, nx, stepY, this.posZ)) {
@@ -146,10 +189,21 @@ class Entity {
         }
     }
 
+    /**
+     * Move along Z, blocked by solid voxels; auto-step a ≤ stepHeight
+     * ledge when grounded.
+     * @param world  chunk manager queried for solid voxels
+     * @param dz     signed Z displacement to apply
+     */
     fn moveZ(world : ChunkManager, dz : f64) : void {
-        if (dz == 0.0) { return; }
+        if (dz == 0.0) {
+            return;
+        }
         let nz : f64 = this.posZ + dz;
-        if (!this.collidesAt(world, this.posX, this.posY, nz)) { this.posZ = nz; return; }
+        if (!this.collidesAt(world, this.posX, this.posY, nz)) {
+            this.posZ = nz;
+            return;
+        }
         if (this.onGround == 1) {
             let stepY : f64 = this.posY + config::stepHeight;
             if (!this.collidesAt(world, this.posX, stepY, nz)) {
@@ -165,15 +219,20 @@ class Entity {
         }
     }
 
-    /** Vertical motion + landing against real voxels. Gravity accelerates
-     *  the fall (clamped to terminal); landing snaps the feet onto the
-     *  block top; rising into a block stops the climb. `impact` (distance
-     *  fallen from the apex) drives fall damage. */
+    /**
+     * Vertical motion + landing against real voxels. Gravity accelerates
+     * the fall (clamped to terminal); landing snaps the feet onto the
+     * block top; rising into a block stops the climb. `impact` (distance
+     * fallen from the apex) drives fall damage.
+     * @param world  chunk manager queried for solid voxels
+     */
     fn fall(world : ChunkManager) : void {
         this.impact = 0.0;
         this.velY = this.velY - this.grav * this.gravityScale;
         let term : f64 = 0.0 - config::terminalVel;
-        if (this.velY < term) { this.velY = term; }
+        if (this.velY < term) {
+            this.velY = term;
+        }
         let ny : f64 = this.posY + this.velY;
         if (this.velY <= 0.0) {
             if (this.collidesAt(world, this.posX, ny, this.posZ)) {
@@ -194,18 +253,27 @@ class Entity {
                 this.onGround = 0;
             } else {
                 this.posY = ny;
-                if (this.posY > this.apexY) { this.apexY = this.posY; }
+                if (this.posY > this.apexY) {
+                    this.apexY = this.posY;
+                }
                 this.onGround = 0;
             }
         }
     }
 
-    /** One physics step: horizontal intent (dx, dz) then vertical. The
-     *  visual step-up offset decays each tick so an auto-stepped ledge
-     *  eases the camera up smoothly instead of snapping. */
+    /**
+     * One physics step: horizontal intent (dx, dz) then vertical. The
+     * visual step-up offset decays each tick so an auto-stepped ledge
+     * eases the camera up smoothly instead of snapping.
+     * @param world  chunk manager queried for solid voxels
+     * @param dx     signed X displacement intent for this step
+     * @param dz     signed Z displacement intent for this step
+     */
     fn tick(world : ChunkManager, dx : f64, dz : f64) : void {
         this.stepUp = this.stepUp * config::stepSmoothDecay;
-        if (this.stepUp < 0.02) { this.stepUp = 0.0; }
+        if (this.stepUp < 0.02) {
+            this.stepUp = 0.0;
+        }
         this.moveX(world, dx);
         this.moveZ(world, dz);
         this.fall(world);

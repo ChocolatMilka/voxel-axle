@@ -3,13 +3,20 @@
 // hotbar). Drawn straight into the framebuffer after the world and mobs.
 // Stateless: reads hp + the hotbar and paints pixels.
 
-use crate::gfx::hotbar::drawHotbar;
-use crate::gfx::hotbar::hotbarPanelW;
-use crate::gfx::hotbar::hotbarPanelH;
-use crate::gfx::health::drawHealth;
-use crate::gfx::health::healthHeight;
+use crate::gfx::hotbar::{drawHotbar, hotbarPanelW, hotbarPanelH};
+use crate::gfx::health::{drawHealth, healthHeight};
 
-/** Draw the full HUD overlay. `atlas` supplies the hotbar item textures. */
+/**
+ * Draw the full HUD overlay. `atlas` supplies the hotbar item textures.
+ * @param base      framebuffer base pointer.
+ * @param fbW       framebuffer width.
+ * @param fbH       framebuffer height.
+ * @param atlas     atlas supplying the hotbar item textures.
+ * @param hp        current health.
+ * @param maxHp     maximum health.
+ * @param hotbar    hotbar slot block ids.
+ * @param selected  index of the active hotbar slot.
+ */
 fn drawHud(base : i64, fbW : i32, fbH : i32, atlas : i64, hp : i32, maxHp : i32, hotbar : i32[], selected : i32) : void {
     let pw : i32 = hotbarPanelW();
     let ph : i32 = hotbarPanelH();

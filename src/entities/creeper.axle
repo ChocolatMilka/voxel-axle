@@ -2,30 +2,36 @@
 // lights a fuse, holds, then explodes; defuses if the player flees or
 // switches to creative. Overrides the passive base with its own `step`.
 
-use std::numeric::math::sin;
-use std::numeric::math::cos;
-use std::numeric::math::sqrt;
-use std::numeric::math::floorToInt;
-use crate::entities::mob::Mob;
-use crate::entities::mob::atan2;
+use std::numeric::math::{sin, cos, sqrt, floorToInt};
+use crate::entities::mob::{Mob, atan2};
 use crate::entities::player::Player;
 use crate::world::manager::ChunkManager;
 use crate::config;
 
 class Creeper extends Mob {
+    /** Create a creeper at (x, y, z). */
     constructor(x : f64, y : f64, z : f64) {
         super(x, y, z, config::mobCreeper, config::mobCreeperHp);
         this.speed = config::mobCreeperSpeed;
         this.height = 1.5;
     }
 
-    /** Creeper AI for one frame (needs the player). Returns 2 on the tick
-     *  it lights its fuse, 1 on the tick it detonates, else 0 — the manager
-     *  turns those into the charge / explosion sounds. */
+    /**
+     * Creeper AI for one frame (needs the player). Returns 2 on the tick
+     * it lights its fuse, 1 on the tick it detonates, else 0 — the manager
+     * turns those into the charge / explosion sounds.
+     * @param world   the chunk manager the creeper moves through
+     * @param player  the player to home in on
+     * @return 2 when the fuse lights, 1 when it detonates, else 0
+     */
     fn step(world : ChunkManager, player : Player) : i32 {
-        if (this.hurtTimer > 0) { this.hurtTimer = this.hurtTimer - 1; }
+        if (this.hurtTimer > 0) {
+            this.hurtTimer = this.hurtTimer - 1;
+        }
         if (this.state == 1) {
-            if (this.deathTimer > 0) { this.deathTimer = this.deathTimer - 1; }
+            if (this.deathTimer > 0) {
+                this.deathTimer = this.deathTimer - 1;
+            }
             this.tick(world, 0.0, 0.0);
             return 0;
         }
@@ -72,8 +78,12 @@ class Creeper extends Mob {
         return 0;
     }
 
-    /** Detonate: distance-scaled damage to the player and a spherical
-     *  crater of broken blocks, then mark the creeper for removal. */
+    /**
+     * Detonate: distance-scaled damage to the player and a spherical
+     * crater of broken blocks, then mark the creeper for removal.
+     * @param world   the chunk manager whose blocks are cratered
+     * @param player  the player to damage by the blast
+     */
     fn explode(world : ChunkManager, player : Player) : void {
         let dx : f64 = player.posX - this.posX;
         let dy : f64 = player.posY - this.posY;
@@ -83,7 +93,9 @@ class Creeper extends Mob {
         if (d < reach) {
             let f : f64 = 1.0 - d / reach;
             let dmg : i32 = floorToInt(f * (config::creeperDamage as f64)) as i32;
-            if (dmg > 0) { player.hurt(dmg); }
+            if (dmg > 0) {
+                player.hurt(dmg);
+            }
         }
         let r : i32 = floorToInt(config::creeperBlastRadius) as i32;
         let cx : i32 = floorToInt(this.posX) as i32;

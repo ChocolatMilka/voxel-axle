@@ -4,28 +4,57 @@
 // wins. Winding-agnostic (the area's sign flows through the weights).
 
 use std::numeric::math::floorToInt;
-use crate::platform::mem::putPixel;
-use crate::platform::mem::getF64;
-use crate::platform::mem::setF64;
-use crate::platform::mem::readI32;
-use crate::platform::mem::rgb;
+use crate::platform::mem::{putPixel, getF64, setF64, readI32, rgb};
 use crate::config;
 
+/**
+ * Lesser of two f64 values.
+ * @param a  first value.
+ * @param b  second value.
+ * @return the smaller of `a` and `b`.
+ */
 fn minf(a : f64, b : f64) : f64 {
-    if (a < b) { return a; }
+    if (a < b) {
+        return a;
+    }
     return b;
 }
 
+/**
+ * Greater of two f64 values.
+ * @param a  first value.
+ * @param b  second value.
+ * @return the larger of `a` and `b`.
+ */
 fn maxf(a : f64, b : f64) : f64 {
-    if (a > b) { return a; }
+    if (a > b) {
+        return a;
+    }
     return b;
 }
 
+/**
+ * Edge function: signed area of the triangle (a, b, p).
+ * @param ax  first vertex x.
+ * @param ay  first vertex y.
+ * @param bx  second vertex x.
+ * @param by  second vertex y.
+ * @param px  test point x.
+ * @param py  test point y.
+ * @return the signed area.
+ */
 fn edge(ax : f64, ay : f64, bx : f64, by : f64, px : f64, py : f64) : f64 {
     return (px - ax) * (by - ay) - (py - ay) * (bx - ax);
 }
 
-/** Fill the frame with `bg` and reset the z-buffer. */
+/**
+ * Fill the frame with `bg` and reset the z-buffer.
+ * @param pixels  framebuffer base pointer.
+ * @param zbuf    z-buffer base pointer.
+ * @param w       framebuffer width.
+ * @param h       framebuffer height.
+ * @param bg      background colour.
+ */
 fn clearFrame(pixels : i64, zbuf : i64, w : i32, h : i32, bg : i32) : void {
     let n : i32 = w * h;
     let i : i32 = 0;
@@ -36,21 +65,40 @@ fn clearFrame(pixels : i64, zbuf : i64, w : i32, h : i32, bg : i32) : void {
     }
 }
 
-/** Sample a square atlas tile (vertical strip) at (fu, fv) in [0,1). */
+/**
+ * Sample a square atlas tile (vertical strip) at (fu, fv) in [0,1).
+ * @param atlas  the texture atlas.
+ * @param tile   the atlas tile index.
+ * @param fu     horizontal coordinate in [0,1).
+ * @param fv     vertical coordinate in [0,1).
+ * @return the sampled texel colour.
+ */
 fn sampleAtlas(atlas : i64, tile : i32, fu : f64, fv : f64) : i32 {
     let t : i32 = config::tilePx;
     let tx : i32 = floorToInt(fu * (t as f64)) as i32;
     let ty : i32 = floorToInt(fv * (t as f64)) as i32;
-    if (tx < 0) { tx = 0; }
-    if (tx > t - 1) { tx = t - 1; }
-    if (ty < 0) { ty = 0; }
-    if (ty > t - 1) { ty = t - 1; }
+    if (tx < 0) {
+        tx = 0;
+    }
+    if (tx > t - 1) {
+        tx = t - 1;
+    }
+    if (ty < 0) {
+        ty = 0;
+    }
+    if (ty > t - 1) {
+        ty = t - 1;
+    }
     let idx : i32 = (tile * t + ty) * t + tx;
     return readI32(atlas, (idx as i64) * 4);
 }
 
-/** Texel offset where mip `level` starts in the mip chain (level 0 is the
- *  full-resolution atlas; each level halves the tile size). */
+/**
+ * Texel offset where mip `level` starts in the mip chain (level 0 is the
+ * full-resolution atlas; each level halves the tile size).
+ * @param level  the mip level.
+ * @return the starting texel offset.
+ */
 fn mipLevelOffset(level : i32) : i32 {
     let off : i32 = 0;
     let sz : i32 = config::tilePx;
@@ -63,23 +111,37 @@ fn mipLevelOffset(level : i32) : i32 {
     return off;
 }
 
-/** Tile side length (texels) at mip `level`. */
+/**
+ * Tile side length (texels) at mip `level`.
+ * @param level  the mip level.
+ * @return the tile side length in texels.
+ */
 fn mipLevelSize(level : i32) : i32 {
     let sz : i32 = config::tilePx;
     let l : i32 = 0;
-    while (l < level) { sz = sz / 2; l = l + 1; }
+    while (l < level) {
+        sz = sz / 2;
+        l = l + 1;
+    }
     return sz;
 }
 
-/** Total texel count of the whole mip chain (for allocation). */
+/**
+ * Total texel count of the whole mip chain (for allocation).
+ * @return the total texel count.
+ */
 fn mipChainTexels() : i32 {
     return mipLevelOffset(config::mipLevels);
 }
 
-/** Build the mip chain into `mips` from the level-0 `atlas`: level 0 is a
- *  copy, each finer level a 2×2 box-filtered downsample of the previous.
- *  Pre-averaging the texels is what stops distant textures from
- *  shimmering as the camera moves (Minecraft-style mipmapping). */
+/**
+ * Build the mip chain into `mips` from the level-0 `atlas`: level 0 is a
+ * copy, each finer level a 2×2 box-filtered downsample of the previous.
+ * Pre-averaging the texels is what stops distant textures from shimmering
+ * as the camera moves (Minecraft-style mipmapping).
+ * @param atlas  the level-0 texture atlas.
+ * @param mips   the destination mip chain buffer.
+ */
 fn buildMipChain(atlas : i64, mips : i64) : void {
     let n0 : i32 = config::atlasTiles * config::tilePx * config::tilePx;
     let i : i32 = 0;
@@ -123,39 +185,84 @@ fn buildMipChain(atlas : i64, mips : i64) : void {
     }
 }
 
-/** Textured triangle: perspective-correct UV sampling of an atlas tile at
- *  mip level `lvlBase`/`lvlSz` (offset + side length, chosen by the caller
- *  from the face's distance). Each channel scaled by its own multiplier
- *  (`tr`, `tg`, `tb`): equal = brightness, unequal = a tint (hurt flash). */
+/**
+ * Textured triangle: perspective-correct UV sampling of an atlas tile at
+ * mip level `lvlBase`/`lvlSz` (offset + side length, chosen by the caller
+ * from the face's distance). Each channel scaled by its own multiplier
+ * (`tr`, `tg`, `tb`): equal = brightness, unequal = a tint (hurt flash).
+ * @param pixels   framebuffer base pointer.
+ * @param zbuf     z-buffer base pointer.
+ * @param w        framebuffer width.
+ * @param h        framebuffer height.
+ * @param x0       first vertex x.
+ * @param y0       first vertex y.
+ * @param iz0      first vertex inverse depth.
+ * @param u0       first vertex u.
+ * @param v0       first vertex v.
+ * @param x1       second vertex x.
+ * @param y1       second vertex y.
+ * @param iz1      second vertex inverse depth.
+ * @param u1       second vertex u.
+ * @param v1       second vertex v.
+ * @param x2       third vertex x.
+ * @param y2       third vertex y.
+ * @param iz2      third vertex inverse depth.
+ * @param u2       third vertex u.
+ * @param v2       third vertex v.
+ * @param mips     the mip chain buffer.
+ * @param tile     the atlas tile index.
+ * @param lvlBase  texel offset of the chosen mip level.
+ * @param lvlSz    tile side length of the chosen mip level.
+ * @param sharp    output pixels per texel (>=1); larger = crisper edge.
+ * @param tr       red channel multiplier.
+ * @param tg       green channel multiplier.
+ * @param tb       blue channel multiplier.
+ */
 fn rasterTriTex(pixels : i64, zbuf : i64, w : i32, h : i32,
     x0 : f64, y0 : f64, iz0 : f64, u0 : f64, v0 : f64,
     x1 : f64, y1 : f64, iz1 : f64, u1 : f64, v1 : f64,
     x2 : f64, y2 : f64, iz2 : f64, u2 : f64, v2 : f64,
     mips : i64, tile : i32, lvlBase : i32, lvlSz : i32, sharp : f64, tr : f64, tg : f64, tb : f64) : void {
     let area : f64 = edge(x0, y0, x1, y1, x2, y2);
-    if (area > 0.0 - 0.0001 && area < 0.0001) { return; }
+    if (area > 0.0 - 0.0001 && area < 0.0001) {
+        return;
+    }
     let inv : f64 = 1.0 / area;
-    let uw0 : f64 = u0 * iz0; let vw0 : f64 = v0 * iz0;
-    let uw1 : f64 = u1 * iz1; let vw1 : f64 = v1 * iz1;
-    let uw2 : f64 = u2 * iz2; let vw2 : f64 = v2 * iz2;
+    let uw0 : f64 = u0 * iz0;
+    let vw0 : f64 = v0 * iz0;
+    let uw1 : f64 = u1 * iz1;
+    let vw1 : f64 = v1 * iz1;
+    let uw2 : f64 = u2 * iz2;
+    let vw2 : f64 = v2 * iz2;
 
     let minx : i32 = floorToInt(minf(x0, minf(x1, x2))) as i32;
     let maxx : i32 = floorToInt(maxf(x0, maxf(x1, x2))) as i32;
     let miny : i32 = floorToInt(minf(y0, minf(y1, y2))) as i32;
     let maxy : i32 = floorToInt(maxf(y0, maxf(y1, y2))) as i32;
-    if (minx < 0) { minx = 0; }
-    if (miny < 0) { miny = 0; }
-    if (maxx > w - 1) { maxx = w - 1; }
-    if (maxy > h - 1) { maxy = h - 1; }
+    if (minx < 0) {
+        minx = 0;
+    }
+    if (miny < 0) {
+        miny = 0;
+    }
+    if (maxx > w - 1) {
+        maxx = w - 1;
+    }
+    if (maxy > h - 1) {
+        maxy = h - 1;
+    }
 
     // Incremental edge functions: the three edge values are linear in the
     // pixel centre, so we evaluate them once at the bbox corner and step
     // them by constant deltas instead of recomputing per pixel.
     let cx0 : f64 = (minx as f64) + 0.5;
     let cy0 : f64 = (miny as f64) + 0.5;
-    let ax0 : f64 = y2 - y1; let ay0 : f64 = x1 - x2;
-    let ax1 : f64 = y0 - y2; let ay1 : f64 = x2 - x0;
-    let ax2 : f64 = y1 - y0; let ay2 : f64 = x0 - x1;
+    let ax0 : f64 = y2 - y1;
+    let ay0 : f64 = x1 - x2;
+    let ax1 : f64 = y0 - y2;
+    let ay1 : f64 = x2 - x0;
+    let ax2 : f64 = y1 - y0;
+    let ay2 : f64 = x0 - x1;
     let e0row : f64 = edge(x1, y1, x2, y2, cx0, cy0);
     let e1row : f64 = edge(x2, y2, x0, y0, cx0, cy0);
     let e2row : f64 = edge(x0, y0, x1, y1, cx0, cy0);
@@ -198,12 +305,20 @@ fn rasterTriTex(pixels : i64, zbuf : i64, w : i32, h : i32,
                         let flx : f64 = floorToInt(fu0) as f64;
                         let cdx0 : f64 = fu0 - flx - 0.5;
                         let ccx0 : f64 = cdx0;
-                        if (ccx0 > rrs) { ccx0 = rrs; } else if (ccx0 < 0.0 - rrs) { ccx0 = 0.0 - rrs; }
+                        if (ccx0 > rrs) {
+                            ccx0 = rrs;
+                        } else if (ccx0 < 0.0 - rrs) {
+                            ccx0 = 0.0 - rrs;
+                        }
                         let fu : f64 = flx + (cdx0 - ccx0) * sharp;
                         let fly : f64 = floorToInt(fv0) as f64;
                         let cdy0 : f64 = fv0 - fly - 0.5;
                         let ccy0 : f64 = cdy0;
-                        if (ccy0 > rrs) { ccy0 = rrs; } else if (ccy0 < 0.0 - rrs) { ccy0 = 0.0 - rrs; }
+                        if (ccy0 > rrs) {
+                            ccy0 = rrs;
+                        } else if (ccy0 < 0.0 - rrs) {
+                            ccy0 = 0.0 - rrs;
+                        }
                         let fv : f64 = fly + (cdy0 - ccy0) * sharp;
                         let tx0 : i32 = floorToInt(fu) as i32;
                         let ty0 : i32 = floorToInt(fv) as i32;
@@ -211,10 +326,26 @@ fn rasterTriTex(pixels : i64, zbuf : i64, w : i32, h : i32,
                         let fy : f64 = fv - (ty0 as f64);
                         let tx1 : i32 = tx0 + 1;
                         let ty1 : i32 = ty0 + 1;
-                        if (tx0 < 0) { tx0 = 0; } else if (tx0 > tmax) { tx0 = tmax; }
-                        if (tx1 < 0) { tx1 = 0; } else if (tx1 > tmax) { tx1 = tmax; }
-                        if (ty0 < 0) { ty0 = 0; } else if (ty0 > tmax) { ty0 = tmax; }
-                        if (ty1 < 0) { ty1 = 0; } else if (ty1 > tmax) { ty1 = tmax; }
+                        if (tx0 < 0) {
+                            tx0 = 0;
+                        } else if (tx0 > tmax) {
+                            tx0 = tmax;
+                        }
+                        if (tx1 < 0) {
+                            tx1 = 0;
+                        } else if (tx1 > tmax) {
+                            tx1 = tmax;
+                        }
+                        if (ty0 < 0) {
+                            ty0 = 0;
+                        } else if (ty0 > tmax) {
+                            ty0 = tmax;
+                        }
+                        if (ty1 < 0) {
+                            ty1 = 0;
+                        } else if (ty1 > tmax) {
+                            ty1 = tmax;
+                        }
                         let rw0 : i32 = lvlBase + (tbase + ty0) * lvlSz;
                         let rw1 : i32 = lvlBase + (tbase + ty1) * lvlSz;
                         let c00 : i32 = *((mips + ((rw0 + tx0) as i64) * 4) as ptr<i32>);
@@ -233,14 +364,22 @@ fn rasterTriTex(pixels : i64, zbuf : i64, w : i32, h : i32,
                         let r : i32 = floorToInt(rf * tr) as i32;
                         let g : i32 = floorToInt(gf * tg) as i32;
                         let bl : i32 = floorToInt(bf * tb) as i32;
-                        if (r > 255) { r = 255; }
-                        if (g > 255) { g = 255; }
-                        if (bl > 255) { bl = 255; }
+                        if (r > 255) {
+                            r = 255;
+                        }
+                        if (g > 255) {
+                            g = 255;
+                        }
+                        if (bl > 255) {
+                            bl = 255;
+                        }
                         // Distance fog: blend toward the sky past fogStart
                         // so far terrain dissolves instead of shimmering.
                         if (invz > config::fogStart) {
                             let fog : f64 = (invz - config::fogStart) / (config::fogEnd - config::fogStart);
-                            if (fog > 1.0) { fog = 1.0; }
+                            if (fog > 1.0) {
+                                fog = 1.0;
+                            }
                             let keep : f64 = 1.0 - fog;
                             r = floorToInt((r as f64) * keep + (config::skyR as f64) * fog) as i32;
                             g = floorToInt((g as f64) * keep + (config::skyG as f64) * fog) as i32;
@@ -252,31 +391,62 @@ fn rasterTriTex(pixels : i64, zbuf : i64, w : i32, h : i32,
                     }
                 }
             }
-            e0 = e0 + ax0; e1 = e1 + ax1; e2 = e2 + ax2;
+            e0 = e0 + ax0;
+            e1 = e1 + ax1;
+            e2 = e2 + ax2;
             px = px + 1;
         }
-        e0row = e0row + ay0; e1row = e1row + ay1; e2row = e2row + ay2;
+        e0row = e0row + ay0;
+        e1row = e1row + ay1;
+        e2row = e2row + ay2;
         py = py + 1;
     }
 }
 
+/**
+ * Flat-colour triangle: half-plane inside test with z-buffered fill.
+ * @param pixels  framebuffer base pointer.
+ * @param zbuf    z-buffer base pointer.
+ * @param w       framebuffer width.
+ * @param h       framebuffer height.
+ * @param x0      first vertex x.
+ * @param y0      first vertex y.
+ * @param iz0     first vertex inverse depth.
+ * @param x1      second vertex x.
+ * @param y1      second vertex y.
+ * @param iz1     second vertex inverse depth.
+ * @param x2      third vertex x.
+ * @param y2      third vertex y.
+ * @param iz2     third vertex inverse depth.
+ * @param color   fill colour.
+ */
 fn rasterTri(pixels : i64, zbuf : i64, w : i32, h : i32,
     x0 : f64, y0 : f64, iz0 : f64,
     x1 : f64, y1 : f64, iz1 : f64,
     x2 : f64, y2 : f64, iz2 : f64,
     color : i32) : void {
     let area : f64 = edge(x0, y0, x1, y1, x2, y2);
-    if (area > 0.0 - 0.0001 && area < 0.0001) { return; }
+    if (area > 0.0 - 0.0001 && area < 0.0001) {
+        return;
+    }
     let inv : f64 = 1.0 / area;
 
     let minx : i32 = floorToInt(minf(x0, minf(x1, x2))) as i32;
     let maxx : i32 = floorToInt(maxf(x0, maxf(x1, x2))) as i32;
     let miny : i32 = floorToInt(minf(y0, minf(y1, y2))) as i32;
     let maxy : i32 = floorToInt(maxf(y0, maxf(y1, y2))) as i32;
-    if (minx < 0) { minx = 0; }
-    if (miny < 0) { miny = 0; }
-    if (maxx > w - 1) { maxx = w - 1; }
-    if (maxy > h - 1) { maxy = h - 1; }
+    if (minx < 0) {
+        minx = 0;
+    }
+    if (miny < 0) {
+        miny = 0;
+    }
+    if (maxx > w - 1) {
+        maxx = w - 1;
+    }
+    if (maxy > h - 1) {
+        maxy = h - 1;
+    }
 
     let py : i32 = miny;
     while (py <= maxy) {

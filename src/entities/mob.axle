@@ -10,9 +10,7 @@
 // Axle has no virtual dispatch, so the manager keeps one typed array per
 // species and calls the concrete method on it (see entities/mobs.axle).
 
-use std::numeric::math::sin;
-use std::numeric::math::cos;
-use std::numeric::math::floorToInt;
+use std::numeric::math::{sin, cos, floorToInt};
 use crate::entities::entity::Entity;
 use crate::world::manager::ChunkManager;
 use crate::config;
@@ -31,6 +29,7 @@ class Mob extends Entity {
     deathTimer : i32,
     fuse : i32,         // creeper charge countdown; < 0 = not charging
 
+    /** Create a mob at (x, y, z) of the given kind with maxHp hit points. */
     constructor(x : f64, y : f64, z : f64, kind : i32, maxHp : i32) {
         this.posX = x;
         this.posY = y;
@@ -60,14 +59,24 @@ class Mob extends Entity {
         this.speed = config::mobWanderSpeed;
     }
 
-    fn isCharging() : bool { return this.fuse >= 0; }
+    /**
+     * Whether the creeper fuse is currently lit.
+     * @return true if charging (fuse >= 0)
+     */
+    fn isCharging() : bool {
+        return this.fuse >= 0;
+    }
 
     /** Flag a hit so the renderer glows the mob red for a few frames. */
     fn flashHurt() : void {
         this.hurtTimer = config::hurtFlashFrames;
     }
 
-    /** React to a hit from (px, pz): panic-run directly away for a while. */
+    /**
+     * React to a hit from (px, pz): panic-run directly away for a while.
+     * @param px  x coordinate of the source of the hit
+     * @param pz  z coordinate of the source of the hit
+     */
     fn panicFrom(px : f64, pz : f64) : void {
         this.targetHeading = atan2(this.posZ - pz, this.posX - px);
         this.fleeTimer = config::mobFleeFrames;
@@ -82,57 +91,104 @@ class Mob extends Entity {
         this.moving = 0;
     }
 
-    fn isDying() : bool { return this.state == 1; }
-    fn deathDone() : bool { return this.state == 1 && this.deathTimer <= 0; }
+    /**
+     * Whether the mob is in its death collapse.
+     * @return true while dying
+     */
+    fn isDying() : bool {
+        return this.state == 1;
+    }
 
-    /** Collapse progress in [0,1): 0 at the moment of death, 1 when gone. */
+    /**
+     * Whether the death collapse has finished and the mob can be removed.
+     * @return true when dying and the death timer has elapsed
+     */
+    fn deathDone() : bool {
+        return this.state == 1 && this.deathTimer <= 0;
+    }
+
+    /**
+     * Collapse progress in [0,1): 0 at the moment of death, 1 when gone.
+     * @return the normalized death-collapse progress
+     */
     fn deathProgress() : f64 {
-        if (this.state == 0) { return 0.0; }
+        if (this.state == 0) {
+            return 0.0;
+        }
         let df : f64 = config::deathFrames as f64;
         return (df - (this.deathTimer as f64)) / df;
     }
 
-    /** Ease `heading` toward `targetHeading` by at most `mobTurnRate`,
-     *  taking the shortest way around the circle. */
+    /**
+     * Ease `heading` toward `targetHeading` by at most `mobTurnRate`,
+     * taking the shortest way around the circle.
+     */
     fn turnToward() : void {
         let two : f64 = 6.2831853;
         let d : f64 = this.targetHeading - this.heading;
-        while (d > 3.14159265) { d = d - two; }
-        while (d < 0.0 - 3.14159265) { d = d + two; }
+        while (d > 3.14159265) {
+            d = d - two;
+        }
+        while (d < 0.0 - 3.14159265) {
+            d = d + two;
+        }
         let rate : f64 = config::mobTurnRate;
-        if (d > rate) { d = rate; }
-        if (d < 0.0 - rate) { d = 0.0 - rate; }
+        if (d > rate) {
+            d = rate;
+        }
+        if (d < 0.0 - rate) {
+            d = 0.0 - rate;
+        }
         this.heading = this.heading + d;
     }
 
-    /** Passive wander AI, one frame. `rnd` is a fresh value in [0,1) from
-     *  the manager (the world has no RNG of its own). Shared by the calm
-     *  animals; the creeper overrides behaviour with its own `step`. */
+    /**
+     * Passive wander AI, one frame. `rnd` is a fresh value in [0,1) from
+     * the manager (the world has no RNG of its own). Shared by the calm
+     * animals; the creeper overrides behaviour with its own `step`.
+     * @param world  the chunk manager the mob moves through
+     * @param rnd    a fresh pseudo-random value in [0,1)
+     */
     fn wander(world : ChunkManager, rnd : f64) : void {
-        if (this.hurtTimer > 0) { this.hurtTimer = this.hurtTimer - 1; }
+        if (this.hurtTimer > 0) {
+            this.hurtTimer = this.hurtTimer - 1;
+        }
 
         // Dying: stop steering, let gravity settle the body while the
         // collapse animation plays out.
         if (this.state == 1) {
-            if (this.deathTimer > 0) { this.deathTimer = this.deathTimer - 1; }
+            if (this.deathTimer > 0) {
+                this.deathTimer = this.deathTimer - 1;
+            }
             this.tick(world, 0.0, 0.0);
             return;
         }
 
-        if (this.fleeTimer > 0) { this.fleeTimer = this.fleeTimer - 1; }
+        if (this.fleeTimer > 0) {
+            this.fleeTimer = this.fleeTimer - 1;
+        }
         this.turnTimer = this.turnTimer - 1;
         if (this.turnTimer <= 0 && this.fleeTimer <= 0) {
             this.targetHeading = rnd * 6.2831853;
             this.turnTimer = config::mobTurnEveryMin + floorToInt(rnd * (config::mobTurnEveryRand as f64)) as i32;
-            if (rnd < config::mobIdleChance) { this.moving = 0; } else { this.moving = 1; }
+            if (rnd < config::mobIdleChance) {
+                this.moving = 0;
+            } else {
+                this.moving = 1;
+            }
         }
         this.turnToward();
 
         let spd : f64 = 0.0;
-        if (this.fleeTimer > 0) { spd = config::mobFleeSpeed; }
-        else if (this.moving == 1) { spd = this.speed; }
+        if (this.fleeTimer > 0) {
+            spd = config::mobFleeSpeed;
+        } else if (this.moving == 1) {
+            spd = this.speed;
+        }
 
-        if (spd > 0.0) { this.walkPhase = this.walkPhase + 0.35; }
+        if (spd > 0.0) {
+            this.walkPhase = this.walkPhase + 0.35;
+        }
 
         let dx : f64 = cos(this.heading) * spd;
         let dz : f64 = sin(this.heading) * spd;
@@ -140,28 +196,53 @@ class Mob extends Entity {
     }
 }
 
-/** Two-argument arctangent over the full circle, in radians. */
+/**
+ * Two-argument arctangent over the full circle, in radians.
+ * @param y  the y component
+ * @param x  the x component
+ * @return the angle of (x, y) in radians
+ */
 fn atan2(y : f64, x : f64) : f64 {
     let pi : f64 = 3.14159265358979;
-    if (x > 0.0) { return atanApprox(y / x); }
+    if (x > 0.0) {
+        return atanApprox(y / x);
+    }
     if (x < 0.0) {
-        if (y >= 0.0) { return atanApprox(y / x) + pi; }
+        if (y >= 0.0) {
+            return atanApprox(y / x) + pi;
+        }
         return atanApprox(y / x) - pi;
     }
-    if (y > 0.0) { return pi * 0.5; }
-    if (y < 0.0) { return 0.0 - pi * 0.5; }
+    if (y > 0.0) {
+        return pi * 0.5;
+    }
+    if (y < 0.0) {
+        return 0.0 - pi * 0.5;
+    }
     return 0.0;
 }
 
-/** atan(z) approximation (max error ~0.0038 rad) — ample for AI facing. */
+/**
+ * atan(z) approximation (max error ~0.0038 rad) — ample for AI facing.
+ * @param z  the tangent value
+ * @return the approximate arctangent of z in radians
+ */
 fn atanApprox(z : f64) : f64 {
     let a : f64 = z;
-    if (a < 0.0) { a = 0.0 - a; }
+    if (a < 0.0) {
+        a = 0.0 - a;
+    }
     let inv : bool = a > 1.0;
-    if (inv) { a = 1.0 / a; }
+    if (inv) {
+        a = 1.0 / a;
+    }
     let a3 : f64 = a * a * a;
     let r : f64 = 0.7853981634 * a - a * (a - 1.0) * (0.2447 + 0.0663 * a);
-    if (inv) { r = 1.5707963268 - r; }
-    if (z < 0.0) { return 0.0 - r; }
+    if (inv) {
+        r = 1.5707963268 - r;
+    }
+    if (z < 0.0) {
+        return 0.0 - r;
+    }
     return r;
 }

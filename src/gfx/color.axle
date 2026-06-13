@@ -4,41 +4,69 @@
 // without depending on gfx.
 
 use std::numeric::math::floorToInt;
-use crate::platform::mem::rgb;
-use crate::platform::mem::putPixel;
-use crate::platform::mem::readI32;
+use crate::platform::mem::{rgb, putPixel, readI32};
 
-/** Multiply each channel of an ARGB-packed colour by `bright` (clamped). */
+/**
+ * Multiply each channel of an ARGB-packed colour by `bright` (clamped).
+ * @param color   the ARGB-packed colour.
+ * @param bright  per-channel multiplier.
+ * @return the scaled colour.
+ */
 fn scaleRgb(color : i32, bright : f64) : i32 {
     let r : i32 = floorToInt(((color / 65536) & 0xFF) as f64 * bright) as i32;
     let g : i32 = floorToInt(((color / 256) & 0xFF) as f64 * bright) as i32;
     let b : i32 = floorToInt((color & 0xFF) as f64 * bright) as i32;
-    if (r > 255) { r = 255; }
-    if (g > 255) { g = 255; }
-    if (b > 255) { b = 255; }
+    if (r > 255) {
+        r = 255;
+    }
+    if (g > 255) {
+        g = 255;
+    }
+    if (b > 255) {
+        b = 255;
+    }
     return rgb(r, g, b);
 }
 
-/** Push a colour toward red (a hurt flash): lift red, damp green/blue. */
+/**
+ * Push a colour toward red (a hurt flash): lift red, damp green/blue.
+ * @param color  the ARGB-packed colour.
+ * @return the red-tinted colour.
+ */
 fn redTint(color : i32) : i32 {
     let r : i32 = (color / 65536) & 0xFF;
     let g : i32 = (color / 256) & 0xFF;
     let b : i32 = color & 0xFF;
     r = r + 110;
-    if (r > 255) { r = 255; }
+    if (r > 255) {
+        r = 255;
+    }
     g = floorToInt((g as f64) * 0.45) as i32;
     b = floorToInt((b as f64) * 0.45) as i32;
     return rgb(r, g, b);
 }
 
-/** `redTint(color)` when `on`, else `color` unchanged. */
+/**
+ * `redTint(color)` when `on`, else `color` unchanged.
+ * @param on     whether to apply the red tint.
+ * @param color  the ARGB-packed colour.
+ * @return the tinted or original colour.
+ */
 fn tintIf(on : bool, color : i32) : i32 {
-    if (on) { return redTint(color); }
+    if (on) {
+        return redTint(color);
+    }
     return color;
 }
 
-/** Darken the whole framebuffer by `bright` (0..1) — used as a dim
- *  backdrop behind the pause menu. Reads each pixel and scales it. */
+/**
+ * Darken the whole framebuffer by `bright` (0..1) — used as a dim backdrop
+ * behind the pause menu. Reads each pixel and scales it.
+ * @param base    framebuffer base pointer.
+ * @param fbW     framebuffer width.
+ * @param fbH     framebuffer height.
+ * @param bright  per-channel multiplier (0..1).
+ */
 fn dimScreen(base : i64, fbW : i32, fbH : i32, bright : f64) : void {
     let n : i32 = fbW * fbH;
     let i : i32 = 0;
@@ -48,43 +76,88 @@ fn dimScreen(base : i64, fbW : i32, fbH : i32, bright : f64) : void {
     }
 }
 
-/** Draw a 1px line (integer Bresenham), clipped to the framebuffer. */
+/**
+ * Draw a 1px line (integer Bresenham), clipped to the framebuffer.
+ * @param base   framebuffer base pointer.
+ * @param fbW    framebuffer width.
+ * @param fbH    framebuffer height.
+ * @param x0     start x.
+ * @param y0     start y.
+ * @param x1     end x.
+ * @param y1     end y.
+ * @param color  line colour.
+ */
 fn drawLine(base : i64, fbW : i32, fbH : i32, x0 : i32, y0 : i32, x1 : i32, y1 : i32, color : i32) : void {
     let dx : i32 = x1 - x0;
-    if (dx < 0) { dx = 0 - dx; }
+    if (dx < 0) {
+        dx = 0 - dx;
+    }
     let dy : i32 = y1 - y0;
-    if (dy < 0) { dy = 0 - dy; }
+    if (dy < 0) {
+        dy = 0 - dy;
+    }
     dy = 0 - dy;
     let sx : i32 = 0 - 1;
-    if (x0 < x1) { sx = 1; }
+    if (x0 < x1) {
+        sx = 1;
+    }
     let sy : i32 = 0 - 1;
-    if (y0 < y1) { sy = 1; }
+    if (y0 < y1) {
+        sy = 1;
+    }
     let err : i32 = dx + dy;
     let x : i32 = x0;
     let y : i32 = y0;
     let guard : i32 = 0;
     while (guard < 100000) {
-        if (x >= 0 && x < fbW && y >= 0 && y < fbH) { putPixel(base, y * fbW + x, color); }
-        if (x == x1 && y == y1) { guard = 100000; }
-        else {
+        if (x >= 0 && x < fbW && y >= 0 && y < fbH) {
+            putPixel(base, y * fbW + x, color);
+        }
+        if (x == x1 && y == y1) {
+            guard = 100000;
+        } else {
             let e2 : i32 = 2 * err;
-            if (e2 >= dy) { err = err + dy; x = x + sx; }
-            if (e2 <= dx) { err = err + dx; y = y + sy; }
+            if (e2 >= dy) {
+                err = err + dy;
+                x = x + sx;
+            }
+            if (e2 <= dx) {
+                err = err + dx;
+                y = y + sy;
+            }
             guard = guard + 1;
         }
     }
 }
 
-/** Fill an axis-aligned rectangle of the framebuffer (HUD drawing). */
+/**
+ * Fill an axis-aligned rectangle of the framebuffer (HUD drawing).
+ * @param base   framebuffer base pointer.
+ * @param fbW    framebuffer width.
+ * @param fbH    framebuffer height.
+ * @param x      rectangle left.
+ * @param y      rectangle top.
+ * @param rw     rectangle width.
+ * @param rh     rectangle height.
+ * @param color  fill colour.
+ */
 fn fillRect(base : i64, fbW : i32, fbH : i32, x : i32, y : i32, rw : i32, rh : i32, color : i32) : void {
     let x0 : i32 = x;
     let y0 : i32 = y;
     let x1 : i32 = x + rw;
     let y1 : i32 = y + rh;
-    if (x0 < 0) { x0 = 0; }
-    if (y0 < 0) { y0 = 0; }
-    if (x1 > fbW) { x1 = fbW; }
-    if (y1 > fbH) { y1 = fbH; }
+    if (x0 < 0) {
+        x0 = 0;
+    }
+    if (y0 < 0) {
+        y0 = 0;
+    }
+    if (x1 > fbW) {
+        x1 = fbW;
+    }
+    if (y1 > fbH) {
+        y1 = fbH;
+    }
     let py : i32 = y0;
     while (py < y1) {
         let px : i32 = x0;
