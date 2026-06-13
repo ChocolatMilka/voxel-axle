@@ -533,15 +533,16 @@ class Renderer {
     }
 
     fn renderMobs(mm : MobManager, p : Player, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
+        // One typed array per species; draw funcs take the base Mob (the
+        // accessors upcast), reading only inherited fields.
         let i : i32 = 0;
-        while (i < mm.count) {
-            let m : Mob = mm.mobs[i];
-            if (m.kind == config::mobChicken) { this.drawChicken(p, m, pixels, zbuf, w, h); }
-            else if (m.kind == config::mobCow) { this.drawCow(p, m, pixels, zbuf, w, h); }
-            else if (m.kind == config::mobCreeper) { this.drawCreeper(p, m, pixels, zbuf, w, h); }
-            else { this.drawSheep(p, m, pixels, zbuf, w, h); }
-            i = i + 1;
-        }
+        while (i < mm.chN) { this.drawChicken(p, mm.chickenAt(i), pixels, zbuf, w, h); i = i + 1; }
+        i = 0;
+        while (i < mm.shN) { this.drawSheep(p, mm.sheepAt(i), pixels, zbuf, w, h); i = i + 1; }
+        i = 0;
+        while (i < mm.coN) { this.drawCow(p, mm.cowAt(i), pixels, zbuf, w, h); i = i + 1; }
+        i = 0;
+        while (i < mm.crN) { this.drawCreeper(p, mm.creeperAt(i), pixels, zbuf, w, h); i = i + 1; }
     }
 
     fn crosshair(pixels : i64, w : i32, h : i32) : void {

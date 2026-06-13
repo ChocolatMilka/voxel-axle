@@ -1,0 +1,12 @@
+// Sheep — calm grazer. Uses the base wander AI.
+
+use crate::entities::mob::Mob;
+use crate::config;
+
+class Sheep extends Mob {
+    constructor(x : f64, y : f64, z : f64) {
+        super(x, y, z, config::mobSheep, config::mobSheepHp);
+        this.speed = config::mobSheepSpeed;
+        this.height = 1.2;
+    }
+}

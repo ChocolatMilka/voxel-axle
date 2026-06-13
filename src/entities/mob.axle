@@ -1,18 +1,19 @@
-// mob — a passive animal (chicken, sheep or cow). Extends Entity, so it
-// is pulled down by gravity, stands on the terrain and steps up ledges
-// with the same physics as the player. On top it carries a livelier AI:
-// it eases smoothly toward a target heading, alternates wandering with
-// standing still to graze, occasionally hops, and bolts away in a panic
-// for a moment when struck. Chickens flutter down slowly. When killed it
-// does not vanish — it enters a `dying` state and the renderer collapses
-// it over `deathFrames` before the manager removes it.
+// mob — base class for every creature. Extends Entity, so it is pulled
+// down by gravity, stands on terrain and steps up ledges with the same
+// physics as the player. On top it carries the shared mob state and the
+// passive `wander` AI (ease toward a heading, alternate walking with
+// grazing, bolt away when struck). Each species is a subclass under
+// entities/ (chicken/sheep/cow/creeper) that sets its own size/speed and,
+// for the creeper, its own hostile `step`. When killed a mob enters a
+// `dying` state and the renderer collapses it before the manager removes it.
+//
+// Axle has no virtual dispatch, so the manager keeps one typed array per
+// species and calls the concrete method on it (see entities/mobs.axle).
 
 use std::numeric::math::sin;
 use std::numeric::math::cos;
-use std::numeric::math::sqrt;
 use std::numeric::math::floorToInt;
 use crate::entities::entity::Entity;
-use crate::entities::player::Player;
 use crate::world::manager::ChunkManager;
 use crate::config;
 
@@ -57,102 +58,9 @@ class Mob extends Entity {
         this.deathTimer = 0;
         this.fuse = 0 - 1;
         this.speed = config::mobWanderSpeed;
-        if (kind == config::mobSheep) { this.speed = config::mobSheepSpeed; this.height = 1.2; }
-        if (kind == config::mobCow) { this.speed = config::mobCowSpeed; this.height = 1.4; }
-        if (kind == config::mobChicken) { this.gravityScale = config::chickenGravityScale; this.height = 0.6; }
-        if (kind == config::mobCreeper) { this.speed = config::mobCreeperSpeed; this.height = 1.5; }
     }
 
     fn isCharging() : bool { return this.fuse >= 0; }
-
-    /** Creeper AI (needs the player): home in until in range, then light
-     *  the fuse and hold; when it burns out, explode. Returns 1 on the
-     *  tick it detonates so the manager can trigger the sound. */
-    fn creeperStep(world : ChunkManager, player : Player) : i32 {
-        if (this.hurtTimer > 0) { this.hurtTimer = this.hurtTimer - 1; }
-        if (this.state == 1) {
-            if (this.deathTimer > 0) { this.deathTimer = this.deathTimer - 1; }
-            this.tick(world, 0.0, 0.0);
-            return 0;
-        }
-        let dx : f64 = player.posX - this.posX;
-        let dy : f64 = player.posY - this.posY;
-        let dz : f64 = player.posZ - this.posZ;
-        // 3D distance: a player flying high overhead is NOT in range, so the
-        // creeper won't chase or blow up under an out-of-reach target.
-        let dist : f64 = sqrt(dx * dx + dy * dy + dz * dz);
-        this.heading = atan2(dz, dx);
-
-        // Hostile only toward a survival player. In creative / flight the
-        // creeper stands down (and any lit fuse is defused below).
-        let hostile : bool = player.creative == 0;
-
-        if (this.fuse < 0) {
-            if (hostile && dist <= config::creeperTriggerDist) {
-                this.fuse = config::creeperFuseFrames;
-                this.tick(world, 0.0, 0.0);
-                return 2;
-            }
-            if (hostile && dist <= config::creeperChaseDist) {
-                let spd : f64 = config::mobCreeperSpeed;
-                this.walkPhase = this.walkPhase + 0.35;
-                this.tick(world, cos(this.heading) * spd, sin(this.heading) * spd);
-            } else {
-                this.tick(world, 0.0, 0.0);
-            }
-            return 0;
-        }
-
-        // Fuse lit: defuse if the player escaped (3D) or switched to creative.
-        if (!hostile || dist > config::creeperTriggerDist * 2.4) {
-            this.fuse = 0 - 1;
-            this.tick(world, 0.0, 0.0);
-            return 0;
-        }
-        this.fuse = this.fuse - 1;
-        this.tick(world, 0.0, 0.0);
-        if (this.fuse <= 0) {
-            this.explode(world, player);
-            return 1;
-        }
-        return 0;
-    }
-
-    /** Detonate: distance-scaled damage to the player and a spherical
-     *  crater of broken blocks, then mark the creeper for removal. */
-    fn explode(world : ChunkManager, player : Player) : void {
-        let dx : f64 = player.posX - this.posX;
-        let dy : f64 = player.posY - this.posY;
-        let dz : f64 = player.posZ - this.posZ;
-        let d : f64 = sqrt(dx * dx + dy * dy + dz * dz);
-        let reach : f64 = config::creeperBlastRadius * 2.0;
-        if (d < reach) {
-            let f : f64 = 1.0 - d / reach;
-            let dmg : i32 = floorToInt(f * (config::creeperDamage as f64)) as i32;
-            if (dmg > 0) { player.hurt(dmg); }
-        }
-        let r : i32 = floorToInt(config::creeperBlastRadius) as i32;
-        let cx : i32 = floorToInt(this.posX) as i32;
-        let cy : i32 = floorToInt(this.posY) as i32;
-        let cz : i32 = floorToInt(this.posZ) as i32;
-        let ox : i32 = 0 - r;
-        while (ox <= r) {
-            let oy : i32 = 0 - r;
-            while (oy <= r) {
-                let oz : i32 = 0 - r;
-                while (oz <= r) {
-                    if (ox * ox + oy * oy + oz * oz <= r * r) {
-                        world.breakAt(cx + ox, cy + oy, cz + oz);
-                    }
-                    oz = oz + 1;
-                }
-                oy = oy + 1;
-            }
-            ox = ox + 1;
-        }
-        this.state = 1;
-        this.deathTimer = 0;
-    }
 
     /** Flag a hit so the renderer glows the mob red for a few frames. */
     fn flashHurt() : void {
@@ -197,12 +105,13 @@ class Mob extends Entity {
         this.heading = this.heading + d;
     }
 
-    /** Advance the AI by one frame. `rnd` is a fresh value in [0,1)
-     *  supplied by the manager (the world has no RNG of its own). */
-    fn aiStep(world : ChunkManager, rnd : f64) : void {
+    /** Passive wander AI, one frame. `rnd` is a fresh value in [0,1) from
+     *  the manager (the world has no RNG of its own). Shared by the calm
+     *  animals; the creeper overrides behaviour with its own `step`. */
+    fn wander(world : ChunkManager, rnd : f64) : void {
         if (this.hurtTimer > 0) { this.hurtTimer = this.hurtTimer - 1; }
 
-        // Dying: stop steering, just let gravity settle the body while the
+        // Dying: stop steering, let gravity settle the body while the
         // collapse animation plays out.
         if (this.state == 1) {
             if (this.deathTimer > 0) { this.deathTimer = this.deathTimer - 1; }
@@ -224,8 +133,6 @@ class Mob extends Entity {
         else if (this.moving == 1) { spd = this.speed; }
 
         if (spd > 0.0) { this.walkPhase = this.walkPhase + 0.35; }
-        // No random hopping: entity physics auto-steps one-block ledges, so
-        // mobs traverse terrain by walking instead of jumping for nothing.
 
         let dx : f64 = cos(this.heading) * spd;
         let dz : f64 = sin(this.heading) * spd;
@@ -233,9 +140,7 @@ class Mob extends Entity {
     }
 }
 
-/** Two-argument arctangent over the full circle, in radians. Built from
- *  `sin`/`cos`-free algebra is awkward, so we lean on the standard atan
- *  via a small rational approximation good enough for facing directions. */
+/** Two-argument arctangent over the full circle, in radians. */
 fn atan2(y : f64, x : f64) : f64 {
     let pi : f64 = 3.14159265358979;
     if (x > 0.0) { return atanApprox(y / x); }

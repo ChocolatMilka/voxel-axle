@@ -1,0 +1,12 @@
+// Chicken — small, light, flutters down slowly. Uses the base wander AI.
+
+use crate::entities::mob::Mob;
+use crate::config;
+
+class Chicken extends Mob {
+    constructor(x : f64, y : f64, z : f64) {
+        super(x, y, z, config::mobChicken, config::mobChickenHp);
+        this.gravityScale = config::chickenGravityScale;
+        this.height = 0.6;
+    }
+}
