@@ -1,0 +1,98 @@
+// ray — picking the block the player is looking at. A voxel DDA
+// (Amanatides–Woo) from the eye records the first solid voxel (to break)
+// and the empty cell just before it (where a block is placed). Also the
+// small "would this block trap the player?" test used to refuse placing
+// inside yourself.
+
+use std::numeric::math::floorToInt;
+use crate::world::manager::ChunkManager;
+use crate::entities::player::Player;
+use crate::config;
+
+/** Result of casting the player's look-ray into the voxel world. */
+class Picker {
+    hit : i32,
+    bx : i32,
+    by : i32,
+    bz : i32,
+    px : i32,
+    py : i32,
+    pz : i32,
+
+    constructor() {
+        this.hit = 0;
+        this.bx = 0; this.by = 0; this.bz = 0;
+        this.px = 0; this.py = 0; this.pz = 0;
+    }
+
+    /** Voxel DDA from the eye along the look direction
+     *  `(-siny·cosp, sinp, cosy·cosp)`, up to `reachDist` blocks. Records
+     *  the first solid voxel and the air cell stepped from. */
+    fn cast(man : ChunkManager, p : Player) : void {
+        this.hit = 0;
+        let ox : f64 = p.eyeX;
+        let oy : f64 = p.eyeY;
+        let oz : f64 = p.eyeZ;
+        let dx : f64 = (0.0 - p.siny) * p.cosp;
+        let dy : f64 = p.sinp;
+        let dz : f64 = p.cosy * p.cosp;
+        let big : f64 = 1.0e30;
+
+        let x : i32 = floorToInt(ox) as i32;
+        let y : i32 = floorToInt(oy) as i32;
+        let z : i32 = floorToInt(oz) as i32;
+
+        let stepX : i32 = 0;
+        let tMaxX : f64 = big;
+        let tDeltaX : f64 = big;
+        if (dx > 0.0) { stepX = 1; tMaxX = (((x + 1) as f64) - ox) / dx; tDeltaX = 1.0 / dx; }
+        else if (dx < 0.0) { stepX = 0 - 1; tMaxX = ((x as f64) - ox) / dx; tDeltaX = (0.0 - 1.0) / dx; }
+
+        let stepY : i32 = 0;
+        let tMaxY : f64 = big;
+        let tDeltaY : f64 = big;
+        if (dy > 0.0) { stepY = 1; tMaxY = (((y + 1) as f64) - oy) / dy; tDeltaY = 1.0 / dy; }
+        else if (dy < 0.0) { stepY = 0 - 1; tMaxY = ((y as f64) - oy) / dy; tDeltaY = (0.0 - 1.0) / dy; }
+
+        let stepZ : i32 = 0;
+        let tMaxZ : f64 = big;
+        let tDeltaZ : f64 = big;
+        if (dz > 0.0) { stepZ = 1; tMaxZ = (((z + 1) as f64) - oz) / dz; tDeltaZ = 1.0 / dz; }
+        else if (dz < 0.0) { stepZ = 0 - 1; tMaxZ = ((z as f64) - oz) / dz; tDeltaZ = (0.0 - 1.0) / dz; }
+
+        let prevx : i32 = x;
+        let prevy : i32 = y;
+        let prevz : i32 = z;
+        let t : f64 = 0.0;
+        while (t <= config::reachDist && this.hit == 0) {
+            prevx = x; prevy = y; prevz = z;
+            if (tMaxX < tMaxY && tMaxX < tMaxZ) { x = x + stepX; t = tMaxX; tMaxX = tMaxX + tDeltaX; }
+            else if (tMaxY < tMaxZ) { y = y + stepY; t = tMaxY; tMaxY = tMaxY + tDeltaY; }
+            else { z = z + stepZ; t = tMaxZ; tMaxZ = tMaxZ + tDeltaZ; }
+            if (man.solidTarget(x, y, z)) {
+                this.hit = 1;
+                this.bx = x; this.by = y; this.bz = z;
+                this.px = prevx; this.py = prevy; this.pz = prevz;
+            }
+        }
+    }
+}
+
+/** True if the unit cube at (cx, cy, cz) overlaps the player's body
+ *  (a `playerRadius` disc, ~1.8 blocks tall) — used to refuse placing a
+ *  block inside yourself. */
+fn cellInPlayer(p : Player, cx : i32, cy : i32, cz : i32) : bool {
+    let r : f64 = config::playerRadius;
+    let minX : f64 = p.posX - r;
+    let maxX : f64 = p.posX + r;
+    let minZ : f64 = p.posZ - r;
+    let maxZ : f64 = p.posZ + r;
+    let minY : f64 = p.posY;
+    let maxY : f64 = p.posY + 1.8;
+    let fx : f64 = cx as f64;
+    let fy : f64 = cy as f64;
+    let fz : f64 = cz as f64;
+    return fx < maxX && fx + 1.0 > minX
+        && fz < maxZ && fz + 1.0 > minZ
+        && fy < maxY && fy + 1.0 > minY;
+}

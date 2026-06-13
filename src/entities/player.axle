@@ -28,6 +28,8 @@ class Player extends Entity {
     sinceHurt : i32,
     regenTick : i32,
     creative : i32,   // 0 = survival, 1 = creative (fly)
+    hotbar : i32[],   // block id held in each inventory slot
+    selected : i32,   // active hotbar slot (0-based)
 
     constructor(x : f64, y : f64, z : f64) {
         this.posX = x;
@@ -56,6 +58,27 @@ class Player extends Entity {
         this.sinceHurt = 0;
         this.regenTick = config::regenEveryFrames;
         this.creative = 0;
+        this.hotbar = malloc<i32>(config::hotbarSize);
+        this.hotbar[0] = config::bGrass;
+        this.hotbar[1] = config::bDirt;
+        this.hotbar[2] = config::bStone;
+        this.hotbar[3] = config::bSand;
+        this.hotbar[4] = config::bSnow;
+        this.hotbar[5] = config::bGravel;
+        this.hotbar[6] = config::bWood;
+        this.hotbar[7] = config::bLeaves;
+        this.hotbar[8] = config::bWater;
+        this.selected = 0;
+    }
+
+    /** Select hotbar slot `i` (ignored if out of range). */
+    fn selectSlot(i : i32) : void {
+        if (i >= 0 && i < config::hotbarSize) { this.selected = i; }
+    }
+
+    /** The block id currently held for placing. */
+    fn heldBlock() : i32 {
+        return this.hotbar[this.selected];
     }
 
     /** Toggle survival ↔ creative. Creative enables free flight; entering
