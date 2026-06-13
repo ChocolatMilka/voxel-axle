@@ -41,6 +41,9 @@ const tilePx : i32 = 64;
 const blockTiles : i32 = 11;
 const atlasTiles : i32 = 17;
 const useMobTextures : bool = true;
+// Mip chain depth (64 → 32 → … → 1 = 7 levels). Distant faces sample a
+// coarser, pre-averaged level so textures don't shimmer when moving.
+const mipLevels : i32 = 7;
 
 // ── Terrain noise (Minecraft-ish: warp + continentalness) ───
 const seedI : i32 = 1337;       // integer seed for the lattice hash
@@ -69,7 +72,12 @@ const flySprintSpeed : f64 = 0.52;  // creative fly + Ctrl
 const flyVertSpeed : f64 = 0.30;    // creative up/down
 const eyeHeight : f64 = 1.62;
 const stepHeight : f64 = 1.05;
+// Auto-step raises the body instantly (collision is exact); the camera's
+// step-up offset shrinks by this factor each tick so the rise looks smooth
+// instead of snapping. Lower = quicker catch-up.
+const stepSmoothDecay : f64 = 0.6;
 const playerRadius : f64 = 0.30;
+const playerHeight : f64 = 1.80;   // body AABB height for voxel collision
 const mobRadius : f64 = 0.28;
 const treeHeight : i32 = 4;
 const mouseSens : f64 = 0.0024;
@@ -88,6 +96,15 @@ const regenEveryFrames : i32 = 90;  // +1 hp per this many frames
 
 // ── Render ──────────────────────────────────────────────────
 const renderDist : f64 = 64.0;
+// Sky / distance fog: far faces fade to the sky colour so the distance
+// dissolves softly (Minecraft-style) instead of shimmering as a mush of
+// aliased texels at the render edge. Fog runs from `fogStart` to `fogEnd`
+// blocks of depth.
+const skyR : i32 = 150;
+const skyG : i32 = 198;
+const skyB : i32 = 240;
+const fogStart : f64 = 42.0;
+const fogEnd : f64 = 63.0;
 
 // ── Tick rate ───────────────────────────────────────────────
 // The main loop is held to this many iterations per second by the frame
@@ -148,8 +165,6 @@ const mobTurnEveryMin : i32 = 40;
 const mobTurnEveryRand : i32 = 110;
 const mobTurnRate : f64 = 0.10;   // radians/frame the heading eases toward target
 const mobIdleChance : f64 = 0.34; // chance a turn picks "stand and graze"
-const mobHopChance : f64 = 0.010; // chance/frame a grounded walker little-hops
-const mobHopVel : f64 = 0.26;
 const mobFleeFrames : i32 = 70;   // panic-run duration after being hit
 const mobFleeSpeed : f64 = 0.085;
 const chickenGravityScale : f64 = 0.42;  // chickens flutter down slowly
