@@ -350,7 +350,11 @@ class Renderer {
         this.projectPoint(p, dx, dy, dz, 3);
         if (this.cvis[0] == 0 || this.cvis[1] == 0 || this.cvis[2] == 0 || this.cvis[3] == 0) { return; }
 
-        let bright : f64 = this.shadeN(nx, ny, nz);
+        // Mobs are little multi-box models: the full terrain light contrast
+        // (0.5..1.0) makes every box edge read as a hard seam. Compress it
+        // toward bright so adjacent faces blend and the model looks rounded
+        // rather than crated. (drawQuad is mob-only; terrain is unaffected.)
+        let bright : f64 = 0.80 + 0.20 * this.shadeN(nx, ny, nz);
         let sx0 : f64 = getF64(this.csx, 0); let sy0 : f64 = getF64(this.csy, 0); let iz0 : f64 = getF64(this.ciz, 0);
         let sx1 : f64 = getF64(this.csx, 1); let sy1 : f64 = getF64(this.csy, 1); let iz1 : f64 = getF64(this.ciz, 1);
         let sx2 : f64 = getF64(this.csx, 2); let sy2 : f64 = getF64(this.csy, 2); let iz2 : f64 = getF64(this.ciz, 2);
@@ -475,12 +479,47 @@ class Renderer {
         this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 0.64, 0.58, 0.18, 0.18, 0.18, rgb(110, 86, 66), config::tlCowBody, config::tlCowHead);
     }
 
+    /** Creeper: textured from the atlas. Normally the green creeper skin
+     *  with its iconic face on the head's forward face; once the fuse is
+     *  lit it swaps to the "gilet jaune" charge skin/face. The `color`
+     *  args are the lighting base (and the fallback if a tile is blank). */
+    fn drawCreeper(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
+        let sw : f64 = sin(m.walkPhase) * 0.10;
+
+        // Pick the skin/face tiles and matching base tints for the current
+        // state (calm green vs. charging gilet jaune).
+        let skin : i32 = config::tlCreeperSkin;
+        let face : i32 = config::tlCreeperFace;
+        let body : i32 = rgb(58, 140, 58);
+        let leg : i32 = rgb(42, 96, 42);
+        if (m.fuse >= 0) {
+            skin = config::tlChargeSkin;
+            face = config::tlChargeFace;
+            body = rgb(228, 196, 40);
+            leg = rgb(170, 140, 28);
+        }
+
+        // Legs always wear the plain green creeper skin -- the vest only
+        // belongs on the torso, so they never carry the charge tile.
+        let legTile : i32 = config::tlCreeperSkin;
+
+        // Four legs (plain skin), the upright body (vest), then the head
+        // whose forward face carries the creeper / meme mug.
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0 - 0.12, 0.13, 0.12 + sw, 0.07, 0.13, 0.07, leg, legTile, legTile);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.12, 0.13, 0.12 - sw, 0.07, 0.13, 0.07, leg, legTile, legTile);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0 - 0.12, 0.13, 0.0 - 0.12 - sw, 0.07, 0.13, 0.07, leg, legTile, legTile);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.12, 0.13, 0.0 - 0.12 + sw, 0.07, 0.13, 0.07, leg, legTile, legTile);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 0.58, 0.0, 0.16, 0.32, 0.11, body, skin, skin);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 1.06, 0.0, 0.18, 0.18, 0.18, body, skin, face);
+    }
+
     fn renderMobs(mm : MobManager, p : Player, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
         let i : i32 = 0;
         while (i < mm.count) {
             let m : Mob = mm.mobs[i];
             if (m.kind == config::mobChicken) { this.drawChicken(p, m, pixels, zbuf, w, h); }
             else if (m.kind == config::mobCow) { this.drawCow(p, m, pixels, zbuf, w, h); }
+            else if (m.kind == config::mobCreeper) { this.drawCreeper(p, m, pixels, zbuf, w, h); }
             else { this.drawSheep(p, m, pixels, zbuf, w, h); }
             i = i + 1;
         }

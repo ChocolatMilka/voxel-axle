@@ -39,7 +39,7 @@ const worldHeight : i32 = 128;
 // mob textures, then flip `useMobTextures` on.
 const tilePx : i32 = 64;
 const blockTiles : i32 = 11;
-const atlasTiles : i32 = 17;
+const atlasTiles : i32 = 21;
 const useMobTextures : bool = true;
 // Mip chain depth (64 → 32 → … → 1 = 7 levels). Distant faces sample a
 // coarser, pre-averaged level so textures don't shimmer when moving.
@@ -190,6 +190,12 @@ const tlSheepWool : i32 = 13;
 const tlSheepHead : i32 = 14;
 const tlCowBody : i32 = 15;
 const tlCowHead : i32 = 16;
+// Creeper: green skin + iconic face; the "gilet jaune" reskin is shown
+// while the fuse is lit (see config below and `drawCreeper`).
+const tlCreeperSkin : i32 = 17;
+const tlCreeperFace : i32 = 18;
+const tlChargeSkin : i32 = 19;
+const tlChargeFace : i32 = 20;
 
 // ── Inventory hotbar ────────────────────────────────────────
 const hotbarSize : i32 = 9;       // number of slots (keys 1–9)

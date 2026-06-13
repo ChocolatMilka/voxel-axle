@@ -27,6 +27,18 @@ TILES = [
     (TEX / "sheep" / "sheep.png", (64, 64, 112, 112),  (215, 205, 195)),  # 14 sheep face (8,8,6,6)
     (TEX / "cow" / "cow.png",   (168, 40, 360, 200), (94, 74, 58)),     # 15 cow body
     (TEX / "cow" / "cow.png",   (48, 48, 104, 112),  (110, 86, 66)),    # 16 cow face (6,6,7,8)
+    # Creeper (hostile). Same 64x32-at-8x net as the animals: the head
+    # front face (8,8,8,8) is the iconic mug, the body front (20,20,8,12)
+    # is the plain skin used on every other face. `charge.png` is the
+    # gilet-jaune reskin shown once the fuse is lit; same UV layout.
+    (TEX / "creeper" / "creeper.png", (160, 160, 224, 256), (58, 140, 58)),  # 17 creeper skin
+    (TEX / "creeper" / "creeper.png", (64, 64, 128, 128),   (40, 80, 40)),   # 18 creeper face
+    # The vest in charge.png isn't aligned to the body-front UV (that spot
+    # is still green); the hi-vis yellow sits on the right/front torso at
+    # x128-192, y128-224. Crop there so every body face shows the gilet
+    # (the model uses one skin tile on all faces), not a green front.
+    (TEX / "creeper" / "charge.png",  (128, 128, 192, 224), (228, 196, 40)), # 19 charge skin
+    (TEX / "creeper" / "charge.png",  (64, 64, 128, 128),   (200, 150, 30)), # 20 charge face
 ]
 
 
