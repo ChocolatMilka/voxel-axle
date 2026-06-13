@@ -225,6 +225,7 @@ const mobCreeperHp : i32 = 12;
 
 // ── Creeper (hostile: approaches, charges, explodes) ────────
 const mobCreeperSpeed : f64 = 0.034;     // calm walk toward the player
+const creeperChaseDist : f64 = 20.0;     // only homes in within this 3D range
 const creeperTriggerDist : f64 = 2.6;    // starts its fuse within this range
 const creeperFuseFrames : i32 = 148;     // ~2.47 s — matches the shortened charge.wav
 const creeperBlastRadius : f64 = 2.6;    // blocks destroyed / hurt radius

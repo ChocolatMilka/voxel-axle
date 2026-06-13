@@ -76,18 +76,37 @@ class Mob extends Entity {
             return 0;
         }
         let dx : f64 = player.posX - this.posX;
+        let dy : f64 = player.posY - this.posY;
         let dz : f64 = player.posZ - this.posZ;
-        let dist : f64 = sqrt(dx * dx + dz * dz);
+        // 3D distance: a player flying high overhead is NOT in range, so the
+        // creeper won't chase or blow up under an out-of-reach target.
+        let dist : f64 = sqrt(dx * dx + dy * dy + dz * dz);
         this.heading = atan2(dz, dx);
+
+        // Hostile only toward a survival player. In creative / flight the
+        // creeper stands down (and any lit fuse is defused below).
+        let hostile : bool = player.creative == 0;
+
         if (this.fuse < 0) {
-            if (dist <= config::creeperTriggerDist) {
+            if (hostile && dist <= config::creeperTriggerDist) {
                 this.fuse = config::creeperFuseFrames;
                 this.tick(world, 0.0, 0.0);
                 return 2;
             }
-            let spd : f64 = config::mobCreeperSpeed;
-            this.walkPhase = this.walkPhase + 0.35;
-            this.tick(world, cos(this.heading) * spd, sin(this.heading) * spd);
+            if (hostile && dist <= config::creeperChaseDist) {
+                let spd : f64 = config::mobCreeperSpeed;
+                this.walkPhase = this.walkPhase + 0.35;
+                this.tick(world, cos(this.heading) * spd, sin(this.heading) * spd);
+            } else {
+                this.tick(world, 0.0, 0.0);
+            }
+            return 0;
+        }
+
+        // Fuse lit: defuse if the player escaped (3D) or switched to creative.
+        if (!hostile || dist > config::creeperTriggerDist * 2.4) {
+            this.fuse = 0 - 1;
+            this.tick(world, 0.0, 0.0);
             return 0;
         }
         this.fuse = this.fuse - 1;
