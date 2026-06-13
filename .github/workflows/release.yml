@@ -1,0 +1,82 @@
+name: Release
+
+# Coherent tagging: this only runs when you push a version tag (v1.2.3),
+# never on every push to main. `workflow_dispatch` lets you trigger a
+# build manually from the Actions tab — that path builds and uploads the
+# artifact but does NOT publish a GitHub Release (only real tags do).
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create the GitHub Release
+
+jobs:
+  linux:
+    name: Build & release (Debian x86_64)
+    runs-on: ubuntu-latest
+    # Build inside the same image the Axle docs ship, so the apt repo and
+    # toolchain behave exactly as documented.
+    container: debian:bookworm-slim
+    steps:
+      # Install the toolchain first (no repo needed yet): the Axle compiler
+      # from its apt repo (LLVM 18 + lld are pulled in automatically) plus
+      # SDL2 dev for linking and git for checkout.
+      - name: Install Axle + SDL2
+        run: |
+          set -eux
+          apt-get update
+          apt-get install -y ca-certificates curl gnupg git
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://apt.axle-lang.dev/key.asc | gpg --dearmor -o /etc/apt/keyrings/axle.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/axle.gpg arch=amd64] https://apt.axle-lang.dev stable main" \
+            > /etc/apt/sources.list.d/axle.list
+          apt-get update
+          apt-get install -y axle libsdl2-dev
+          axle --version
+
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: axle build
+
+      - name: Package
+        run: |
+          set -eux
+          PKG=voxel-axle-linux-x86_64
+          mkdir -p "dist/$PKG"
+          cp target/voxel "dist/$PKG/"
+          cp atlas.raw "dist/$PKG/"
+          # Bundle the SDL2 runtime so the game runs without a system
+          # install; fall back to a note if it can't be located.
+          SDL_SO=$(ldconfig -p | awk '/libSDL2-2.0.so.0/ {print $NF; exit}')
+          if [ -n "${SDL_SO:-}" ] && [ -f "$SDL_SO" ]; then
+            cp "$SDL_SO" "dist/$PKG/"
+          fi
+          cat > "dist/$PKG/run.sh" <<'SH'
+          #!/usr/bin/env bash
+          # Launch with the bundled SDL2 (if present) on the library path.
+          here="$(cd "$(dirname "$0")" && pwd)"
+          LD_LIBRARY_PATH="$here:${LD_LIBRARY_PATH:-}" exec "$here/voxel"
+          SH
+          chmod +x "dist/$PKG/run.sh"
+          printf '%s\n' 'Run ./run.sh (bundles SDL2). If SDL2 is missing: sudo apt install libsdl2-2.0-0' \
+            > "dist/$PKG/README.txt"
+          tar -C dist -czf "$PKG.tar.gz" "$PKG"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: voxel-axle-linux-x86_64
+          path: voxel-axle-linux-x86_64.tar.gz
+
+      # Publish only for real version tags; manual dispatch stops at the
+      # uploaded artifact above.
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: voxel-axle-linux-x86_64.tar.gz
+          generate_release_notes: true
