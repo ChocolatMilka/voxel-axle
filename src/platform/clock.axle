@@ -1,0 +1,57 @@
+// clock — fixed-timestep pacing, so the simulation advances by real
+// elapsed time instead of once per displayed frame.
+//
+// `steps()` accumulates the wall-clock time since the last call and
+// returns how many fixed `1000/tickHz`-ms simulation steps are due this
+// frame: 1 at the target rate, more to catch up after a slow frame, 0 if
+// the frame came early — so jumping/walking run at the same real speed
+// whatever the frame rate (the accumulator is clamped so a long stall
+// can't trigger a "spiral of death" of hundreds of steps).
+//
+// `cap()` then sleeps any leftover frame budget so the loop doesn't spin
+// the CPU at hundreds of fps when v-sync is missing or disabled
+// (`SDL_RenderPresent` alone is not a guaranteed cap).
+
+use crate::platform::sdl::ticks;
+use crate::platform::sdl::delay;
+use crate::config;
+
+class GameClock {
+    msPerTick : i32,
+    maxAccum : i32,
+    accLast : i32,
+    acc : i32,
+    capLast : i32,
+
+    constructor() {
+        this.msPerTick = 1000 / config::tickHz;
+        this.maxAccum = this.msPerTick * 8;   // cap catch-up to 8 steps
+        this.accLast = ticks();
+        this.acc = 0;
+        this.capLast = ticks();
+    }
+
+    /** Number of fixed simulation steps to run this frame. */
+    fn steps() : i32 {
+        let now : i32 = ticks();
+        let dt : i32 = now - this.accLast;
+        this.accLast = now;
+        if (dt < 0) { dt = 0; }
+        this.acc = this.acc + dt;
+        if (this.acc > this.maxAccum) { this.acc = this.maxAccum; }
+        let n : i32 = this.acc / this.msPerTick;
+        this.acc = this.acc - n * this.msPerTick;
+        return n;
+    }
+
+    /** Sleep any unused frame budget to hold the loop near `tickHz` and
+     *  keep the CPU idle between frames. */
+    fn cap() : void {
+        let now : i32 = ticks();
+        let dt : i32 = now - this.capLast;
+        if (dt >= 0 && dt < this.msPerTick) {
+            delay(this.msPerTick - dt);
+        }
+        this.capLast = ticks();
+    }
+}
