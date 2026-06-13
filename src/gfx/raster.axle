@@ -49,15 +49,89 @@ fn sampleAtlas(atlas : i64, tile : i32, fu : f64, fv : f64) : i32 {
     return readI32(atlas, (idx as i64) * 4);
 }
 
-/** Textured triangle: perspective-correct UV sampling of an atlas tile,
- *  each channel scaled by its own multiplier (`tr`, `tg`, `tb`). Passing
- *  the same value for all three is plain brightness; an unequal triple
- *  tints — e.g. a red hurt flash multiplies green/blue down. */
+/** Texel offset where mip `level` starts in the mip chain (level 0 is the
+ *  full-resolution atlas; each level halves the tile size). */
+fn mipLevelOffset(level : i32) : i32 {
+    let off : i32 = 0;
+    let sz : i32 = config::tilePx;
+    let l : i32 = 0;
+    while (l < level) {
+        off = off + config::atlasTiles * sz * sz;
+        sz = sz / 2;
+        l = l + 1;
+    }
+    return off;
+}
+
+/** Tile side length (texels) at mip `level`. */
+fn mipLevelSize(level : i32) : i32 {
+    let sz : i32 = config::tilePx;
+    let l : i32 = 0;
+    while (l < level) { sz = sz / 2; l = l + 1; }
+    return sz;
+}
+
+/** Total texel count of the whole mip chain (for allocation). */
+fn mipChainTexels() : i32 {
+    return mipLevelOffset(config::mipLevels);
+}
+
+/** Build the mip chain into `mips` from the level-0 `atlas`: level 0 is a
+ *  copy, each finer level a 2×2 box-filtered downsample of the previous.
+ *  Pre-averaging the texels is what stops distant textures from
+ *  shimmering as the camera moves (Minecraft-style mipmapping). */
+fn buildMipChain(atlas : i64, mips : i64) : void {
+    let n0 : i32 = config::atlasTiles * config::tilePx * config::tilePx;
+    let i : i32 = 0;
+    while (i < n0) {
+        putPixel(mips, i, readI32(atlas, (i as i64) * 4));
+        i = i + 1;
+    }
+    let level : i32 = 1;
+    let sz : i32 = config::tilePx / 2;
+    let psz : i32 = config::tilePx;
+    while (level < config::mipLevels) {
+        let base : i32 = mipLevelOffset(level);
+        let pbase : i32 = mipLevelOffset(level - 1);
+        let t : i32 = 0;
+        while (t < config::atlasTiles) {
+            let ty : i32 = 0;
+            while (ty < sz) {
+                let tx : i32 = 0;
+                while (tx < sz) {
+                    let i00 : i32 = pbase + (t * psz + ty * 2) * psz + tx * 2;
+                    let i01 : i32 = i00 + 1;
+                    let i10 : i32 = pbase + (t * psz + ty * 2 + 1) * psz + tx * 2;
+                    let i11 : i32 = i10 + 1;
+                    let c00 : i32 = readI32(mips, (i00 as i64) * 4);
+                    let c01 : i32 = readI32(mips, (i01 as i64) * 4);
+                    let c10 : i32 = readI32(mips, (i10 as i64) * 4);
+                    let c11 : i32 = readI32(mips, (i11 as i64) * 4);
+                    let rr : i32 = (((c00 / 65536) & 0xFF) + ((c01 / 65536) & 0xFF) + ((c10 / 65536) & 0xFF) + ((c11 / 65536) & 0xFF)) / 4;
+                    let gg : i32 = (((c00 / 256) & 0xFF) + ((c01 / 256) & 0xFF) + ((c10 / 256) & 0xFF) + ((c11 / 256) & 0xFF)) / 4;
+                    let bb : i32 = ((c00 & 0xFF) + (c01 & 0xFF) + (c10 & 0xFF) + (c11 & 0xFF)) / 4;
+                    putPixel(mips, base + (t * sz + ty) * sz + tx, rgb(rr, gg, bb));
+                    tx = tx + 1;
+                }
+                ty = ty + 1;
+            }
+            t = t + 1;
+        }
+        psz = sz;
+        sz = sz / 2;
+        level = level + 1;
+    }
+}
+
+/** Textured triangle: perspective-correct UV sampling of an atlas tile at
+ *  mip level `lvlBase`/`lvlSz` (offset + side length, chosen by the caller
+ *  from the face's distance). Each channel scaled by its own multiplier
+ *  (`tr`, `tg`, `tb`): equal = brightness, unequal = a tint (hurt flash). */
 fn rasterTriTex(pixels : i64, zbuf : i64, w : i32, h : i32,
     x0 : f64, y0 : f64, iz0 : f64, u0 : f64, v0 : f64,
     x1 : f64, y1 : f64, iz1 : f64, u1 : f64, v1 : f64,
     x2 : f64, y2 : f64, iz2 : f64, u2 : f64, v2 : f64,
-    atlas : i64, tile : i32, tr : f64, tg : f64, tb : f64) : void {
+    mips : i64, tile : i32, lvlBase : i32, lvlSz : i32, sharp : f64, tr : f64, tg : f64, tb : f64) : void {
     let area : f64 = edge(x0, y0, x1, y1, x2, y2);
     if (area > 0.0 - 0.0001 && area < 0.0001) { return; }
     let inv : f64 = 1.0 / area;
@@ -89,10 +163,9 @@ fn rasterTriTex(pixels : i64, zbuf : i64, w : i32, h : i32,
     // Hoist the tile constants; the inner pixel does raw pointer loads /
     // stores and a single reciprocal instead of per-pixel `getF64` /
     // `setF64` / `putPixel` / `readI32` calls and two divides.
-    let t : i32 = config::tilePx;
-    let tf : f64 = t as f64;
-    let tmax : i32 = t - 1;
-    let tbase : i32 = tile * t;
+    let tf : f64 = lvlSz as f64;
+    let tmax : i32 = lvlSz - 1;
+    let tbase : i32 = tile * lvlSz;
 
     let py : i32 = miny;
     while (py <= maxy) {
@@ -114,18 +187,65 @@ fn rasterTriTex(pixels : i64, zbuf : i64, w : i32, h : i32,
                         let invz : f64 = 1.0 / izp;
                         let u : f64 = (b0 * uw0 + b1 * uw1 + b2 * uw2) * invz;
                         let v : f64 = (b0 * vw0 + b1 * vw1 + b2 * vw2) * invz;
-                        let tx : i32 = floorToInt(u * tf) as i32;
-                        let ty : i32 = floorToInt(v * tf) as i32;
-                        if (tx < 0) { tx = 0; } else if (tx > tmax) { tx = tmax; }
-                        if (ty < 0) { ty = 0; } else if (ty > tmax) { ty = tmax; }
-                        let tp : ptr<i32> = (atlas + (((tbase + ty) * t + tx) as i64) * 4) as ptr<i32>;
-                        let texel : i32 = *tp;
-                        let r : i32 = floorToInt(((texel / 65536) & 0xFF) as f64 * tr) as i32;
-                        let g : i32 = floorToInt(((texel / 256) & 0xFF) as f64 * tg) as i32;
-                        let bl : i32 = floorToInt((texel & 0xFF) as f64 * tb) as i32;
+                        // Sharp-bilinear: keep each texel crisp (HD pixel
+                        // look) but anti-alias only the ~1px edge between
+                        // texels, so textures don't blur yet don't "swim"
+                        // diagonally as the camera turns. `sharp` = output
+                        // pixels per texel (≥1); larger = crisper edge.
+                        let fu0 : f64 = u * tf;
+                        let fv0 : f64 = v * tf;
+                        let rrs : f64 = 0.5 - 0.5 / sharp;
+                        let flx : f64 = floorToInt(fu0) as f64;
+                        let cdx0 : f64 = fu0 - flx - 0.5;
+                        let ccx0 : f64 = cdx0;
+                        if (ccx0 > rrs) { ccx0 = rrs; } else if (ccx0 < 0.0 - rrs) { ccx0 = 0.0 - rrs; }
+                        let fu : f64 = flx + (cdx0 - ccx0) * sharp;
+                        let fly : f64 = floorToInt(fv0) as f64;
+                        let cdy0 : f64 = fv0 - fly - 0.5;
+                        let ccy0 : f64 = cdy0;
+                        if (ccy0 > rrs) { ccy0 = rrs; } else if (ccy0 < 0.0 - rrs) { ccy0 = 0.0 - rrs; }
+                        let fv : f64 = fly + (cdy0 - ccy0) * sharp;
+                        let tx0 : i32 = floorToInt(fu) as i32;
+                        let ty0 : i32 = floorToInt(fv) as i32;
+                        let fx : f64 = fu - (tx0 as f64);
+                        let fy : f64 = fv - (ty0 as f64);
+                        let tx1 : i32 = tx0 + 1;
+                        let ty1 : i32 = ty0 + 1;
+                        if (tx0 < 0) { tx0 = 0; } else if (tx0 > tmax) { tx0 = tmax; }
+                        if (tx1 < 0) { tx1 = 0; } else if (tx1 > tmax) { tx1 = tmax; }
+                        if (ty0 < 0) { ty0 = 0; } else if (ty0 > tmax) { ty0 = tmax; }
+                        if (ty1 < 0) { ty1 = 0; } else if (ty1 > tmax) { ty1 = tmax; }
+                        let rw0 : i32 = lvlBase + (tbase + ty0) * lvlSz;
+                        let rw1 : i32 = lvlBase + (tbase + ty1) * lvlSz;
+                        let c00 : i32 = *((mips + ((rw0 + tx0) as i64) * 4) as ptr<i32>);
+                        let c10 : i32 = *((mips + ((rw0 + tx1) as i64) * 4) as ptr<i32>);
+                        let c01 : i32 = *((mips + ((rw1 + tx0) as i64) * 4) as ptr<i32>);
+                        let c11 : i32 = *((mips + ((rw1 + tx1) as i64) * 4) as ptr<i32>);
+                        let mfx : f64 = 1.0 - fx;
+                        let mfy : f64 = 1.0 - fy;
+                        let w00 : f64 = mfx * mfy;
+                        let w10 : f64 = fx * mfy;
+                        let w01 : f64 = mfx * fy;
+                        let w11 : f64 = fx * fy;
+                        let rf : f64 = (((c00 / 65536) & 0xFF) as f64) * w00 + (((c10 / 65536) & 0xFF) as f64) * w10 + (((c01 / 65536) & 0xFF) as f64) * w01 + (((c11 / 65536) & 0xFF) as f64) * w11;
+                        let gf : f64 = (((c00 / 256) & 0xFF) as f64) * w00 + (((c10 / 256) & 0xFF) as f64) * w10 + (((c01 / 256) & 0xFF) as f64) * w01 + (((c11 / 256) & 0xFF) as f64) * w11;
+                        let bf : f64 = ((c00 & 0xFF) as f64) * w00 + ((c10 & 0xFF) as f64) * w10 + ((c01 & 0xFF) as f64) * w01 + ((c11 & 0xFF) as f64) * w11;
+                        let r : i32 = floorToInt(rf * tr) as i32;
+                        let g : i32 = floorToInt(gf * tg) as i32;
+                        let bl : i32 = floorToInt(bf * tb) as i32;
                         if (r > 255) { r = 255; }
                         if (g > 255) { g = 255; }
                         if (bl > 255) { bl = 255; }
+                        // Distance fog: blend toward the sky past fogStart
+                        // so far terrain dissolves instead of shimmering.
+                        if (invz > config::fogStart) {
+                            let fog : f64 = (invz - config::fogStart) / (config::fogEnd - config::fogStart);
+                            if (fog > 1.0) { fog = 1.0; }
+                            let keep : f64 = 1.0 - fog;
+                            r = floorToInt((r as f64) * keep + (config::skyR as f64) * fog) as i32;
+                            g = floorToInt((g as f64) * keep + (config::skyG as f64) * fog) as i32;
+                            bl = floorToInt((bl as f64) * keep + (config::skyB as f64) * fog) as i32;
+                        }
                         *zp = izp;
                         let pp : ptr<i32> = (pixels + idx * 4) as ptr<i32>;
                         *pp = (r & 0xFF) * 65536 + (g & 0xFF) * 256 + (bl & 0xFF);
