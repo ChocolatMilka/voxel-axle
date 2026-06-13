@@ -10,13 +10,13 @@
 
 use std::numeric::math::sin;
 use std::numeric::math::cos;
-use crate::platform::sdl::allocBytes;
-use crate::platform::sdl::getF64;
-use crate::platform::sdl::setF64;
-use crate::platform::sdl::putPixel;
-use crate::platform::sdl::rgb;
-use crate::platform::sdl::scaleRgb;
-use crate::platform::sdl::tintIf;
+use crate::platform::mem::allocBytes;
+use crate::platform::mem::getF64;
+use crate::platform::mem::setF64;
+use crate::platform::mem::putPixel;
+use crate::platform::mem::rgb;
+use crate::gfx::color::scaleRgb;
+use crate::gfx::color::tintIf;
 use crate::gfx::raster::rasterTriTex;
 use crate::gfx::raster::rasterTri;
 use crate::gfx::raster::clearFrame;
@@ -356,30 +356,48 @@ class Renderer {
         color : i32, skinTile : i32, faceTile : i32) : void {
         let fwdx : f64 = cos(m.heading); let fwdz : f64 = sin(m.heading);
         let rgtx : f64 = sin(m.heading); let rgtz : f64 = 0.0 - cos(m.heading);
+        // Death: topple onto one side like Minecraft — rotate the whole
+        // model up→right about the feet by up to ~90° as the collapse
+        // plays out, instead of sinking straight down. `lr`, `lu` are the
+        // same rotation applied to every part (a global field of the local
+        // offset), so the box stays rigid; a small lift keeps the resting
+        // flank from dipping far into the ground.
         let pr : f64 = m.deathProgress();
-        let squash : f64 = 1.0 - 0.85 * pr;
-        let lean : f64 = 0.7 * pr;
-        let sink : f64 = 0.12 * pr;
+        let theta : f64 = pr * 1.5707963;
+        let ct : f64 = cos(theta);
+        let st : f64 = sin(theta);
+        let lift : f64 = 0.15 * st;
         let ci : i32 = 0;
         while (ci < 8) {
             let sr : f64 = 0.0 - 1.0; if ((ci & 1) != 0) { sr = 1.0; }
             let su : f64 = 0.0 - 1.0; if ((ci & 2) != 0) { su = 1.0; }
             let sf : f64 = 0.0 - 1.0; if ((ci & 4) != 0) { sf = 1.0; }
-            let lr : f64 = mr + sr * hr;
+            let lr0 : f64 = mr + sr * hr;
             let hun : f64 = my + su * hy;
-            let lu : f64 = hun * squash;
-            let lf : f64 = mf + sf * hf + lean * hun;
+            let lf : f64 = mf + sf * hf;
+            let lr : f64 = lr0 * ct + hun * st;
+            let lu : f64 = hun * ct - lr0 * st + lift;
             setF64(this.obx, ci, m.posX + lr * rgtx + lf * fwdx);
-            setF64(this.oby, ci, m.posY - sink + lu);
+            setF64(this.oby, ci, m.posY + lu);
             setF64(this.obz, ci, m.posZ + lr * rgtz + lf * fwdz);
             ci = ci + 1;
         }
         let hurt : bool = m.hurtTimer > 0;
-        this.oquad(p, pixels, zbuf, w, h, 1, 5, 7, 3, rgtx, 0.0, rgtz, color, skinTile, hurt);
-        this.oquad(p, pixels, zbuf, w, h, 4, 0, 2, 6, 0.0 - rgtx, 0.0, 0.0 - rgtz, color, skinTile, hurt);
-        this.oquad(p, pixels, zbuf, w, h, 2, 3, 7, 6, 0.0, 1.0, 0.0, color, skinTile, hurt);
+        // The right and up face normals rotate with the topple (the
+        // forward axis is the rotation axis, so forward normals are
+        // unchanged), keeping backface culling correct while the body
+        // lies down.
+        let rnx : f64 = ct * rgtx; let rny : f64 = 0.0 - st; let rnz : f64 = ct * rgtz;
+        let unx : f64 = st * rgtx; let uny : f64 = ct;       let unz : f64 = st * rgtz;
+        this.oquad(p, pixels, zbuf, w, h, 1, 5, 7, 3, rnx, rny, rnz, color, skinTile, hurt);
+        this.oquad(p, pixels, zbuf, w, h, 4, 0, 2, 6, 0.0 - rnx, 0.0 - rny, 0.0 - rnz, color, skinTile, hurt);
+        this.oquad(p, pixels, zbuf, w, h, 2, 3, 7, 6, unx, uny, unz, color, skinTile, hurt);
         this.oquad(p, pixels, zbuf, w, h, 4, 5, 7, 6, fwdx, 0.0, fwdz, color, faceTile, hurt);
         this.oquad(p, pixels, zbuf, w, h, 1, 0, 2, 3, 0.0 - fwdx, 0.0, 0.0 - fwdz, color, skinTile, hurt);
+        // Once tipping over, the underside comes into view, so draw it too.
+        if (pr > 0.0) {
+            this.oquad(p, pixels, zbuf, w, h, 0, 1, 5, 4, 0.0 - unx, 0.0 - uny, 0.0 - unz, color, skinTile, hurt);
+        }
     }
 
     fn drawChicken(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
