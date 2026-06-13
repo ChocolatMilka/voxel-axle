@@ -4,4 +4,7 @@ version = "0.1.0"
 
 [link]
 libs  = ["SDL2"]
-paths = ["C:/vcpkg/installed/x64-windows/lib"]
+# `lib` has SDL2.lib (used to link); `bin` has SDL2.dll. Axle's build
+# auto-copies <lib>.dll next to the binary from these paths, so listing
+# `bin` makes `axle build` drop SDL2.dll into target/ on every build.
+paths = ["C:/vcpkg/installed/x64-windows/lib", "C:/vcpkg/installed/x64-windows/bin"]
