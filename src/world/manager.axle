@@ -173,6 +173,11 @@ class ChunkManager {
         return isSolid(this.worldGet(wx, wy, wz));
     }
 
+    /** Is the voxel a block an entity collides with (per-voxel physics)? */
+    fn solidAt(wx : i32, wy : i32, wz : i32) : bool {
+        return isCollidable(this.worldGet(wx, wy, wz));
+    }
+
     // ── Streaming ───────────────────────────────────────────────
 
     fn ensureLoaded(camCX : i32, camCZ : i32) : void {

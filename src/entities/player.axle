@@ -37,6 +37,7 @@ class Player extends Entity {
         this.posZ = z;
         this.velY = 0.0;
         this.radius = config::playerRadius;
+        this.height = config::playerHeight;
         this.gravityScale = 1.0;
         this.hp = config::playerMaxHp;
         this.maxHp = config::playerMaxHp;
@@ -44,6 +45,7 @@ class Player extends Entity {
         this.impact = 0.0;
         this.grav = config::gravity;
         this.apexY = y;
+        this.stepUp = 0.0;
         this.yaw = 0.0;
         this.pitch = 0.0 - 0.18;
         this.siny = 0.0;
@@ -95,7 +97,7 @@ class Player extends Entity {
         this.sinp = sin(this.pitch);
         this.cosp = cos(this.pitch);
         this.eyeX = this.posX;
-        this.eyeY = this.posY + config::eyeHeight;
+        this.eyeY = this.posY + config::eyeHeight - this.stepUp;
         this.eyeZ = this.posZ;
     }
 
@@ -161,12 +163,19 @@ class Player extends Entity {
         let dz : f64 = (this.cosy * fwd + this.siny * strafe) * speed;
         this.velY = 0.0;
         this.onGround = 0;
-        this.tryMoveX(world, dx);
-        this.tryMoveZ(world, dz);
+        // Horizontal move with voxel collision (no auto-step in flight).
+        if (!this.collidesAt(world, this.posX + dx, this.posY, this.posZ)) { this.posX = this.posX + dx; }
+        if (!this.collidesAt(world, this.posX, this.posY, this.posZ + dz)) { this.posZ = this.posZ + dz; }
         if (up) { this.posY = this.posY + config::flyVertSpeed; }
         if (down) { this.posY = this.posY - config::flyVertSpeed; }
-        let g : f64 = this.groundUnder(world) as f64;
-        if (this.posY < g) { this.posY = g; this.onGround = 1; }
+        // Don't sink into the ground: if the body intersects blocks, lift
+        // the feet onto the highest support beneath them.
+        if (this.collidesAt(world, this.posX, this.posY, this.posZ)) {
+            let top : f64 = this.supportTop(world, this.posX, this.posZ,
+                floorToInt(this.posY) as i32, floorToInt(this.posY + this.height) as i32);
+            this.posY = top;
+            this.onGround = 1;
+        }
     }
 
     /** Fall damage, drowning and regeneration based on this frame's state. */

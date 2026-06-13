@@ -33,6 +33,7 @@ class Mob extends Entity {
         this.posZ = z;
         this.velY = 0.0;
         this.radius = config::mobRadius;
+        this.height = 1.0;
         this.gravityScale = 1.0;
         this.hp = maxHp;
         this.maxHp = maxHp;
@@ -40,6 +41,7 @@ class Mob extends Entity {
         this.impact = 0.0;
         this.grav = config::mobGravity;
         this.apexY = y;
+        this.stepUp = 0.0;
         this.kind = kind;
         this.heading = 0.0;
         this.targetHeading = 0.0;
@@ -51,9 +53,9 @@ class Mob extends Entity {
         this.state = 0;
         this.deathTimer = 0;
         this.speed = config::mobWanderSpeed;
-        if (kind == config::mobSheep) { this.speed = config::mobSheepSpeed; }
-        if (kind == config::mobCow) { this.speed = config::mobCowSpeed; }
-        if (kind == config::mobChicken) { this.gravityScale = config::chickenGravityScale; }
+        if (kind == config::mobSheep) { this.speed = config::mobSheepSpeed; this.height = 1.2; }
+        if (kind == config::mobCow) { this.speed = config::mobCowSpeed; this.height = 1.4; }
+        if (kind == config::mobChicken) { this.gravityScale = config::chickenGravityScale; this.height = 0.6; }
     }
 
     /** Flag a hit so the renderer glows the mob red for a few frames. */
@@ -126,9 +128,8 @@ class Mob extends Entity {
         else if (this.moving == 1) { spd = this.speed; }
 
         if (spd > 0.0) { this.walkPhase = this.walkPhase + 0.35; }
-        if (this.onGround == 1 && spd > 0.0 && rnd < config::mobHopChance) {
-            this.velY = config::mobHopVel;
-        }
+        // No random hopping: entity physics auto-steps one-block ledges, so
+        // mobs traverse terrain by walking instead of jumping for nothing.
 
         let dx : f64 = cos(this.heading) * spd;
         let dz : f64 = sin(this.heading) * spd;

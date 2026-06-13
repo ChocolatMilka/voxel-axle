@@ -23,11 +23,12 @@ fn isSolid(id : i32) : bool {
     return id != config::bAir && id != config::bWater;
 }
 
-/** A block the player physically stands on / can't walk through. Leaves
- *  are solid blocks you can break, but the canopy stays passable (you
- *  don't walk on treetops), so they're excluded from collision. */
+/** A block the player physically stands on / can't walk through — every
+ *  real block (anything but air and water). Leaves are included: like in
+ *  Minecraft you stand on them, and per-voxel collision keeps the gaps
+ *  under a canopy walkable. */
 fn isCollidable(id : i32) : bool {
-    return isSolid(id) && id != config::bLeaves;
+    return isSolid(id);
 }
 
 /** Atlas tile for a block id on face `dir` (2 = top, 3 = bottom, else

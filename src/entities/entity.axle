@@ -21,6 +21,7 @@ class Entity {
     posZ : f64,
     velY : f64,
     radius : f64,
+    height : f64,        // body AABB height (feet at posY, head at posY+height)
     gravityScale : f64,
     hp : i32,
     maxHp : i32,
@@ -28,6 +29,7 @@ class Entity {
     impact : f64,
     grav : f64,          // downward acceleration per tick (× gravityScale)
     apexY : f64,         // highest Y since leaving the ground (for fall distance)
+    stepUp : f64,        // pending visual step-up offset (camera eases it to 0)
 
     constructor(x : f64, y : f64, z : f64, maxHp : i32) {
         this.posX = x;
@@ -35,6 +37,7 @@ class Entity {
         this.posZ = z;
         this.velY = 0.0;
         this.radius = config::playerRadius;
+        this.height = config::playerHeight;
         this.gravityScale = 1.0;
         this.hp = maxHp;
         this.maxHp = maxHp;
@@ -42,6 +45,7 @@ class Entity {
         this.impact = 0.0;
         this.grav = config::gravity;
         this.apexY = y;
+        this.stepUp = 0.0;
     }
 
     /** Apply `d` points of damage; clamps at zero. */
@@ -60,90 +64,150 @@ class Entity {
         return this.hp > 0;
     }
 
-    /** Solid collision height of the world column under (fx, fz). */
-    fn cellSurf(world : ChunkManager, fx : f64, fz : f64) : i32 {
-        return world.collisionHeight(floorToInt(fx) as i32, floorToInt(fz) as i32);
-    }
-
-    /** Highest solid surface under the body's footprint (its 4 corners),
-     *  so the entity stands on its tallest support and never sinks into a
-     *  block its edge overlaps. */
-    fn groundUnder(world : ChunkManager) : i32 {
+    /** Does the body AABB at (px, py, pz) overlap any collidable voxel?
+     *  The body is a `radius`-wide column `height` tall with feet at py.
+     *  Each block is tested individually, so the world is a real voxel
+     *  field — you stand on leaves, walk through canopy gaps, and can't
+     *  pass into any solid block. */
+    fn collidesAt(world : ChunkManager, px : f64, py : f64, pz : f64) : bool {
         let r : f64 = this.radius;
-        let a : i32 = this.cellSurf(world, this.posX - r, this.posZ - r);
-        let b : i32 = this.cellSurf(world, this.posX + r, this.posZ - r);
-        let c : i32 = this.cellSurf(world, this.posX - r, this.posZ + r);
-        let d : i32 = this.cellSurf(world, this.posX + r, this.posZ + r);
-        let m : i32 = a;
-        if (b > m) { m = b; }
-        if (c > m) { m = c; }
-        if (d > m) { m = d; }
-        return m;
+        let eps : f64 = 0.0001;
+        let x0 : i32 = floorToInt(px - r) as i32;
+        let x1 : i32 = floorToInt(px + r - eps) as i32;
+        let z0 : i32 = floorToInt(pz - r) as i32;
+        let z1 : i32 = floorToInt(pz + r - eps) as i32;
+        let y0 : i32 = floorToInt(py) as i32;
+        let y1 : i32 = floorToInt(py + this.height - eps) as i32;
+        let y : i32 = y0;
+        while (y <= y1) {
+            let x : i32 = x0;
+            while (x <= x1) {
+                let z : i32 = z0;
+                while (z <= z1) {
+                    if (world.solidAt(x, y, z)) { return true; }
+                    z = z + 1;
+                }
+                x = x + 1;
+            }
+            y = y + 1;
+        }
+        return false;
     }
 
-    /** Move along X by dx if the leading edge of the body clears the wall;
-     *  climb it instead when it is within a step and we are grounded. */
-    fn tryMoveX(world : ChunkManager, dx : f64) : void {
+    /** Top surface Y (voxelY+1) of the highest collidable voxel under the
+     *  footprint within world-Y rows [yLo, yHi]; a very low value if none.
+     *  Used to snap the feet onto a ledge / the ground. */
+    fn supportTop(world : ChunkManager, px : f64, pz : f64, yLo : i32, yHi : i32) : f64 {
+        let r : f64 = this.radius;
+        let eps : f64 = 0.0001;
+        let x0 : i32 = floorToInt(px - r) as i32;
+        let x1 : i32 = floorToInt(px + r - eps) as i32;
+        let z0 : i32 = floorToInt(pz - r) as i32;
+        let z1 : i32 = floorToInt(pz + r - eps) as i32;
+        let best : i32 = 0 - 1000000;
+        let x : i32 = x0;
+        while (x <= x1) {
+            let z : i32 = z0;
+            while (z <= z1) {
+                let y : i32 = yHi;
+                while (y >= yLo) {
+                    if (world.solidAt(x, y, z)) {
+                        if (y + 1 > best) { best = y + 1; }
+                        y = yLo - 1;
+                    } else {
+                        y = y - 1;
+                    }
+                }
+                z = z + 1;
+            }
+            x = x + 1;
+        }
+        return best as f64;
+    }
+
+    /** Move along X, blocked by solid voxels; auto-step a ≤ stepHeight
+     *  ledge when grounded. */
+    fn moveX(world : ChunkManager, dx : f64) : void {
         if (dx == 0.0) { return; }
-        let r : f64 = this.radius;
-        let edge : f64 = this.posX + dx;
-        if (dx > 0.0) { edge = edge + r; } else { edge = edge - r; }
-        let s1 : i32 = this.cellSurf(world, edge, this.posZ - r);
-        let s2 : i32 = this.cellSurf(world, edge, this.posZ + r);
-        let surf : i32 = s1;
-        if (s2 > s1) { surf = s2; }
-        let fsurf : f64 = surf as f64;
-        if (fsurf - this.posY <= config::stepHeight) {
-            this.posX = this.posX + dx;
-            if (this.onGround == 1 && fsurf > this.posY) { this.posY = fsurf; }
+        let nx : f64 = this.posX + dx;
+        if (!this.collidesAt(world, nx, this.posY, this.posZ)) { this.posX = nx; return; }
+        if (this.onGround == 1) {
+            let stepY : f64 = this.posY + config::stepHeight;
+            if (!this.collidesAt(world, nx, stepY, this.posZ)) {
+                let top : f64 = this.supportTop(world, nx, this.posZ,
+                    floorToInt(this.posY) as i32, floorToInt(stepY) as i32);
+                if (top > this.posY && top - this.posY <= config::stepHeight
+                    && !this.collidesAt(world, nx, top, this.posZ)) {
+                    this.stepUp = this.stepUp + (top - this.posY);
+                    this.posX = nx;
+                    this.posY = top;
+                }
+            }
         }
     }
 
-    fn tryMoveZ(world : ChunkManager, dz : f64) : void {
+    fn moveZ(world : ChunkManager, dz : f64) : void {
         if (dz == 0.0) { return; }
-        let r : f64 = this.radius;
-        let edge : f64 = this.posZ + dz;
-        if (dz > 0.0) { edge = edge + r; } else { edge = edge - r; }
-        let s1 : i32 = this.cellSurf(world, this.posX - r, edge);
-        let s2 : i32 = this.cellSurf(world, this.posX + r, edge);
-        let surf : i32 = s1;
-        if (s2 > s1) { surf = s2; }
-        let fsurf : f64 = surf as f64;
-        if (fsurf - this.posY <= config::stepHeight) {
-            this.posZ = this.posZ + dz;
-            if (this.onGround == 1 && fsurf > this.posY) { this.posY = fsurf; }
+        let nz : f64 = this.posZ + dz;
+        if (!this.collidesAt(world, this.posX, this.posY, nz)) { this.posZ = nz; return; }
+        if (this.onGround == 1) {
+            let stepY : f64 = this.posY + config::stepHeight;
+            if (!this.collidesAt(world, this.posX, stepY, nz)) {
+                let top : f64 = this.supportTop(world, this.posX, nz,
+                    floorToInt(this.posY) as i32, floorToInt(stepY) as i32);
+                if (top > this.posY && top - this.posY <= config::stepHeight
+                    && !this.collidesAt(world, this.posX, top, nz)) {
+                    this.stepUp = this.stepUp + (top - this.posY);
+                    this.posZ = nz;
+                    this.posY = top;
+                }
+            }
         }
     }
 
-    /** Vertical motion + landing. One gravity is applied every tick: it
-     *  decelerates a rise and then accelerates the fall, so the path is a
-     *  symmetric parabola (a "bell") and the descent genuinely pulls down
-     *  rather than gliding. Downward speed is clamped to `terminalVel`.
-     *  `impact` is set on landing to the distance fallen from the apex,
-     *  which is what fall damage reads. */
+    /** Vertical motion + landing against real voxels. Gravity accelerates
+     *  the fall (clamped to terminal); landing snaps the feet onto the
+     *  block top; rising into a block stops the climb. `impact` (distance
+     *  fallen from the apex) drives fall damage. */
     fn fall(world : ChunkManager) : void {
         this.impact = 0.0;
         this.velY = this.velY - this.grav * this.gravityScale;
         let term : f64 = 0.0 - config::terminalVel;
         if (this.velY < term) { this.velY = term; }
-        this.posY = this.posY + this.velY;
-        if (this.posY > this.apexY) { this.apexY = this.posY; }
-        let floorY : f64 = this.groundUnder(world) as f64;
-        if (this.posY <= floorY) {
-            this.impact = this.apexY - floorY;
-            this.posY = floorY;
-            this.velY = 0.0;
-            this.onGround = 1;
-            this.apexY = floorY;
+        let ny : f64 = this.posY + this.velY;
+        if (this.velY <= 0.0) {
+            if (this.collidesAt(world, this.posX, ny, this.posZ)) {
+                let top : f64 = this.supportTop(world, this.posX, this.posZ,
+                    floorToInt(ny) as i32, floorToInt(this.posY) as i32);
+                this.impact = this.apexY - top;
+                this.posY = top;
+                this.velY = 0.0;
+                this.onGround = 1;
+                this.apexY = top;
+            } else {
+                this.posY = ny;
+                this.onGround = 0;
+            }
         } else {
-            this.onGround = 0;
+            if (this.collidesAt(world, this.posX, ny, this.posZ)) {
+                this.velY = 0.0;
+                this.onGround = 0;
+            } else {
+                this.posY = ny;
+                if (this.posY > this.apexY) { this.apexY = this.posY; }
+                this.onGround = 0;
+            }
         }
     }
 
-    /** One physics step: horizontal intent (dx, dz) then vertical. */
+    /** One physics step: horizontal intent (dx, dz) then vertical. The
+     *  visual step-up offset decays each tick so an auto-stepped ledge
+     *  eases the camera up smoothly instead of snapping. */
     fn tick(world : ChunkManager, dx : f64, dz : f64) : void {
-        this.tryMoveX(world, dx);
-        this.tryMoveZ(world, dz);
+        this.stepUp = this.stepUp * config::stepSmoothDecay;
+        if (this.stepUp < 0.02) { this.stepUp = 0.0; }
+        this.moveX(world, dx);
+        this.moveZ(world, dz);
         this.fall(world);
     }
 }
