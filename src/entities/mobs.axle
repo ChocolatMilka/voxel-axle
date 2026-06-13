@@ -17,11 +17,15 @@ class MobManager {
     mobs : Mob[],
     count : i32,
     rc : f64,
+    boomPending : i32,    // creeper detonations this frame (for the SFX)
+    chargePending : i32,  // creepers that lit their fuse this frame
 
     constructor() {
         this.mobs = malloc<Mob>(config::mobCap);
         this.count = 0;
         this.rc = 9.0;
+        this.boomPending = 0;
+        this.chargePending = 0;
     }
 
     /** Next pseudo-random value in [0,1). */
@@ -49,8 +53,9 @@ class MobManager {
         let kind : i32 = config::mobChicken;
         let hp : i32 = config::mobChickenHp;
         let pick : f64 = this.rand();
-        if (pick > 0.66) { kind = config::mobCow; hp = config::mobCowHp; }
-        else if (pick > 0.33) { kind = config::mobSheep; hp = config::mobSheepHp; }
+        if (pick > 0.72) { kind = config::mobCreeper; hp = config::mobCreeperHp; }
+        else if (pick > 0.50) { kind = config::mobCow; hp = config::mobCowHp; }
+        else if (pick > 0.25) { kind = config::mobSheep; hp = config::mobSheepHp; }
         this.mobs[this.count] = new Mob(wx, surf as f64, wz, kind, hp);
         this.count = this.count + 1;
         return true;
@@ -60,7 +65,13 @@ class MobManager {
     fn update(world : ChunkManager, player : Player) : void {
         let i : i32 = 0;
         while (i < this.count) {
-            this.mobs[i].aiStep(world, this.rand());
+            if (this.mobs[i].kind == config::mobCreeper) {
+                let rc : i32 = this.mobs[i].creeperStep(world, player);
+                if (rc == 1) { this.boomPending = this.boomPending + 1; }
+                else if (rc == 2) { this.chargePending = this.chargePending + 1; }
+            } else {
+                this.mobs[i].aiStep(world, this.rand());
+            }
             i = i + 1;
         }
         let despawn2 : f64 = config::mobDespawnDist * config::mobDespawnDist;
