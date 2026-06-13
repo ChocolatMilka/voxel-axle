@@ -26,7 +26,7 @@ class Entity {
     maxHp : i32,
     onGround : i32,
     impact : f64,
-    riseGravity : f64,   // gravity while moving up; the player floats, mobs don't
+    grav : f64,          // downward acceleration per tick (× gravityScale)
     apexY : f64,         // highest Y since leaving the ground (for fall distance)
 
     constructor(x : f64, y : f64, z : f64, maxHp : i32) {
@@ -40,7 +40,7 @@ class Entity {
         this.maxHp = maxHp;
         this.onGround = 0;
         this.impact = 0.0;
-        this.riseGravity = config::gravity;
+        this.grav = config::gravity;
         this.apexY = y;
     }
 
@@ -115,19 +115,17 @@ class Entity {
         }
     }
 
-    /** Vertical motion + landing. Going UP the velocity decelerates under
-     *  `riseGravity` (the player's floaty jump arc; mobs use normal
-     *  gravity). Going DOWN the descent is LINEAR — a constant `fallSpeed`,
-     *  no acceleration — so the fall reads as a straight glide, not an
-     *  accelerating drop. `impact` is set on landing to the distance fallen
-     *  from the apex, which is what fall damage reads. */
+    /** Vertical motion + landing. One gravity is applied every tick: it
+     *  decelerates a rise and then accelerates the fall, so the path is a
+     *  symmetric parabola (a "bell") and the descent genuinely pulls down
+     *  rather than gliding. Downward speed is clamped to `terminalVel`.
+     *  `impact` is set on landing to the distance fallen from the apex,
+     *  which is what fall damage reads. */
     fn fall(world : ChunkManager) : void {
         this.impact = 0.0;
-        if (this.velY > 0.0) {
-            this.velY = this.velY - this.riseGravity * this.gravityScale;
-        } else {
-            this.velY = 0.0 - config::fallSpeed * this.gravityScale;
-        }
+        this.velY = this.velY - this.grav * this.gravityScale;
+        let term : f64 = 0.0 - config::terminalVel;
+        if (this.velY < term) { this.velY = term; }
         this.posY = this.posY + this.velY;
         if (this.posY > this.apexY) { this.apexY = this.posY; }
         let floorY : f64 = this.groundUnder(world) as f64;

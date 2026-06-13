@@ -42,7 +42,7 @@ class Player extends Entity {
         this.maxHp = config::playerMaxHp;
         this.onGround = 0;
         this.impact = 0.0;
-        this.riseGravity = config::jumpGravity;
+        this.grav = config::gravity;
         this.apexY = y;
         this.yaw = 0.0;
         this.pitch = 0.0 - 0.18;

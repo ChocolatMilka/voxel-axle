@@ -38,7 +38,7 @@ class Mob extends Entity {
         this.maxHp = maxHp;
         this.onGround = 0;
         this.impact = 0.0;
-        this.riseGravity = config::gravity;
+        this.grav = config::mobGravity;
         this.apexY = y;
         this.kind = kind;
         this.heading = 0.0;
