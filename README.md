@@ -25,7 +25,9 @@ geometry.
 | `W` `A` `S` `D`  | walk                    |
 | `LCtrl`          | sprint                  |
 | `Space`          | jump / swim up          |
-| Left-click       | attack the mob in front |
+| Left-click       | dig the block / attack the mob in front |
+| Right-click      | place the held block    |
+| `1`–`9`          | select hotbar slot      |
 | `Esc` / close    | quit                    |
 
 ## Prerequisites
@@ -121,26 +123,38 @@ prefix (like Rust); same-folder siblings can be imported by bare name.
 
 ```
 src/
-  main.axle              window, spawn, the input → simulate → render loop
+  main.axle              thin entry: window + buffers, then the
+                         input → simulate → render loop (paced by the clock)
   config.axle            every tunable: screen, stream, noise, blocks &
-                         biomes, physics, mobs, HUD   ← change the feel here
+                         biomes, physics, ticks, mobs, HUD ← change the feel
   platform/
-    sdl.axle             SDL2 FFI + framebuffer / keyboard / mouse helpers
+    mem.axle             libc alloc, pointer helpers, framebuffer/byte
+                         accessors, the rgb packer
+    sdl.axle             SDL2 FFI: window/renderer/texture, events,
+                         keyboard, relative mouse, frame timing
+    file.axle            binary file reading + runtime atlas load
+    clock.axle           FrameClock: holds the loop to config::tickHz
   world/
     noise.axle           value noise + fbm; height / temperature / humidity
-    blocks.axle          block table: id → tile / colour    ← add blocks
+    blocks.axle          block table: id → tile / colour / predicates
     biome.axle           temp × humidity × height → biome → surface/trees
-    manager.axle         ChunkManager: streamed slots, meshing, and the
-                         columnHeight() / collisionHeight() physics queries
+    manager.axle         ChunkManager: streamed voxel chunks, meshing,
+                         columnHeight/collisionHeight, breakAt/placeAt
   entities/
     entity.axle          Entity base: gravity, solid collision, damage
-    player.axle          Player extends Entity: look, move, fall/drown/regen
+    player.axle          Player extends Entity: look, move, survival, hotbar
     mob.axle             Mob extends Entity: animal AI (wander/graze/flee/die)
     mobs.axle            MobManager: spawn ring, AI update, despawn, melee
+  game/
+    start.axle           start-position search + facing yaw
+    ray.axle             Picker: look-ray voxel pick (dig/place targets)
   gfx/
+    color.axle           colour math (scale/tint) + rectangle fill
     raster.axle          triangle rasteriser + z-buffer (textured + flat)
     render.axle          project + cull + draw world faces; mob cuboids
-    hud.axle             health hearts drawn straight into the framebuffer
+    health.axle          the Minecraft-style heart row
+    hotbar.axle          the inventory bar
+    hud.axle             composes the HUD overlay (health + hotbar)
 ```
 
 ### Why inheritance here
@@ -215,15 +229,27 @@ from their per-part `rgb(...)` colours instead.)
   surface/filler/tree-density.
 - **New animal**: a new `Entity` subclass (copy `mob`), a spawn case in
   `mobs`, and a draw case in `render`.
-- **Editing the world** (dig / place): change a chunk's heightmap (or add
-  a voxel-override layer) and re-`buildMesh` that slot.
+- **Editing the world** (dig / place): implemented — `ChunkManager.breakAt`
+  / `placeAt` rewrite the chunk's full voxel field (and neighbour skirts) and
+  re-`buildMesh` the affected slots; a look-ray (`Picker` in `main.axle`)
+  picks the targeted voxel.
 
 ## Notes / limitations
 
-- Collision samples the columns under the entity's footprint against a
-  per-column solid height that includes tree trunks, so terrain and trunks
-  are solid; leaf canopies are passable.
-- Heightmap terrain: no caves or overhangs yet (the mesher is the only
-  thing to change for a full voxel field).
+- The world is now a **full voxel field** per chunk (an id per voxel, padded
+  with a one-voxel skirt of neighbour data for seamless meshing); terrain,
+  trees and player edits all live in it and the mesher emits a face wherever
+  a block meets air.
+- Collision is still **column-based**: entities stand on a per-column solid
+  height (`ctop`, the highest collidable voxel, tree trunks and placed blocks
+  included; leaf canopies passable). So you can dig pits and build up, but you
+  can't yet walk under an overhang or into a horizontally-dug tunnel — a
+  voxel-accurate collision pass is the next step.
+- Edits are not persisted: a chunk that streams out of the loaded ring and
+  back is regenerated, discarding edits made to it.
+- The loop runs a **fixed timestep** (`config::tickHz`, default 60): the
+  simulation advances by real elapsed time (catching up after a slow frame),
+  so movement/jump speed is independent of the frame rate, and the frame
+  clock (`platform::clock`) caps the CPU instead of relying on v-sync.
 - `axle.toml`'s lib path is machine-specific; DLL + `atlas.raw` deployment
   next to the binary is manual.
