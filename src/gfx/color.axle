@@ -13,8 +13,8 @@ use crate::platform::mem::{rgb, putPixel, readI32};
  * @return the scaled colour.
  */
 fn scaleRgb(color : i32, bright : f64) : i32 {
-    let r : i32 = floorToInt(((color / 65536) & 0xFF) as f64 * bright) as i32;
-    let g : i32 = floorToInt(((color / 256) & 0xFF) as f64 * bright) as i32;
+    let r : i32 = floorToInt(((color >> 16) & 0xFF) as f64 * bright) as i32;
+    let g : i32 = floorToInt(((color >> 8) & 0xFF) as f64 * bright) as i32;
     let b : i32 = floorToInt((color & 0xFF) as f64 * bright) as i32;
     if (r > 255) {
         r = 255;
@@ -34,8 +34,8 @@ fn scaleRgb(color : i32, bright : f64) : i32 {
  * @return the red-tinted colour.
  */
 fn redTint(color : i32) : i32 {
-    let r : i32 = (color / 65536) & 0xFF;
-    let g : i32 = (color / 256) & 0xFF;
+    let r : i32 = (color >> 16) & 0xFF;
+    let g : i32 = (color >> 8) & 0xFF;
     let b : i32 = color & 0xFF;
     r = r + 110;
     if (r > 255) {

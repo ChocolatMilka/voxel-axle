@@ -169,8 +169,8 @@ fn buildMipChain(atlas : i64, mips : i64) : void {
                     let c01 : i32 = readI32(mips, (i01 as i64) * 4);
                     let c10 : i32 = readI32(mips, (i10 as i64) * 4);
                     let c11 : i32 = readI32(mips, (i11 as i64) * 4);
-                    let rr : i32 = (((c00 / 65536) & 0xFF) + ((c01 / 65536) & 0xFF) + ((c10 / 65536) & 0xFF) + ((c11 / 65536) & 0xFF)) / 4;
-                    let gg : i32 = (((c00 / 256) & 0xFF) + ((c01 / 256) & 0xFF) + ((c10 / 256) & 0xFF) + ((c11 / 256) & 0xFF)) / 4;
+                    let rr : i32 = (((c00 >> 16) & 0xFF) + ((c01 >> 16) & 0xFF) + ((c10 >> 16) & 0xFF) + ((c11 >> 16) & 0xFF)) / 4;
+                    let gg : i32 = (((c00 >> 8) & 0xFF) + ((c01 >> 8) & 0xFF) + ((c10 >> 8) & 0xFF) + ((c11 >> 8) & 0xFF)) / 4;
                     let bb : i32 = ((c00 & 0xFF) + (c01 & 0xFF) + (c10 & 0xFF) + (c11 & 0xFF)) / 4;
                     putPixel(mips, base + (t * sz + ty) * sz + tx, rgb(rr, gg, bb));
                     tx = tx + 1;
@@ -358,8 +358,8 @@ fn rasterTriTex(pixels : i64, zbuf : i64, w : i32, h : i32,
                         let w10 : f64 = fx * mfy;
                         let w01 : f64 = mfx * fy;
                         let w11 : f64 = fx * fy;
-                        let rf : f64 = (((c00 / 65536) & 0xFF) as f64) * w00 + (((c10 / 65536) & 0xFF) as f64) * w10 + (((c01 / 65536) & 0xFF) as f64) * w01 + (((c11 / 65536) & 0xFF) as f64) * w11;
-                        let gf : f64 = (((c00 / 256) & 0xFF) as f64) * w00 + (((c10 / 256) & 0xFF) as f64) * w10 + (((c01 / 256) & 0xFF) as f64) * w01 + (((c11 / 256) & 0xFF) as f64) * w11;
+                        let rf : f64 = (((c00 >> 16) & 0xFF) as f64) * w00 + (((c10 >> 16) & 0xFF) as f64) * w10 + (((c01 >> 16) & 0xFF) as f64) * w01 + (((c11 >> 16) & 0xFF) as f64) * w11;
+                        let gf : f64 = (((c00 >> 8) & 0xFF) as f64) * w00 + (((c10 >> 8) & 0xFF) as f64) * w10 + (((c01 >> 8) & 0xFF) as f64) * w01 + (((c11 >> 8) & 0xFF) as f64) * w11;
                         let bf : f64 = ((c00 & 0xFF) as f64) * w00 + ((c10 & 0xFF) as f64) * w10 + ((c01 & 0xFF) as f64) * w01 + ((c11 & 0xFF) as f64) * w11;
                         let r : i32 = floorToInt(rf * tr) as i32;
                         let g : i32 = floorToInt(gf * tg) as i32;
