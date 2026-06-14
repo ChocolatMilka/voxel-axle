@@ -1,34 +1,51 @@
-// audio — minimal one-shot WAV playback over SDL2's audio device (so it
-// stays cross-platform, no extra deps). A `Sound` loads a .wav once and
-// `play()` (re)queues it on its own device. Loading or device failure is
-// silent (`ok = 0`) — the game runs fine without the file.
+// audio — software mixer over a SINGLE SDL2 audio device.
 //
-// Requires SDL to be initialised with SDL_INIT_AUDIO (see main).
+// SDL only opens a handful of audio devices at once, so one-device-per-sound
+// does not scale to footsteps + mobs + creeper + ambience. Instead every clip
+// is decoded once into raw PCM (no device of its own), and one `Mixer` owns the
+// only device. Active clips are tracked as "voices"; once per frame `pump()`
+// mixes the live voices into a scratch buffer and queues it (push model, so no
+// audio-thread callback and no locking — play() and pump() run on the main
+// thread). Unlimited overlap, one device.
+//
+// All clips share the device format: 44.1 kHz mono signed-16 (the converter,
+// tools/convert_sounds.py, emits exactly that), so mixing is a plain add.
+// Requires SDL_INIT_AUDIO.
 
-use crate::platform::mem::{allocBytes, nullPtr, asPtr, isNull, readI32, readI64};
+use std::numeric::math::floorToInt;
+use crate::platform::mem::{allocBytes, nullPtr, asPtr, isNull, readI32, readI64, readI16, writeI16, writeU8};
 
-@link_name("SDL_RWFromFile")       native fn SDL_RWFromFile(file : string, mode : string) : ptr;
-@link_name("SDL_LoadWAV_RW")       native fn SDL_LoadWAV_RW(rw : ptr, freesrc : i32, spec : ptr, audio_buf : ptr, audio_len : ptr) : ptr;
-@link_name("SDL_OpenAudioDevice")  native fn SDL_OpenAudioDevice(device : ptr, iscapture : i32, desired : ptr, obtained : ptr, allowed : i32) : i32;
-@link_name("SDL_QueueAudio")       native fn SDL_QueueAudio(dev : i32, data : ptr, len : i32) : i32;
-@link_name("SDL_ClearQueuedAudio") native fn SDL_ClearQueuedAudio(dev : i32) : void;
-@link_name("SDL_PauseAudioDevice") native fn SDL_PauseAudioDevice(dev : i32, pause : i32) : void;
+@link_name("SDL_RWFromFile")         native fn SDL_RWFromFile(file : string, mode : string) : ptr;
+@link_name("SDL_LoadWAV_RW")         native fn SDL_LoadWAV_RW(rw : ptr, freesrc : i32, spec : ptr, audio_buf : ptr, audio_len : ptr) : ptr;
+@link_name("SDL_OpenAudioDevice")    native fn SDL_OpenAudioDevice(device : ptr, iscapture : i32, desired : ptr, obtained : ptr, allowed : i32) : i32;
+@link_name("SDL_QueueAudio")         native fn SDL_QueueAudio(dev : i32, data : ptr, len : i32) : i32;
+@link_name("SDL_GetQueuedAudioSize") native fn SDL_GetQueuedAudioSize(dev : i32) : i32;
+@link_name("SDL_PauseAudioDevice")   native fn SDL_PauseAudioDevice(dev : i32, pause : i32) : void;
 
-class Sound {
-    dev : i32,
-    buf : i64,
-    len : i32,
+const RATE : i32 = 44100;
+const MAX_VOICES : i32 = 48;
+const DEV_SAMPLES : i32 = 512;    // device callback buffer (must stay ≤ queued)
+// Keep the queue well above one device buffer so SDL never pulls a partial
+// block (which clicks): ~100 ms absorbs ordinary frame jitter / chunk loads.
+const QUEUE_TARGET : i32 = 4410;
+const QUEUE_BURST : i32 = 8192;   // cap on samples generated per pump
+
+/**
+ * A decoded PCM clip (44.1 kHz mono S16). Owns no device — it is mixed by the
+ * shared `Mixer`. Failure to load is silent (`ok` stays 0).
+ */
+class Clip {
+    buf : i64,       // raw PCM bytes
+    samples : i32,   // i16 sample count (len / 2)
     ok : i32,
 
     /**
-     * Load a .wav file and open an audio device matching its format.
-     * Failure is silent (`ok` stays 0).
+     * Load `path` as a WAV into raw PCM.
      * @param path  the .wav file to load
      */
     constructor(path : string) {
-        this.dev = 0;
         this.buf = 0;
-        this.len = 0;
+        this.samples = 0;
         this.ok = 0;
         let spec : i64 = allocBytes(64);
         let bufpp : i64 = allocBytes(8);
@@ -42,9 +59,59 @@ class Sound {
             return;
         }
         this.buf = readI64(bufpp, 0);
-        this.len = readI32(lenp, 0);
-        // Open a device matching the WAV's own format (obtained = NULL,
-        // allowed_changes = 0) so the raw queued data plays correctly.
+        this.samples = readI32(lenp, 0) / 2;
+        this.ok = 1;
+    }
+
+    /**
+     * Whether the clip decoded successfully.
+     * @return true if the clip is playable
+     */
+    fn loaded() : bool {
+        return this.ok == 1;
+    }
+}
+
+class Mixer {
+    dev : i32,
+    ok : i32,
+    vbuf : i64[],   // each voice's PCM base (0 = free)
+    vlen : i32[],   // total samples of the voice's clip
+    vpos : i32[],   // current sample index
+    vvol : i32[],   // fixed-point volume, 0..256
+    vact : i32[],   // 1 while playing
+    vN : i32,
+    out : i64,      // mix scratch (S16)
+
+    /** Open the single 44.1 kHz mono S16 device and clear the voice pool. */
+    constructor() {
+        this.dev = 0;
+        this.ok = 0;
+        this.vN = MAX_VOICES;
+        this.vbuf = malloc<i64>(MAX_VOICES);
+        this.vlen = malloc<i32>(MAX_VOICES);
+        this.vpos = malloc<i32>(MAX_VOICES);
+        this.vvol = malloc<i32>(MAX_VOICES);
+        this.vact = malloc<i32>(MAX_VOICES);
+        let i : i32 = 0;
+        while (i < this.vN) {
+            this.vact[i] = 0;
+            i = i + 1;
+        }
+        this.out = allocBytes((QUEUE_BURST as i64) * 2);
+
+        // Desired SDL_AudioSpec: freq@0, format@4 (AUDIO_S16LSB=0x8010),
+        // channels@6, samples@8; callback (offset 16) left NULL → queued audio.
+        let spec : i64 = allocBytes(64);
+        let b : i32 = 0;
+        while (b < 64) {
+            writeU8(spec, b as i64, 0);
+            b = b + 1;
+        }
+        writeI32At(spec, 0, RATE);
+        writeI16(spec, 4, 0x8010);
+        writeU8(spec, 6, 1);              // mono
+        writeI16(spec, 8, DEV_SAMPLES);   // device buffer size in samples
         let d : i32 = SDL_OpenAudioDevice(nullPtr(), 0, asPtr(spec), nullPtr(), 0);
         if (d == 0) {
             return;
@@ -55,21 +122,180 @@ class Sound {
     }
 
     /**
-     * Whether the sound loaded and a device is ready.
-     * @return true if the clip is ready to play
+     * Start a clip as a new voice at gain `vol` in [0, 1]. Reuses a free slot,
+     * or steals slot 0 if all are busy. Silent / failed mixers are no-ops.
+     * @param buf      the clip's PCM base
+     * @param samples  the clip's sample count
+     * @param vol      playback gain in [0, 1]
      */
-    fn loaded() : bool {
-        return this.ok == 1;
+    fn play(buf : i64, samples : i32, vol : f64) : void {
+        if (this.ok == 0 || buf == 0 || samples <= 0) {
+            return;
+        }
+        let v256 : i32 = floorToInt(vol * 256.0) as i32;
+        if (v256 <= 0) {
+            return;
+        }
+        if (v256 > 256) {
+            v256 = 256;
+        }
+        let slot : i32 = 0 - 1;
+        let i : i32 = 0;
+        while (i < this.vN) {
+            if (this.vact[i] == 0) {
+                slot = i;
+                i = this.vN;
+            } else {
+                i = i + 1;
+            }
+        }
+        if (slot < 0) {
+            slot = 0;
+        }
+        this.vbuf[slot] = buf;
+        this.vlen[slot] = samples;
+        this.vpos[slot] = 0;
+        this.vvol[slot] = v256;
+        this.vact[slot] = 1;
     }
 
     /**
-     * (Re)start the clip from the top.
+     * Top the device queue back up to ~QUEUE_TARGET samples, mixing every live
+     * voice into the freshly generated block. Call once per frame.
      */
-    fn play() : void {
+    fn pump() : void {
         if (this.ok == 0) {
             return;
         }
-        SDL_ClearQueuedAudio(this.dev);
-        SDL_QueueAudio(this.dev, asPtr(this.buf), this.len);
+        let queued : i32 = SDL_GetQueuedAudioSize(this.dev) / 2;
+        let need : i32 = QUEUE_TARGET - queued;
+        if (need <= 0) {
+            return;
+        }
+        if (need > QUEUE_BURST) {
+            need = QUEUE_BURST;
+        }
+        let s : i32 = 0;
+        while (s < need) {
+            let acc : i32 = 0;
+            let v : i32 = 0;
+            while (v < this.vN) {
+                if (this.vact[v] == 1) {
+                    let smp : i32 = readI16(this.vbuf[v], (this.vpos[v] as i64) * 2);
+                    acc = acc + smp * this.vvol[v] / 256;
+                    this.vpos[v] = this.vpos[v] + 1;
+                    if (this.vpos[v] >= this.vlen[v]) {
+                        this.vact[v] = 0;
+                    }
+                }
+                v = v + 1;
+            }
+            if (acc > 32767) {
+                acc = 32767;
+            }
+            if (acc < 0 - 32768) {
+                acc = 0 - 32768;
+            }
+            writeI16(this.out, (s as i64) * 2, acc);
+            s = s + 1;
+        }
+        SDL_QueueAudio(this.dev, asPtr(this.out), need * 2);
+    }
+}
+
+class SoundBank {
+    clips : Clip[],
+    n : i32,
+    cap : i32,
+
+    /**
+     * An empty bank holding up to `cap` variants. Playback goes through the
+     * caller's shared `Mixer` (passed to playIdx / playRand), so the bank
+     * itself owns no device and no mixer reference.
+     * @param cap  maximum number of variants
+     */
+    constructor(cap : i32) {
+        this.clips = malloc<Clip>(cap);
+        this.n = 0;
+        this.cap = cap;
+    }
+
+    /**
+     * Decode and append one variant (missing files are skipped silently).
+     * @param path  the .wav file to add
+     */
+    fn add(path : string) : void {
+        if (this.n >= this.cap) {
+            return;
+        }
+        let c : Clip = new Clip(path);
+        if (!c.loaded()) {
+            return;
+        }
+        this.clips[this.n] = c;
+        this.n = this.n + 1;
+    }
+
+    /**
+     * Whether at least one variant loaded.
+     * @return true if playable
+     */
+    fn loaded() : bool {
+        return this.n > 0;
+    }
+
+    /**
+     * Number of loaded variants.
+     * @return the variant count
+     */
+    fn count() : i32 {
+        return this.n;
+    }
+
+    /**
+     * Play variant `i` through `mixer` at gain `vol` in [0, 1].
+     * @param mixer  the shared mixer to play through
+     * @param i      the variant index
+     * @param vol    playback gain in [0, 1]
+     */
+    fn playIdx(mixer : Mixer, i : i32, vol : f64) : void {
+        if (i < 0 || i >= this.n) {
+            return;
+        }
+        let c : Clip = this.clips[i];
+        mixer.play(c.buf, c.samples, vol);
+    }
+
+    /**
+     * Play a variant chosen by `rnd` (in [0,1)) through `mixer` at gain `vol`.
+     * @param mixer  the shared mixer to play through
+     * @param rnd    selector in [0, 1)
+     * @param vol    playback gain in [0, 1]
+     */
+    fn playRand(mixer : Mixer, rnd : f64, vol : f64) : void {
+        if (this.n <= 0) {
+            return;
+        }
+        let i : i32 = floorToInt(rnd * (this.n as f64)) as i32;
+        if (i >= this.n) {
+            i = this.n - 1;
+        }
+        if (i < 0) {
+            i = 0;
+        }
+        this.playIdx(mixer, i, vol);
+    }
+}
+
+/**
+ * Write an i32 at `base + off` (little-endian on this target).
+ * @param base  base address
+ * @param off   byte offset
+ * @param v     the value to store
+ */
+fn writeI32At(base : i64, off : i64, v : i32) : void {
+    unsafe {
+        let slot : ptr<i32> = (base + off) as ptr<i32>;
+        *slot = v;
     }
 }

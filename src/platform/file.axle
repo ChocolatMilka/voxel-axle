@@ -26,6 +26,20 @@ fn readFile(path : string, base : i64, nbytes : i64) : i64 {
 }
 
 /**
+ * Whether `path` can be opened for reading.
+ * @param path  the file path to test
+ * @return true if the file exists and is readable
+ */
+fn fileExists(path : string) : bool {
+    let f : ptr = fopen(path, "rb");
+    if (isNull(f)) {
+        return false;
+    }
+    fclose(f);
+    return true;
+}
+
+/**
  * Load the texture atlas binary (`atlas.raw`) into the buffer at `base`.
  * Tries the working directories the binary is typically launched from —
  * the project root or its `target/`.

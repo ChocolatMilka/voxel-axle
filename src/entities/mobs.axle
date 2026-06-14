@@ -14,6 +14,7 @@ use crate::entities::creeper::Creeper;
 use crate::entities::player::Player;
 use crate::world::manager::ChunkManager;
 use crate::world::noise::hash2;
+use crate::game::sfx::{AudioManager, dist3};
 use crate::config;
 
 class MobManager {
@@ -26,8 +27,6 @@ class MobManager {
     creepers : Creeper[],
     crN : i32,
     rc : f64,
-    boomPending : i32,    // creeper detonations this frame (for the SFX)
-    chargePending : i32,  // creepers that lit their fuse this frame
 
     /** Create an empty mob manager with per-species arrays allocated. */
     constructor() {
@@ -40,8 +39,6 @@ class MobManager {
         this.coN = 0;
         this.crN = 0;
         this.rc = 9.0;
-        this.boomPending = 0;
-        this.chargePending = 0;
     }
 
     /**
@@ -147,21 +144,55 @@ class MobManager {
             }
         } else if (pick > 0.50) {
             if (this.coN < config::mobCap) {
-                this.cows[this.coN] = new Cow(wx, y, wz);
+                let c : Cow = new Cow(wx, y, wz);
+                c.vocalTimer = this.nextVocalDelay();
+                this.cows[this.coN] = c;
                 this.coN = this.coN + 1;
             }
         } else if (pick > 0.25) {
             if (this.shN < config::mobCap) {
-                this.sheep[this.shN] = new Sheep(wx, y, wz);
+                let s : Sheep = new Sheep(wx, y, wz);
+                s.vocalTimer = this.nextVocalDelay();
+                this.sheep[this.shN] = s;
                 this.shN = this.shN + 1;
             }
         } else {
             if (this.chN < config::mobCap) {
-                this.chickens[this.chN] = new Chicken(wx, y, wz);
+                let ch : Chicken = new Chicken(wx, y, wz);
+                ch.vocalTimer = this.nextVocalDelay();
+                this.chickens[this.chN] = ch;
                 this.chN = this.chN + 1;
             }
         }
         return true;
+    }
+
+    /**
+     * A fresh randomised delay (frames) until a mob's next idle voice, so a
+     * herd doesn't vocalise in unison.
+     * @return the delay in frames
+     */
+    fn nextVocalDelay() : i32 {
+        return config::mobVocalMin + floorToInt(this.rand() * (config::mobVocalRand as f64)) as i32;
+    }
+
+    /**
+     * Count down a mob's voice timer and, when it fires, play its idle voice
+     * attenuated by 3D distance to the player, then re-arm it.
+     * @param m       the mob to voice
+     * @param player  the listener
+     * @param sfx     the audio manager
+     */
+    fn voice(m : Mob, player : Player, sfx : AudioManager) : void {
+        if (m.isDying()) {
+            return;
+        }
+        m.vocalTimer = m.vocalTimer - 1;
+        if (m.vocalTimer <= 0) {
+            let d : f64 = dist3(m.posX, m.posY, m.posZ, player.posX, player.posY, player.posZ);
+            sfx.mobSay(m.kind, d, this.rand());
+            m.vocalTimer = this.nextVocalDelay();
+        }
     }
 
     /**
@@ -182,31 +213,30 @@ class MobManager {
      * Step AI, cull distant/dead mobs, and top the population back up.
      * @param world   the chunk manager the mobs live in
      * @param player  the player driving spawn/cull ranges and creeper AI
+     * @param sfx     the audio manager for mob voices / creeper sounds
      */
-    fn update(world : ChunkManager, player : Player) : void {
+    fn update(world : ChunkManager, player : Player, sfx : AudioManager) : void {
         let i : i32 = 0;
         while (i < this.chN) {
             this.chickens[i].wander(world, this.rand());
+            this.voice(this.chickens[i] as Mob, player, sfx);
             i = i + 1;
         }
         i = 0;
         while (i < this.shN) {
             this.sheep[i].wander(world, this.rand());
+            this.voice(this.sheep[i] as Mob, player, sfx);
             i = i + 1;
         }
         i = 0;
         while (i < this.coN) {
             this.cows[i].wander(world, this.rand());
+            this.voice(this.cows[i] as Mob, player, sfx);
             i = i + 1;
         }
         i = 0;
         while (i < this.crN) {
-            let rc : i32 = this.creepers[i].step(world, player);
-            if (rc == 1) {
-                this.boomPending = this.boomPending + 1;
-            } else if (rc == 2) {
-                this.chargePending = this.chargePending + 1;
-            }
+            this.creepers[i].step(world, player, sfx);
             i = i + 1;
         }
 
@@ -282,9 +312,10 @@ class MobManager {
      * Melee the nearest living mob in front of the player within range.
      * Returns the struck mob's kind, or -1 if nothing was hit.
      * @param player  the attacking player
+     * @param sfx     the audio manager for the hurt sound
      * @return the struck mob's kind, or -1 if nothing was hit
      */
-    fn attackNearest(player : Player) : i32 {
+    fn attackNearest(player : Player, sfx : AudioManager) : i32 {
         let fwdx : f64 = 0.0 - player.siny;
         let fwdz : f64 = player.cosy;
         let bestD : f64 = config::attackRange * config::attackRange;
@@ -345,6 +376,8 @@ class MobManager {
         let target : Mob = this.pick(bestArr, bestIdx);
         target.damage(config::attackDamage);
         target.flashHurt();
+        let d : f64 = dist3(target.posX, target.posY, target.posZ, player.posX, player.posY, player.posZ);
+        sfx.mobHurt(target.kind, d, this.rand());
         let kind : i32 = target.kind;
         if (target.isAlive()) {
             target.panicFrom(player.posX, player.posZ);

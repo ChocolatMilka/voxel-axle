@@ -6,6 +6,7 @@ use std::numeric::math::{sin, cos, sqrt, floorToInt};
 use crate::entities::mob::{Mob, atan2};
 use crate::entities::player::Player;
 use crate::world::manager::ChunkManager;
+use crate::game::sfx::AudioManager;
 use crate::config;
 
 class Creeper extends Mob {
@@ -17,14 +18,16 @@ class Creeper extends Mob {
     }
 
     /**
-     * Creeper AI for one frame (needs the player). Returns 2 on the tick
-     * it lights its fuse, 1 on the tick it detonates, else 0 — the manager
-     * turns those into the charge / explosion sounds.
+     * Creeper AI for one frame. Aggression is fully 3D: the creeper only
+     * chases / charges / detonates when the player is close in straight-line
+     * distance AND within `creeperMaxVertical` of its own level, so a player
+     * flying or perched well above is out of reach and a lit fuse defuses.
+     * The fuse / blast sounds are played here, attenuated by 3D distance.
      * @param world   the chunk manager the creeper moves through
      * @param player  the player to home in on
-     * @return 2 when the fuse lights, 1 when it detonates, else 0
+     * @param sfx     the audio manager for the charge / blast sounds
      */
-    fn step(world : ChunkManager, player : Player) : i32 {
+    fn step(world : ChunkManager, player : Player, sfx : AudioManager) : void {
         if (this.hurtTimer > 0) {
             this.hurtTimer = this.hurtTimer - 1;
         }
@@ -33,25 +36,32 @@ class Creeper extends Mob {
                 this.deathTimer = this.deathTimer - 1;
             }
             this.tick(world, 0.0, 0.0);
-            return 0;
+            return;
         }
         let dx : f64 = player.posX - this.posX;
         let dy : f64 = player.posY - this.posY;
         let dz : f64 = player.posZ - this.posZ;
-        // 3D distance: a player flying high overhead is NOT in range, so the
-        // creeper won't chase or blow up under an out-of-reach target.
+        // 3D distance + an explicit vertical cap: a player flying or standing
+        // high overhead is NOT in range, so the creeper won't chase or blow up
+        // under an out-of-reach target.
         let dist : f64 = sqrt(dx * dx + dy * dy + dz * dz);
+        let vert : f64 = dy;
+        if (vert < 0.0) {
+            vert = 0.0 - vert;
+        }
         this.heading = atan2(dz, dx);
 
-        // Hostile only toward a survival player. In creative / flight the
-        // creeper stands down (and any lit fuse is defused below).
-        let hostile : bool = player.creative == 0;
+        // Hostile only toward a survival player who is near our own level. In
+        // creative / flight, or too far above/below, the creeper stands down
+        // (and any lit fuse is defused below).
+        let hostile : bool = player.creative == 0 && vert <= config::creeperMaxVertical;
 
         if (this.fuse < 0) {
             if (hostile && dist <= config::creeperTriggerDist) {
                 this.fuse = config::creeperFuseFrames;
                 this.tick(world, 0.0, 0.0);
-                return 2;
+                sfx.creeperFuse(dist);
+                return;
             }
             if (hostile && dist <= config::creeperChaseDist) {
                 let spd : f64 = config::mobCreeperSpeed;
@@ -60,22 +70,22 @@ class Creeper extends Mob {
             } else {
                 this.tick(world, 0.0, 0.0);
             }
-            return 0;
+            return;
         }
 
-        // Fuse lit: defuse if the player escaped (3D) or switched to creative.
+        // Fuse lit: defuse if the player escaped (3D / vertically) or switched
+        // to creative.
         if (!hostile || dist > config::creeperTriggerDist * 2.4) {
             this.fuse = 0 - 1;
             this.tick(world, 0.0, 0.0);
-            return 0;
+            return;
         }
         this.fuse = this.fuse - 1;
         this.tick(world, 0.0, 0.0);
         if (this.fuse <= 0) {
             this.explode(world, player);
-            return 1;
+            sfx.creeperBlast(dist);
         }
-        return 0;
     }
 
     /**

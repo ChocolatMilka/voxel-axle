@@ -28,6 +28,7 @@ class Mob extends Entity {
     state : i32,        // 0 = alive, 1 = dying
     deathTimer : i32,
     fuse : i32,         // creeper charge countdown; < 0 = not charging
+    vocalTimer : i32,   // frames until the next idle voice (manager-driven)
 
     /** Create a mob at (x, y, z) of the given kind with maxHp hit points. */
     constructor(x : f64, y : f64, z : f64, kind : i32, maxHp : i32) {
@@ -56,6 +57,7 @@ class Mob extends Entity {
         this.state = 0;
         this.deathTimer = 0;
         this.fuse = 0 - 1;
+        this.vocalTimer = config::mobVocalMin;
         this.speed = config::mobWanderSpeed;
     }
 

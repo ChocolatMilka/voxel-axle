@@ -22,12 +22,12 @@ use crate::platform::sdl::{SDL_Init, SDL_Quit, SDL_CreateWindow, SDL_DestroyWind
 use crate::platform::mem::{cfree, nullPtr, asPtr, isNull, allocBytes, readI32, readU8};
 use crate::platform::file::loadAtlas;
 use crate::platform::clock::GameClock;
-use crate::platform::audio::Sound;
 use crate::world::manager::ChunkManager;
 use crate::entities::player::Player;
 use crate::entities::mobs::MobManager;
 use crate::game::start::{Spawn, openYaw};
 use crate::game::ray::{Picker, cellInPlayer};
+use crate::game::sfx::{AudioManager, dist3};
 use crate::gfx::render::Renderer;
 use crate::gfx::hud::drawHud;
 use crate::gfx::menu::{drawPauseMenu, menuHit};
@@ -130,18 +130,15 @@ fn main() : void {
 
     let clock : GameClock = new GameClock();
     let picker : Picker = new Picker();
-    // Creeper SFX: the "charge" cry while it winds up, and the "exploded"
-    // echo on the blast. Loaded from sounds/ (or one dir up when run from
-    // target/); missing = silent, game unaffected.
-    let chargeSnd : Sound = new Sound("sounds/entity/creeper/charge.wav");
-    if (!chargeSnd.loaded()) {
-        chargeSnd = new Sound("../sounds/entity/creeper/charge.wav");
-    }
-    let explodedSnd : Sound = new Sound("sounds/entity/creeper/exploded.wav");
-    if (!explodedSnd.loaded()) {
-        explodedSnd = new Sound("../sounds/entity/creeper/exploded.wav");
-    }
+    // All game audio: footsteps / digs by material, mob voices, the player's
+    // hurts and splashes, and the creeper's fuse / blast — every positional
+    // sound attenuated by 3D distance. Missing clips are silent.
+    let sfx : AudioManager = new AudioManager();
     let attackCd : i32 = 0;
+    let footTimer : i32 = 0;       // frames until the next footfall
+    let prevHp : i32 = player.hp;  // to detect the player taking damage
+    let wasUnderwater : bool = false;
+    let ambientTimer : i32 = 0;
     let wasGmToggle : bool = false;
     let wasRight : bool = false;
     let wasEsc : bool = false;
@@ -263,40 +260,82 @@ fn main() : void {
             // Fixed-timestep simulation: as many fixed steps as the real
             // elapsed time demands (frame-rate independent).
             let nsteps : i32 = clock.steps();
+            prevHp = player.hp;
             let stp : i32 = 0;
             while (stp < nsteps) {
                 player.update(man, fwd, strafe, sprint, up, down);
-                mobs.update(man, player);
+                mobs.update(man, player, sfx);
                 if (attackCd > 0) {
                     attackCd = attackCd - 1;
                 }
                 stp = stp + 1;
             }
-            if (mobs.chargePending > 0) {
-                chargeSnd.play();
-                mobs.chargePending = 0;
-            }
-            if (mobs.boomPending > 0) {
-                explodedSnd.play();
-                mobs.boomPending = 0;
+            if (player.hp < prevHp) {
+                sfx.playerHurt(mobs.rand());
             }
             player.refresh();
 
             man.ensureLoaded(chunkOf(player.posX), chunkOf(player.posZ));
 
+            // Footsteps: keyed to the block underfoot, paced by walk / sprint.
+            let movingNow : bool = fwd != 0.0 || strafe != 0.0;
+            if (player.creative == 0 && player.onGround == 1 && movingNow && !player.isUnderwater()) {
+                footTimer = footTimer - 1;
+                if (footTimer <= 0) {
+                    let fbx : i32 = floorToInt(player.posX) as i32;
+                    let fby : i32 = (floorToInt(player.posY) as i32) - 1;
+                    let fbz : i32 = floorToInt(player.posZ) as i32;
+                    let under : i32 = man.worldGet(fbx, fby, fbz);
+                    if (under != config::bAir && under != config::bWater) {
+                        sfx.footstep(under, mobs.rand());
+                    }
+                    if (sprint) {
+                        footTimer = config::footSprintFrames;
+                    } else {
+                        footTimer = config::footWalkFrames;
+                    }
+                }
+            } else {
+                footTimer = 0;
+            }
+
+            // Water: a splash on entry, a soft ambience while submerged.
+            let nowUW : bool = player.isUnderwater();
+            if (nowUW && !wasUnderwater) {
+                sfx.splash(mobs.rand());
+            }
+            wasUnderwater = nowUW;
+            if (nowUW) {
+                ambientTimer = ambientTimer - 1;
+                if (ambientTimer <= 0) {
+                    sfx.ambientUnderwater(mobs.rand());
+                    ambientTimer = config::ambientMin + floorToInt(mobs.rand() * (config::ambientRand as f64)) as i32;
+                }
+            } else {
+                ambientTimer = 0;
+            }
+
             // Aim once; left-click breaks / attacks, right-click places.
             picker.cast(man, player);
             if ((btn & 1) != 0 && attackCd == 0) {
-                let kind : i32 = mobs.attackNearest(player);
+                let kind : i32 = mobs.attackNearest(player, sfx);
                 if (kind < 0 && picker.hit == 1) {
+                    let broken : i32 = man.worldGet(picker.bx, picker.by, picker.bz);
                     man.breakAt(picker.bx, picker.by, picker.bz);
+                    let bd : f64 = dist3(player.posX, player.posY, player.posZ,
+                        (picker.bx as f64) + 0.5, (picker.by as f64) + 0.5, (picker.bz as f64) + 0.5);
+                    sfx.blockEdit(broken, bd, mobs.rand());
                 }
                 attackCd = config::editCooldown;
             }
             let rightDown : bool = (btn & SDL_BUTTON_RMASK) != 0;
             if (rightDown && !wasRight && picker.hit == 1) {
                 if (!cellInPlayer(player, picker.px, picker.py, picker.pz)) {
-                    man.placeAt(picker.px, picker.py, picker.pz, player.heldBlock());
+                    let held : i32 = player.heldBlock();
+                    man.placeAt(picker.px, picker.py, picker.pz, held);
+                    let pd : f64 = dist3(player.posX, player.posY, player.posZ,
+                        (picker.px as f64) + 0.5, (picker.py as f64) + 0.5, (picker.pz as f64) + 0.5);
+                    sfx.blockEdit(held, pd, mobs.rand());
                 }
             }
             wasRight = rightDown;
@@ -359,6 +398,8 @@ fn main() : void {
         SDL_RenderClear(ren);
         SDL_RenderCopy(ren, tex, nullPtr(), nullPtr());
         SDL_RenderPresent(ren);
+        // Feed the audio mixer once per frame (drives all queued sound).
+        sfx.pump();
         // Hold the loop to the tick rate (CPU cap independent of v-sync).
         clock.cap();
     }

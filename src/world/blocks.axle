@@ -59,6 +59,47 @@ fn isGrassy(id : i32) : bool {
 }
 
 /**
+ * Sound material of a block id (config::mat*), shared by footsteps and the
+ * dig / place sound. Groups the blocks by how they sound underfoot: grassy
+ * soils, sand, gravel, snow, stone (incl. bricks / ores), wood, soft foliage
+ * (leaves / cactus) and the glassy crack of ice.
+ * @param id  the block id
+ * @return the material id (config::mat*)
+ */
+fn materialOf(id : i32) : i32 {
+    if (isGrassy(id) || id == config::bDirt || id == config::bCoarseDirt
+        || id == config::bPodzol || id == config::bMycelium) {
+        return config::matGrass;
+    }
+    if (id == config::bSand || id == config::bRedSand
+        || id == config::bSandstone || id == config::bRedSandstone) {
+        return config::matSand;
+    }
+    if (id == config::bGravel || id == config::bClay) {
+        return config::matGravel;
+    }
+    if (id == config::bSnow) {
+        return config::matSnow;
+    }
+    if (id == config::bIce || id == config::bPackedIce) {
+        return config::matGlass;
+    }
+    if (id == config::bWood || id == config::bWoodBirch || id == config::bWoodSpruce
+        || id == config::bWoodAcacia || id == config::bWoodJungle || id == config::bWoodDarkOak
+        || id == config::bPlanks || id == config::bPumpkin) {
+        return config::matWood;
+    }
+    if (id == config::bLeaves || id == config::bLeavesBirch || id == config::bLeavesSpruce
+        || id == config::bLeavesAcacia || id == config::bLeavesJungle || id == config::bLeavesDarkOak
+        || id == config::bCactus || id == config::bMelon) {
+        return config::matFoliage;
+    }
+    // Stone, cobble, granite/diorite/andesite, bricks, terracotta, glowstone,
+    // ores and anything unclassified.
+    return config::matStone;
+}
+
+/**
  * Atlas tile for a block id on face `dir` (2 = top, 3 = bottom, else side).
  * @param id   the block id
  * @param dir  the face direction

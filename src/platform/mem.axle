@@ -104,6 +104,45 @@ fn readU8(base : i64, off : i64) : i32 {
 }
 
 /**
+ * Read an unsigned 16-bit little-endian value at `base + off`, zero-extended.
+ * @param base  base address
+ * @param off   byte offset from base
+ * @return the u16 value in the range 0..65535
+ */
+fn readU16(base : i64, off : i64) : i32 {
+    unsafe {
+        let slot : ptr<i16> = (base + off) as ptr<i16>;
+        return (*slot) as i32 & 0xFFFF;
+    }
+}
+
+/**
+ * Read a signed 16-bit little-endian value at `base + off`, sign-extended.
+ * @param base  base address
+ * @param off   byte offset from base
+ * @return the i16 value as a sign-extended i32
+ */
+fn readI16(base : i64, off : i64) : i32 {
+    unsafe {
+        let slot : ptr<i16> = (base + off) as ptr<i16>;
+        return (*slot) as i32;
+    }
+}
+
+/**
+ * Write the low 16 bits of `v` at `base + off`.
+ * @param base  base address
+ * @param off   byte offset from base
+ * @param v     value whose low 16 bits are stored
+ */
+fn writeI16(base : i64, off : i64, v : i32) : void {
+    unsafe {
+        let slot : ptr<i16> = (base + off) as ptr<i16>;
+        *slot = v as i16;
+    }
+}
+
+/**
  * Write the low byte of `v` at `base + off`.
  * @param base  base address
  * @param off   byte offset from base
