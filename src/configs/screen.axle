@@ -1,0 +1,15 @@
+// configs::screen — window size, framebuffer size and the camera projection.
+//
+// The window is `screenW × screenH`; the world is rasterised into a smaller
+// `renderW × renderH` framebuffer that SDL upscales to the window. Fewer
+// pixels to fill is the main per-frame speed lever — the projection constants
+// (`halfW/halfH/focal`) match the RENDER size.
+
+const screenW : i32 = 960;
+const screenH : i32 = 600;
+const renderW : i32 = 640;
+const renderH : i32 = 400;
+const halfW : f64 = 320.0;
+const halfH : f64 = 200.0;
+const focal : f64 = 373.0;
+const nearPlane : f64 = 0.12;

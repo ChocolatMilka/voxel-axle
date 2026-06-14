@@ -1,0 +1,102 @@
+// configs::atlas — texture atlas geometry and the per-tile indices.
+//
+// The atlas is a vertical strip of square tiles. The first `blockTiles` tiles
+// are block faces; any tiles above that are mob skins. Bump `atlasTiles` (and
+// the embedded hex in bake_atlas.py) when you add mob textures, then flip
+// `useMobTextures` on. The tl* indices MIRROR THE ORDER IN `bake_atlas.py`
+// EXACTLY — keep them in sync.
+
+const tilePx : i32 = 64;
+const blockTiles : i32 = 73;
+const atlasTiles : i32 = 83;
+const useMobTextures : bool = true;
+// Mip chain depth (64 → 32 → … → 1 = 7 levels). Distant faces sample a
+// coarser, pre-averaged level so textures don't shimmer when moving.
+const mipLevels : i32 = 7;
+
+// ── Block tiles (0 .. blockTiles-1) ─────────────────────────
+const tlGrassTop : i32 = 0;
+const tlGrassSide : i32 = 1;
+const tlDirt : i32 = 2;
+const tlCoarseDirt : i32 = 3;
+const tlPodzolTop : i32 = 4;
+const tlPodzolSide : i32 = 5;
+const tlMyceliumTop : i32 = 6;
+const tlMyceliumSide : i32 = 7;
+const tlSand : i32 = 8;
+const tlRedSand : i32 = 9;
+const tlGravel : i32 = 10;
+const tlClay : i32 = 11;
+const tlSnow : i32 = 12;
+const tlIce : i32 = 13;
+const tlPackedIce : i32 = 14;
+const tlStone : i32 = 15;
+const tlCobble : i32 = 16;
+const tlMossyCobble : i32 = 17;
+const tlGranite : i32 = 18;
+const tlDiorite : i32 = 19;
+const tlAndesite : i32 = 20;
+const tlStoneBricks : i32 = 21;
+const tlBricks : i32 = 22;
+const tlSandstoneTop : i32 = 23;
+const tlSandstoneSide : i32 = 24;
+const tlSandstoneBottom : i32 = 25;
+const tlRedSandstoneTop : i32 = 26;
+const tlRedSandstoneSide : i32 = 27;
+const tlTerracotta : i32 = 28;
+const tlTerracottaOrange : i32 = 29;
+const tlTerracottaWhite : i32 = 30;
+const tlOakLogSide : i32 = 31;
+const tlOakLogTop : i32 = 32;
+const tlOakLeaves : i32 = 33;
+const tlPlanks : i32 = 34;
+const tlBirchLogSide : i32 = 35;
+const tlBirchLogTop : i32 = 36;
+const tlBirchLeaves : i32 = 37;
+const tlSpruceLogSide : i32 = 38;
+const tlSpruceLogTop : i32 = 39;
+const tlSpruceLeaves : i32 = 40;
+const tlAcaciaLogSide : i32 = 41;
+const tlAcaciaLogTop : i32 = 42;
+const tlAcaciaLeaves : i32 = 43;
+const tlJungleLogSide : i32 = 44;
+const tlJungleLogTop : i32 = 45;
+const tlJungleLeaves : i32 = 46;
+const tlDarkOakLogSide : i32 = 47;
+const tlDarkOakLogTop : i32 = 48;
+const tlDarkOakLeaves : i32 = 49;
+const tlCactusSide : i32 = 50;
+const tlCactusTop : i32 = 51;
+const tlPumpkinSide : i32 = 52;
+const tlPumpkinTop : i32 = 53;
+const tlMelonSide : i32 = 54;
+const tlMelonTop : i32 = 55;
+const tlGlowstone : i32 = 56;
+const tlWater : i32 = 57;
+const tlCoalOre : i32 = 58;
+const tlIronOre : i32 = 59;
+const tlGoldOre : i32 = 60;
+const tlDiamondOre : i32 = 61;
+const tlRedstoneOre : i32 = 62;
+const tlEmeraldOre : i32 = 63;
+const tlLapisOre : i32 = 64;
+const tlGrassTopSavanna : i32 = 65;
+const tlGrassSideSavanna : i32 = 66;
+const tlGrassTopJungle : i32 = 67;
+const tlGrassSideJungle : i32 = 68;
+const tlGrassTopSwamp : i32 = 69;
+const tlGrassSideSwamp : i32 = 70;
+const tlGrassTopTaiga : i32 = 71;
+const tlGrassSideTaiga : i32 = 72;
+
+// ── Mob tiles (after the block tiles) ───────────────────────
+const tlChickenBody : i32 = 73;
+const tlChickenHead : i32 = 74;
+const tlSheepWool : i32 = 75;
+const tlSheepHead : i32 = 76;
+const tlCowBody : i32 = 77;
+const tlCowHead : i32 = 78;
+const tlCreeperSkin : i32 = 79;
+const tlCreeperFace : i32 = 80;
+const tlChargeSkin : i32 = 81;
+const tlChargeFace : i32 = 82;

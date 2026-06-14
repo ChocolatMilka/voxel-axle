@@ -1,344 +1,118 @@
-// config — every tunable of the game, as a function. Screen/projection,
-// the streamed world, terrain & biome noise, the block / biome id tables,
-// player physics, mobs and the HUD all read their numbers from here, so
-// new blocks, biomes, mobs and feel-tweaks land in one file without the
-// engine ever changing.
+// config — the single tunables surface for the whole game. The actual
+// constants now live in focused modules under `configs/` (screen, world,
+// noise, physics, health, render, blocks, biomes, trees, mobs, gameplay, hud,
+// atlas, audio); this file simply RE-EXPORTS them so every existing
+// `use crate::config; … config::X` keeps working unchanged.
+//
+// Add a tunable: declare it in the matching `configs/<area>.axle` and add its
+// name to that module's group below. New area → a new `configs/<area>.axle`
+// plus one `use` line here.
 
-// ── Screen / projection ─────────────────────────────────────
-// The window is `screenW × screenH`; the world is rasterised into a
-// smaller `renderW × renderH` framebuffer that SDL upscales to the
-// window. Fewer pixels to fill is the main per-frame speed lever — the
-// projection constants (`halfW/halfH/focal`) match the RENDER size.
-const screenW : i32 = 960;
-const screenH : i32 = 600;
-const renderW : i32 = 640;
-const renderH : i32 = 400;
-const halfW : f64 = 320.0;
-const halfH : f64 = 200.0;
-const focal : f64 = 373.0;
-const nearPlane : f64 = 0.12;
+use crate::configs::screen::{
+    screenW, screenH, renderW, renderH,
+    halfW, halfH, focal, nearPlane,
+};
 
-// ── Infinite world (streamed chunks) ────────────────────────
-const chunkSize : i32 = 16;
-const viewRadius : i32 = 6;  // chunks loaded each side → 13×13
-const span : i32 = 13;  // 2*viewRadius + 1
-const maxFacesPerChunk : i32 = 14000;
-const seaLevel : i32 = 24;
-const maxHeight : i32 = 96;
-// Full voxel field: each column is `worldHeight` voxels tall. Terrain is
-// still generated up to `maxHeight`; the headroom above lets the player
-// build/stack. Each column is filled to the top with air above the
-// terrain/trees, so neighbour lookups in the mesher never read
-// uninitialised memory; the mesher only scans up to a chunk's recorded
-// `maxFY` (highest non-air voxel), so the empty sky costs nothing.
-const worldHeight : i32 = 128;
+use crate::configs::world::{
+    chunkSize, viewRadius, span, maxFacesPerChunk,
+    seaLevel, maxHeight, worldHeight, tickHz,
+};
 
-// ── Texture atlas (vertical strip of square tiles) ──────────
-// The first `blockTiles` tiles are block faces; any tiles above that
-// are mob skins. Bump `atlasTiles` (and the embedded hex) when you add
-// mob textures, then flip `useMobTextures` on.
-const tilePx : i32 = 64;
-const blockTiles : i32 = 73;
-const atlasTiles : i32 = 83;
-const useMobTextures : bool = true;
-// Mip chain depth (64 → 32 → … → 1 = 7 levels). Distant faces sample a
-// coarser, pre-averaged level so textures don't shimmer when moving.
-const mipLevels : i32 = 7;
+use crate::configs::noise::{
+    seedI, warpScale, contScale, hillScale, tempScale, humidScale,
+};
 
-// ── Terrain noise (Minecraft-ish: warp + continentalness) ───
-const seedI : i32 = 1337;       // integer seed for the lattice hash
-const warpScale : f64 = 0.011;
-const contScale : f64 = 0.0065;
-const hillScale : f64 = 0.032;
-const tempScale : f64 = 0.0070;
-const humidScale : f64 = 0.0090;
+use crate::configs::physics::{
+    gravity, mobGravity, terminalVel, jumpVel,
+    walkSpeed, sprintSpeed, swimSpeed,
+    flySpeed, flySprintSpeed, flyVertSpeed,
+    eyeHeight, stepHeight, stepSmoothDecay,
+    playerRadius, playerHeight, mobRadius,
+    mouseSens, pitchMax,
+};
 
-// ── Player / mob physics (grounded, with gravity) ───────────
-// Gravity is a single symmetric value applied every tick whether the body
-// is rising or falling, so a jump traces a parabola (a "bell") and the
-// descent accelerates downward instead of gliding at a fixed speed. The
-// player gets a gentle pull for a realistic ~1.25-block jump; mobs get a
-// snappier one so their little hops stay small. `velY` is clamped to
-// `terminalVel` on the way down (see `Entity.grav` / `Entity.fall`).
-const gravity : f64 = 0.0085;       // player accel, blocks/frame² (jump apex ~1.25)
-const mobGravity : f64 = 0.055;     // mob hop accel — small, quick hops
-const terminalVel : f64 = 0.9;      // max fall speed, blocks/frame
-const jumpVel : f64 = 0.145;        // initial jump speed → ~1.25-block apex
-const walkSpeed : f64 = 0.0775;
-const sprintSpeed : f64 = 0.155;    // 2× walk (Ctrl)
-const swimSpeed : f64 = 0.060;
-const flySpeed : f64 = 0.26;        // creative horizontal fly
-const flySprintSpeed : f64 = 0.52;  // creative fly + Ctrl
-const flyVertSpeed : f64 = 0.30;    // creative up/down
-const eyeHeight : f64 = 1.62;
-const stepHeight : f64 = 1.05;
-// Auto-step raises the body instantly (collision is exact); the camera's
-// step-up offset shrinks by this factor each tick so the rise looks smooth
-// instead of snapping. Lower = quicker catch-up.
-const stepSmoothDecay : f64 = 0.6;
-const playerRadius : f64 = 0.30;
-const playerHeight : f64 = 1.80;   // body AABB height for voxel collision
-const mobRadius : f64 = 0.28;
-const treeHeight : i32 = 4;
-const mouseSens : f64 = 0.0024;
-const pitchMax : f64 = 1.45;
+use crate::configs::health::{
+    playerMaxHp, safeFallDist, fallDamagePerBlock,
+    drownGraceFrames, drownEveryFrames,
+    regenDelayFrames, regenEveryFrames,
+};
 
-// ── Health / damage ─────────────────────────────────────────
-const playerMaxHp : i32 = 20;
-// Fall damage is distance-based now (the descent is constant-speed, so
-// landing speed no longer encodes the drop height).
-const safeFallDist : f64 = 4.0;        // blocks fallen before it hurts
-const fallDamagePerBlock : f64 = 1.5;  // hp per block beyond the safe distance
-const drownGraceFrames : i32 = 180;  // ~3 s of breath
-const drownEveryFrames : i32 = 18;  // lose 1 hp per this many frames
-const regenDelayFrames : i32 = 420;  // ~7 s without damage before regen
-const regenEveryFrames : i32 = 90;  // +1 hp per this many frames
+use crate::configs::render::{
+    renderDist, skyR, skyG, skyB, fogStart, fogEnd,
+    lightX, lightY, lightZ, ambient, edgeShade,
+};
 
-// ── Render ──────────────────────────────────────────────────
-const renderDist : f64 = 92.0;
-// Sky / distance fog: far faces fade to the sky colour so the distance
-// dissolves softly (Minecraft-style) instead of shimmering as a mush of
-// aliased texels at the render edge. Fog runs from `fogStart` to `fogEnd`
-// blocks of depth.
-const skyR : i32 = 150;
-const skyG : i32 = 198;
-const skyB : i32 = 240;
-const fogStart : f64 = 66.0;
-const fogEnd : f64 = 90.0;
+use crate::configs::blocks::{
+    bAir, bGrass, bDirt, bStone, bSand, bSnow, bWater, bWood, bLeaves, bGravel,
+    bCoarseDirt, bPodzol, bMycelium, bRedSand, bClay, bIce, bPackedIce,
+    bCobble, bMossyCobble, bGranite, bDiorite, bAndesite, bStoneBricks, bBricks,
+    bSandstone, bRedSandstone, bTerracotta, bTerracottaOrange, bTerracottaWhite,
+    bWoodBirch, bLeavesBirch, bWoodSpruce, bLeavesSpruce, bWoodAcacia, bLeavesAcacia,
+    bWoodJungle, bLeavesJungle, bWoodDarkOak, bLeavesDarkOak, bPlanks,
+    bCactus, bPumpkin, bMelon, bGlowstone,
+    bCoalOre, bIronOre, bGoldOre, bDiamondOre, bRedstoneOre, bEmeraldOre, bLapisOre,
+    bGrassSavanna, bGrassJungle, bGrassSwamp, bGrassTaiga,
+};
 
-// ── Tick rate ───────────────────────────────────────────────
-// The main loop is held to this many iterations per second by the frame
-// clock (`platform::clock`). Physics/AI constants are tuned for this
-// rate, and capping it stops the CPU spinning at hundreds of fps when
-// v-sync is unavailable or disabled. 60 matches a typical display.
-const tickHz : i32 = 60;
+use crate::configs::biomes::{
+    biOcean, biBeach, biPlains, biForest, biDesert, biSavanna, biSnowy,
+    biMountain, biTaiga, biJungle, biSwamp, biBadlands, biBirchForest, biFrozenOcean,
+};
 
-// ── Block editing (dig / place) ─────────────────────────────
-const reachDist : f64 = 5.0;     // how far the look-ray reaches, in blocks
-const editCooldown : i32 = 10;   // frames between repeated digs/places
+use crate::configs::trees::{
+    treeNone, treeOak, treeBirch, treeSpruce, treeAcacia, treeJungle, treeCactus,
+};
 
-// ── Directional light ───────────────────────────────────────
-const lightX : f64 = 0.35;
-const lightY : f64 = 0.86;
-const lightZ : f64 = 0.37;
-const ambient : f64 = 0.50;
-const edgeShade : f64 = 0.74;
+use crate::configs::mobs::{
+    mobCap, mobChicken, mobSheep, mobCow, mobCreeper,
+    mobChickenHp, mobSheepHp, mobCowHp, mobCreeperHp,
+    mobCreeperSpeed, creeperChaseDist, creeperTriggerDist, creeperMaxVertical,
+    creeperFuseFrames, creeperBlastRadius, creeperDamage,
+    mobWanderSpeed, mobSheepSpeed, mobCowSpeed,
+    mobSpawnRadius, mobSpawnMin, mobDespawnDist, mobTargetCount,
+    mobTurnEveryMin, mobTurnEveryRand, mobTurnRate, mobIdleChance,
+    mobFleeFrames, mobFleeSpeed, chickenGravityScale, deathFrames,
+    attackRange, attackDamage, attackCooldown, hurtFlashFrames,
+};
 
-// ── Block ids ───────────────────────────────────────────────
-const bAir : i32 = 0;
-const bGrass : i32 = 1;
-const bDirt : i32 = 2;
-const bStone : i32 = 3;
-const bSand : i32 = 4;
-const bSnow : i32 = 5;
-const bWater : i32 = 6;
-const bWood : i32 = 7;       // oak log
-const bLeaves : i32 = 8;     // oak leaves
-const bGravel : i32 = 9;
-// Soils
-const bCoarseDirt : i32 = 10;
-const bPodzol : i32 = 11;
-const bMycelium : i32 = 12;
-const bRedSand : i32 = 13;
-const bClay : i32 = 14;
-const bIce : i32 = 15;
-const bPackedIce : i32 = 16;
-// Stones
-const bCobble : i32 = 17;
-const bMossyCobble : i32 = 18;
-const bGranite : i32 = 19;
-const bDiorite : i32 = 20;
-const bAndesite : i32 = 21;
-const bStoneBricks : i32 = 22;
-const bBricks : i32 = 23;
-const bSandstone : i32 = 24;
-const bRedSandstone : i32 = 25;
-const bTerracotta : i32 = 26;
-const bTerracottaOrange : i32 = 27;
-const bTerracottaWhite : i32 = 28;
-// Woods (log + leaves per species; oak is bWood/bLeaves above)
-const bWoodBirch : i32 = 29;
-const bLeavesBirch : i32 = 30;
-const bWoodSpruce : i32 = 31;
-const bLeavesSpruce : i32 = 32;
-const bWoodAcacia : i32 = 33;
-const bLeavesAcacia : i32 = 34;
-const bWoodJungle : i32 = 35;
-const bLeavesJungle : i32 = 36;
-const bWoodDarkOak : i32 = 37;
-const bLeavesDarkOak : i32 = 38;
-const bPlanks : i32 = 39;
-// Decoration
-const bCactus : i32 = 40;
-const bPumpkin : i32 = 41;
-const bMelon : i32 = 42;
-const bGlowstone : i32 = 43;
-// Ores
-const bCoalOre : i32 = 44;
-const bIronOre : i32 = 45;
-const bGoldOre : i32 = 46;
-const bDiamondOre : i32 = 47;
-const bRedstoneOre : i32 = 48;
-const bEmeraldOre : i32 = 49;
-const bLapisOre : i32 = 50;
-// Tinted grass variants (their own surface block per biome)
-const bGrassSavanna : i32 = 51;
-const bGrassJungle : i32 = 52;
-const bGrassSwamp : i32 = 53;
-const bGrassTaiga : i32 = 54;
+use crate::configs::gameplay::{
+    reachDist, editCooldown,
+};
 
-// ── Biome ids (Minecraft-inspired) ──────────────────────────
-const biOcean : i32 = 0;
-const biBeach : i32 = 1;
-const biPlains : i32 = 2;
-const biForest : i32 = 3;
-const biDesert : i32 = 4;
-const biSavanna : i32 = 5;
-const biSnowy : i32 = 6;
-const biMountain : i32 = 7;
-const biTaiga : i32 = 8;
-const biJungle : i32 = 9;
-const biSwamp : i32 = 10;
-const biBadlands : i32 = 11;
-const biBirchForest : i32 = 12;
-const biFrozenOcean : i32 = 13;
+use crate::configs::hud::{
+    hotbarSize, hotbarCell, hotbarPad,
+};
 
-// ── Tree kinds (stamped by manager.stampTree) ───────────────
-const treeNone : i32 = 0;
-const treeOak : i32 = 1;
-const treeBirch : i32 = 2;
-const treeSpruce : i32 = 3;
-const treeAcacia : i32 = 4;
-const treeJungle : i32 = 5;
-const treeCactus : i32 = 6;
+use crate::configs::atlas::{
+    tilePx, blockTiles, atlasTiles, useMobTextures, mipLevels,
+    tlGrassTop, tlGrassSide, tlDirt, tlCoarseDirt,
+    tlPodzolTop, tlPodzolSide, tlMyceliumTop, tlMyceliumSide,
+    tlSand, tlRedSand, tlGravel, tlClay, tlSnow, tlIce, tlPackedIce,
+    tlStone, tlCobble, tlMossyCobble, tlGranite, tlDiorite, tlAndesite,
+    tlStoneBricks, tlBricks,
+    tlSandstoneTop, tlSandstoneSide, tlSandstoneBottom,
+    tlRedSandstoneTop, tlRedSandstoneSide,
+    tlTerracotta, tlTerracottaOrange, tlTerracottaWhite,
+    tlOakLogSide, tlOakLogTop, tlOakLeaves, tlPlanks,
+    tlBirchLogSide, tlBirchLogTop, tlBirchLeaves,
+    tlSpruceLogSide, tlSpruceLogTop, tlSpruceLeaves,
+    tlAcaciaLogSide, tlAcaciaLogTop, tlAcaciaLeaves,
+    tlJungleLogSide, tlJungleLogTop, tlJungleLeaves,
+    tlDarkOakLogSide, tlDarkOakLogTop, tlDarkOakLeaves,
+    tlCactusSide, tlCactusTop, tlPumpkinSide, tlPumpkinTop,
+    tlMelonSide, tlMelonTop, tlGlowstone, tlWater,
+    tlCoalOre, tlIronOre, tlGoldOre, tlDiamondOre,
+    tlRedstoneOre, tlEmeraldOre, tlLapisOre,
+    tlGrassTopSavanna, tlGrassSideSavanna, tlGrassTopJungle, tlGrassSideJungle,
+    tlGrassTopSwamp, tlGrassSideSwamp, tlGrassTopTaiga, tlGrassSideTaiga,
+    tlChickenBody, tlChickenHead, tlSheepWool, tlSheepHead,
+    tlCowBody, tlCowHead, tlCreeperSkin, tlCreeperFace, tlChargeSkin, tlChargeFace,
+};
 
-// ── Mobs ────────────────────────────────────────────────────
-const mobCap : i32 = 32;
-const mobChicken : i32 = 0;
-const mobSheep : i32 = 1;
-const mobCow : i32 = 2;
-const mobCreeper : i32 = 3;
-const mobChickenHp : i32 = 4;
-const mobSheepHp : i32 = 8;
-const mobCowHp : i32 = 10;
-const mobCreeperHp : i32 = 12;
-
-// ── Creeper (hostile: approaches, charges, explodes) ────────
-const mobCreeperSpeed : f64 = 0.034;     // calm walk toward the player
-const creeperChaseDist : f64 = 20.0;     // only homes in within this 3D range
-const creeperTriggerDist : f64 = 2.6;    // starts its fuse within this range
-const creeperFuseFrames : i32 = 148;     // ~2.47 s — matches the shortened charge.wav
-const creeperBlastRadius : f64 = 2.6;    // blocks destroyed / hurt radius
-const creeperDamage : i32 = 16;          // peak player damage at the centre
-const mobWanderSpeed : f64 = 0.034;
-const mobSheepSpeed : f64 = 0.030;
-const mobCowSpeed : f64 = 0.024;
-const mobSpawnRadius : i32 = 30;  // blocks from player
-const mobSpawnMin : i32 = 12;
-const mobDespawnDist : f64 = 56.0;
-const mobTargetCount : i32 = 18;
-const mobTurnEveryMin : i32 = 40;
-const mobTurnEveryRand : i32 = 110;
-const mobTurnRate : f64 = 0.10;   // radians/frame the heading eases toward target
-const mobIdleChance : f64 = 0.34; // chance a turn picks "stand and graze"
-const mobFleeFrames : i32 = 70;   // panic-run duration after being hit
-const mobFleeSpeed : f64 = 0.085;
-const chickenGravityScale : f64 = 0.42;  // chickens flutter down slowly
-const deathFrames : i32 = 38;     // collapse animation length before removal
-const attackRange : f64 = 3.4;
-const attackDamage : i32 = 4;
-const attackCooldown : i32 = 18;
-const hurtFlashFrames : i32 = 10;  // frames a struck mob glows red
-
-// ── Atlas tile indices ──────────────────────────────────────
-// THESE MIRROR THE ORDER IN `bake_atlas.py` EXACTLY — keep in sync.
-// Block tiles 0..blockTiles-1, then mob tiles.
-const tlGrassTop : i32 = 0;
-const tlGrassSide : i32 = 1;
-const tlDirt : i32 = 2;
-const tlCoarseDirt : i32 = 3;
-const tlPodzolTop : i32 = 4;
-const tlPodzolSide : i32 = 5;
-const tlMyceliumTop : i32 = 6;
-const tlMyceliumSide : i32 = 7;
-const tlSand : i32 = 8;
-const tlRedSand : i32 = 9;
-const tlGravel : i32 = 10;
-const tlClay : i32 = 11;
-const tlSnow : i32 = 12;
-const tlIce : i32 = 13;
-const tlPackedIce : i32 = 14;
-const tlStone : i32 = 15;
-const tlCobble : i32 = 16;
-const tlMossyCobble : i32 = 17;
-const tlGranite : i32 = 18;
-const tlDiorite : i32 = 19;
-const tlAndesite : i32 = 20;
-const tlStoneBricks : i32 = 21;
-const tlBricks : i32 = 22;
-const tlSandstoneTop : i32 = 23;
-const tlSandstoneSide : i32 = 24;
-const tlSandstoneBottom : i32 = 25;
-const tlRedSandstoneTop : i32 = 26;
-const tlRedSandstoneSide : i32 = 27;
-const tlTerracotta : i32 = 28;
-const tlTerracottaOrange : i32 = 29;
-const tlTerracottaWhite : i32 = 30;
-const tlOakLogSide : i32 = 31;
-const tlOakLogTop : i32 = 32;
-const tlOakLeaves : i32 = 33;
-const tlPlanks : i32 = 34;
-const tlBirchLogSide : i32 = 35;
-const tlBirchLogTop : i32 = 36;
-const tlBirchLeaves : i32 = 37;
-const tlSpruceLogSide : i32 = 38;
-const tlSpruceLogTop : i32 = 39;
-const tlSpruceLeaves : i32 = 40;
-const tlAcaciaLogSide : i32 = 41;
-const tlAcaciaLogTop : i32 = 42;
-const tlAcaciaLeaves : i32 = 43;
-const tlJungleLogSide : i32 = 44;
-const tlJungleLogTop : i32 = 45;
-const tlJungleLeaves : i32 = 46;
-const tlDarkOakLogSide : i32 = 47;
-const tlDarkOakLogTop : i32 = 48;
-const tlDarkOakLeaves : i32 = 49;
-const tlCactusSide : i32 = 50;
-const tlCactusTop : i32 = 51;
-const tlPumpkinSide : i32 = 52;
-const tlPumpkinTop : i32 = 53;
-const tlMelonSide : i32 = 54;
-const tlMelonTop : i32 = 55;
-const tlGlowstone : i32 = 56;
-const tlWater : i32 = 57;
-const tlCoalOre : i32 = 58;
-const tlIronOre : i32 = 59;
-const tlGoldOre : i32 = 60;
-const tlDiamondOre : i32 = 61;
-const tlRedstoneOre : i32 = 62;
-const tlEmeraldOre : i32 = 63;
-const tlLapisOre : i32 = 64;
-const tlGrassTopSavanna : i32 = 65;
-const tlGrassSideSavanna : i32 = 66;
-const tlGrassTopJungle : i32 = 67;
-const tlGrassSideJungle : i32 = 68;
-const tlGrassTopSwamp : i32 = 69;
-const tlGrassSideSwamp : i32 = 70;
-const tlGrassTopTaiga : i32 = 71;
-const tlGrassSideTaiga : i32 = 72;
-// Mob tiles (after the block tiles).
-const tlChickenBody : i32 = 73;
-const tlChickenHead : i32 = 74;
-const tlSheepWool : i32 = 75;
-const tlSheepHead : i32 = 76;
-const tlCowBody : i32 = 77;
-const tlCowHead : i32 = 78;
-const tlCreeperSkin : i32 = 79;
-const tlCreeperFace : i32 = 80;
-const tlChargeSkin : i32 = 81;
-const tlChargeFace : i32 = 82;
-
-// ── Inventory hotbar ────────────────────────────────────────
-const hotbarSize : i32 = 9;       // number of slots (keys 1–9)
-const hotbarCell : i32 = 22;      // slot size in framebuffer pixels
-const hotbarPad : i32 = 3;        // padding inside the panel / between cells
+use crate::configs::audio::{
+    matGrass, matSand, matGravel, matSnow, matStone, matWood, matFoliage, matGlass, matCount,
+    sndMobDist, sndCreeperDist, sndBreakDist,
+    volFootstep, volBreak, volMob, volCreeper, volPlayer, volAmbient,
+    footWalkFrames, footSprintFrames,
+    mobVocalMin, mobVocalRand, ambientMin, ambientRand,
+};

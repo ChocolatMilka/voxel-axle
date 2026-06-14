@@ -1,0 +1,46 @@
+// configs::mobs — mob population, per-species ids / hit points, the passive
+// wander AI, melee, and the hostile creeper.
+//
+// Aggression ranges are 3D (they fold in the Y gap), so a player flying high
+// overhead is out of range: `creeperMaxVertical` is an extra hard cap on the
+// vertical gap so hovering above a creeper never trips its fuse.
+
+const mobCap : i32 = 32;
+const mobChicken : i32 = 0;
+const mobSheep : i32 = 1;
+const mobCow : i32 = 2;
+const mobCreeper : i32 = 3;
+const mobChickenHp : i32 = 4;
+const mobSheepHp : i32 = 8;
+const mobCowHp : i32 = 10;
+const mobCreeperHp : i32 = 12;
+
+// ── Creeper (hostile: approaches, charges, explodes) ────────
+const mobCreeperSpeed : f64 = 0.034;     // calm walk toward the player
+const creeperChaseDist : f64 = 20.0;     // only homes in within this 3D range
+const creeperTriggerDist : f64 = 2.6;    // starts its fuse within this 3D range
+const creeperMaxVertical : f64 = 3.0;    // never charges a player this far above/below
+const creeperFuseFrames : i32 = 148;     // ~2.47 s — matches the shortened charge.wav
+const creeperBlastRadius : f64 = 2.6;    // blocks destroyed / hurt radius
+const creeperDamage : i32 = 16;          // peak player damage at the centre
+
+// ── Passive animals (wander AI) ─────────────────────────────
+const mobWanderSpeed : f64 = 0.034;
+const mobSheepSpeed : f64 = 0.030;
+const mobCowSpeed : f64 = 0.024;
+const mobSpawnRadius : i32 = 30;  // blocks from player
+const mobSpawnMin : i32 = 12;
+const mobDespawnDist : f64 = 56.0;
+const mobTargetCount : i32 = 18;
+const mobTurnEveryMin : i32 = 40;
+const mobTurnEveryRand : i32 = 110;
+const mobTurnRate : f64 = 0.10;   // radians/frame the heading eases toward target
+const mobIdleChance : f64 = 0.34; // chance a turn picks "stand and graze"
+const mobFleeFrames : i32 = 70;   // panic-run duration after being hit
+const mobFleeSpeed : f64 = 0.085;
+const chickenGravityScale : f64 = 0.42;  // chickens flutter down slowly
+const deathFrames : i32 = 38;     // collapse animation length before removal
+const attackRange : f64 = 3.4;
+const attackDamage : i32 = 4;
+const attackCooldown : i32 = 18;
+const hurtFlashFrames : i32 = 10;  // frames a struck mob glows red

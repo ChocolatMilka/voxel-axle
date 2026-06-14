@@ -1,0 +1,29 @@
+// configs::physics — grounded movement with gravity, for the player and mobs.
+//
+// Gravity is a single symmetric value applied every tick whether the body is
+// rising or falling, so a jump traces a parabola and the descent accelerates
+// downward instead of gliding. The player gets a gentle pull for a realistic
+// ~1.25-block jump; mobs get a snappier one so their hops stay small. `velY`
+// is clamped to `terminalVel` on the way down (see `Entity.grav` / `Entity.fall`).
+
+const gravity : f64 = 0.0085;       // player accel, blocks/frame² (jump apex ~1.25)
+const mobGravity : f64 = 0.055;     // mob hop accel — small, quick hops
+const terminalVel : f64 = 0.9;      // max fall speed, blocks/frame
+const jumpVel : f64 = 0.145;        // initial jump speed → ~1.25-block apex
+const walkSpeed : f64 = 0.0775;
+const sprintSpeed : f64 = 0.155;    // 2× walk (Ctrl)
+const swimSpeed : f64 = 0.060;
+const flySpeed : f64 = 0.26;        // creative horizontal fly
+const flySprintSpeed : f64 = 0.52;  // creative fly + Ctrl
+const flyVertSpeed : f64 = 0.30;    // creative up/down
+const eyeHeight : f64 = 1.62;
+const stepHeight : f64 = 1.05;
+// Auto-step raises the body instantly (collision is exact); the camera's
+// step-up offset shrinks by this factor each tick so the rise looks smooth
+// instead of snapping. Lower = quicker catch-up.
+const stepSmoothDecay : f64 = 0.6;
+const playerRadius : f64 = 0.30;
+const playerHeight : f64 = 1.80;   // body AABB height for voxel collision
+const mobRadius : f64 = 0.28;
+const mouseSens : f64 = 0.0024;
+const pitchMax : f64 = 1.45;

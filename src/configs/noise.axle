@@ -1,0 +1,10 @@
+// configs::noise — terrain noise (Minecraft-ish: warp + continentalness) and
+// the integer seed for the lattice hash. Temperature/humidity drive the
+// biome selector (see world::biomes::registry).
+
+const seedI : i32 = 1337;       // integer seed for the lattice hash
+const warpScale : f64 = 0.011;
+const contScale : f64 = 0.0065;
+const hillScale : f64 = 0.032;
+const tempScale : f64 = 0.0070;
+const humidScale : f64 = 0.0090;

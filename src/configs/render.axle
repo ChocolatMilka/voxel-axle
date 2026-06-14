@@ -1,0 +1,19 @@
+// configs::render — draw distance, sky / distance fog and the directional light.
+//
+// Far faces fade to the sky colour so the distance dissolves softly
+// (Minecraft-style) instead of shimmering as a mush of aliased texels at the
+// render edge. Fog runs from `fogStart` to `fogEnd` blocks of depth.
+
+const renderDist : f64 = 92.0;
+const skyR : i32 = 150;
+const skyG : i32 = 198;
+const skyB : i32 = 240;
+const fogStart : f64 = 66.0;
+const fogEnd : f64 = 90.0;
+
+// ── Directional light ───────────────────────────────────────
+const lightX : f64 = 0.35;
+const lightY : f64 = 0.86;
+const lightZ : f64 = 0.37;
+const ambient : f64 = 0.50;
+const edgeShade : f64 = 0.74;

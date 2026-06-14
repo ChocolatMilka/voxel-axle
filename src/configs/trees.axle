@@ -1,0 +1,10 @@
+// configs::trees — tree kinds stamped by world::manager. A biome picks one
+// kind (and a per-biome trunk height; see world::biomes::Biome.treeHt).
+
+const treeNone : i32 = 0;
+const treeOak : i32 = 1;
+const treeBirch : i32 = 2;
+const treeSpruce : i32 = 3;
+const treeAcacia : i32 = 4;
+const treeJungle : i32 = 5;
+const treeCactus : i32 = 6;

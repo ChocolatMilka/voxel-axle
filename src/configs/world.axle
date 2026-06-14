@@ -1,0 +1,22 @@
+// configs::world — the streamed chunk world and the simulation tick rate.
+//
+// A fixed ring of `span × span` chunks follows the camera. Terrain is
+// generated up to `maxHeight`; each column is `worldHeight` voxels tall so the
+// headroom above the terrain lets the player build/stack, and neighbour
+// lookups in the mesher never read uninitialised memory (the mesher only
+// scans up to a chunk's recorded `maxFY`, so the empty sky costs nothing).
+
+const chunkSize : i32 = 16;
+const viewRadius : i32 = 6;  // chunks loaded each side → 13×13
+const span : i32 = 13;  // 2*viewRadius + 1
+const maxFacesPerChunk : i32 = 14000;
+const seaLevel : i32 = 24;
+const maxHeight : i32 = 96;
+const worldHeight : i32 = 128;
+
+// ── Tick rate ───────────────────────────────────────────────
+// The main loop is held to this many iterations per second by the frame
+// clock (`platform::clock`). Physics/AI constants are tuned for this rate,
+// and capping it stops the CPU spinning at hundreds of fps when v-sync is
+// unavailable or disabled. 60 matches a typical display.
+const tickHz : i32 = 60;

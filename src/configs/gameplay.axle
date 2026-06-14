@@ -1,0 +1,4 @@
+// configs::gameplay — block editing (dig / place) reach and cadence.
+
+const reachDist : f64 = 5.0;     // how far the look-ray reaches, in blocks
+const editCooldown : i32 = 10;   // frames between repeated digs/places

@@ -1,0 +1,12 @@
+// configs::health — player hit points, fall / drown damage and regeneration.
+//
+// Fall damage is distance-based (the descent is constant-speed, so landing
+// speed no longer encodes the drop height).
+
+const playerMaxHp : i32 = 20;
+const safeFallDist : f64 = 4.0;        // blocks fallen before it hurts
+const fallDamagePerBlock : f64 = 1.5;  // hp per block beyond the safe distance
+const drownGraceFrames : i32 = 180;  // ~3 s of breath
+const drownEveryFrames : i32 = 18;  // lose 1 hp per this many frames
+const regenDelayFrames : i32 = 420;  // ~7 s without damage before regen
+const regenEveryFrames : i32 = 90;  // +1 hp per this many frames

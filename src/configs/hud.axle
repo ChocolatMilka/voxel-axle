@@ -1,0 +1,5 @@
+// configs::hud — inventory hotbar layout (keys 1–9).
+
+const hotbarSize : i32 = 9;       // number of slots (keys 1–9)
+const hotbarCell : i32 = 22;      // slot size in framebuffer pixels
+const hotbarPad : i32 = 3;        // padding inside the panel / between cells

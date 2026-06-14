@@ -1,0 +1,36 @@
+// configs::audio — step/dig material ids, audible ranges, per-channel master
+// volumes and the timing of footsteps / mob voices / ambience. The audio
+// engine (game::sfx) reads everything here; world::blocks::materialOf maps a
+// block id to one of the `mat*` ids below.
+
+// ── Footstep / dig materials (index into game::sfx banks) ───
+const matGrass : i32 = 0;
+const matSand : i32 = 1;
+const matGravel : i32 = 2;
+const matSnow : i32 = 3;
+const matStone : i32 = 4;
+const matWood : i32 = 5;
+const matFoliage : i32 = 6;   // leaves — soft "cloth" footfall
+const matGlass : i32 = 7;     // ice digs with a glassy crack
+const matCount : i32 = 8;
+
+// ── Audible ranges (blocks): a positional sound fades to silence here ──
+const sndMobDist : f64 = 26.0;
+const sndCreeperDist : f64 = 32.0;
+const sndBreakDist : f64 = 24.0;
+
+// ── Per-channel master volume (0..1, scales the distance attenuation) ──
+const volFootstep : f64 = 0.45;
+const volBreak : f64 = 0.70;
+const volMob : f64 = 0.75;
+const volCreeper : f64 = 1.0;
+const volPlayer : f64 = 0.85;
+const volAmbient : f64 = 0.55;
+
+// ── Timing ──────────────────────────────────────────────────
+const footWalkFrames : i32 = 18;    // frames between footfalls when walking
+const footSprintFrames : i32 = 12;  // …when sprinting
+const mobVocalMin : i32 = 150;      // min frames between a mob's idle voices
+const mobVocalRand : i32 = 360;     // extra random spread on top of the min
+const ambientMin : i32 = 220;       // min frames between underwater ambiences
+const ambientRand : i32 = 300;
