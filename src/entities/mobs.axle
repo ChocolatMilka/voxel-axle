@@ -144,12 +144,29 @@ class MobManager {
             return false;
         }
         let a : f64 = this.rand() * 6.2831853;
+        let ca : f64 = cos(a);
+        let sa : f64 = sin(a);
+        // Spawn out of sight: skip directions inside the camera's forward
+        // cone so creatures never pop into existence in front of the player.
+        let fwdx : f64 = 0.0 - player.siny;
+        let fwdz : f64 = player.cosy;
+        if (ca * fwdx + sa * fwdz > config::mobSpawnFovDot) {
+            return false;
+        }
         let span : f64 = (config::mobSpawnRadius - config::mobSpawnMin) as f64;
         let r : f64 = (config::mobSpawnMin as f64) + this.rand() * span;
-        let wx : f64 = player.posX + cos(a) * r;
-        let wz : f64 = player.posZ + sin(a) * r;
-        let surf : i32 = world.columnHeight(floorToInt(wx) as i32, floorToInt(wz) as i32);
+        let wx : f64 = player.posX + ca * r;
+        let wz : f64 = player.posZ + sa * r;
+        let ix : i32 = floorToInt(wx) as i32;
+        let iz : i32 = floorToInt(wz) as i32;
+        let surf : i32 = world.columnHeight(ix, iz);
         if (surf <= config::seaLevel) {
+            return false;
+        }
+        // Only open, solid ground: reject columns carrying a tree trunk,
+        // cactus, giant mushroom or any placed block (the collision surface
+        // sits above the bare terrain there), so mobs never spawn up a tree.
+        if (world.collisionHeight(ix, iz) > surf) {
             return false;
         }
         let y : f64 = surf as f64;
@@ -317,7 +334,7 @@ class MobManager {
         }
 
         let tries : i32 = 0;
-        while (this.total() < config::mobTargetCount && tries < 6) {
+        while (this.total() < config::mobTargetCount && tries < 16) {
             this.spawnOne(world, player);
             tries = tries + 1;
         }

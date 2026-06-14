@@ -33,6 +33,9 @@ const mobSheepSpeed : f64 = 0.030;
 const mobCowSpeed : f64 = 0.024;
 const mobSpawnRadius : i32 = 30;  // blocks from player
 const mobSpawnMin : i32 = 12;
+// Skip spawn directions whose dot with the camera forward exceeds this, so
+// creatures appear off-screen (≈ outside a 60° front cone), not in view.
+const mobSpawnFovDot : f64 = 0.5;
 const mobDespawnDist : f64 = 56.0;
 const mobTargetCount : i32 = 18;
 const mobTurnEveryMin : i32 = 40;

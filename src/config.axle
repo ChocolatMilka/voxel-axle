@@ -72,7 +72,7 @@ use crate::configs::mobs::{
     mobCreeperSpeed, creeperChaseDist, creeperTriggerDist, creeperMaxVertical,
     creeperFuseFrames, creeperBlastRadius, creeperDamage,
     mobWanderSpeed, mobSheepSpeed, mobCowSpeed,
-    mobSpawnRadius, mobSpawnMin, mobDespawnDist, mobTargetCount,
+    mobSpawnRadius, mobSpawnMin, mobSpawnFovDot, mobDespawnDist, mobTargetCount,
     mobTurnEveryMin, mobTurnEveryRand, mobTurnRate, mobIdleChance,
     mobFleeFrames, mobFleeSpeed, chickenGravityScale, deathFrames,
     attackRange, attackDamage, attackCooldown, hurtFlashFrames,
