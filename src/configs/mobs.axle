@@ -10,10 +10,13 @@ const mobChicken : i32 = 0;
 const mobSheep : i32 = 1;
 const mobCow : i32 = 2;
 const mobCreeper : i32 = 3;
+const mobPig : i32 = 4;
 const mobChickenHp : i32 = 4;
 const mobSheepHp : i32 = 8;
 const mobCowHp : i32 = 10;
 const mobCreeperHp : i32 = 12;
+const mobPigHp : i32 = 10;
+const mobPigSpeed : f64 = 0.030;
 
 // ── Creeper (hostile: approaches, charges, explodes) ────────
 const mobCreeperSpeed : f64 = 0.034;     // calm walk toward the player

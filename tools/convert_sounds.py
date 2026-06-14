@@ -38,6 +38,7 @@ MAP = {
     "mob/cow/say":      ["mob/cow/say1.ogg", "mob/cow/say2.ogg", "mob/cow/say3.ogg", "mob/cow/say4.ogg"],
     "mob/cow/hurt":     ["mob/cow/hurt1.ogg", "mob/cow/hurt2.ogg", "mob/cow/hurt3.ogg"],
     "mob/sheep/say":    ["mob/sheep/say1.ogg", "mob/sheep/say2.ogg", "mob/sheep/say3.ogg"],
+    "mob/pig/say":      ["mob/pig/say1.ogg", "mob/pig/say2.ogg", "mob/pig/say3.ogg"],
     # ── Player ──
     "player/hurt":  ["damage/hit1.ogg", "damage/hit2.ogg", "damage/hit3.ogg"],
     "player/splash": ["liquid/splash.ogg", "liquid/splash2.ogg"],

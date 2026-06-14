@@ -222,6 +222,8 @@ MOBS = [
     (TEX / "creeper" / "creeper.png", (64, 64, 128, 128),   (40, 80, 40),  "creeper_face"),
     (TEX / "creeper" / "charge.png",  (128, 128, 192, 224), (228, 196, 40), "charge_skin"),
     (TEX / "creeper" / "charge.png",  (64, 64, 128, 128),   (200, 150, 30), "charge_face"),
+    (TEX / "pig" / "pig.png", (84, 20, 180, 100), (222, 150, 150), "pig_body"),
+    (TEX / "pig" / "pig.png", (24, 24, 52, 56),   (230, 162, 162), "pig_head"),
 ]
 for path, box, base, label in MOBS:
     add(label, Image.open(path).convert("RGBA").crop(box), base)

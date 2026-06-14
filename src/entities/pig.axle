@@ -1,0 +1,14 @@
+// Pig — a calm pink animal that uses the base wander AI, a touch slower than
+// the others.
+
+use crate::entities::mob::Mob;
+use crate::config;
+
+class Pig extends Mob {
+    /** Create a pig at (x, y, z). */
+    constructor(x : f64, y : f64, z : f64) {
+        super(x, y, z, config::mobPig, config::mobPigHp);
+        this.speed = config::mobPigSpeed;
+        this.height = 0.9;
+    }
+}

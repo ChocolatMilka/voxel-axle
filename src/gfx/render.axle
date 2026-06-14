@@ -714,6 +714,27 @@ class Renderer {
     }
 
     /**
+     * Draw a pig as a stack of oriented boxes (four legs, body, head, snout).
+     * @param p       player providing the eye position and orientation
+     * @param m       pig mob to draw
+     * @param pixels  framebuffer pixel buffer
+     * @param zbuf    depth buffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     */
+    fn drawPig(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
+        let sw : f64 = sin(m.walkPhase) * 0.10;
+        let leg : i32 = rgb(196, 128, 128);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0 - 0.20, 0.16, 0.20 + sw, 0.07, 0.16, 0.07, leg, 0 - 1, 0 - 1);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.20, 0.16, 0.20 - sw, 0.07, 0.16, 0.07, leg, 0 - 1, 0 - 1);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0 - 0.20, 0.16, 0.0 - 0.20 - sw, 0.07, 0.16, 0.07, leg, 0 - 1, 0 - 1);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.20, 0.16, 0.0 - 0.20 + sw, 0.07, 0.16, 0.07, leg, 0 - 1, 0 - 1);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 0.46, 0.0, 0.30, 0.26, 0.42, rgb(222, 150, 150), config::tlPigBody, config::tlPigBody);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 0.50, 0.48, 0.18, 0.17, 0.16, rgb(226, 156, 156), config::tlPigBody, config::tlPigHead);
+        this.drawObox(p, m, pixels, zbuf, w, h, 0.0, 0.47, 0.64, 0.08, 0.07, 0.05, rgb(232, 170, 170), 0 - 1, 0 - 1);
+    }
+
+    /**
      * Creeper: textured from the atlas. Normally the green creeper skin
      * with its iconic face on the head's forward face; once the fuse is
      * lit it swaps to the "gilet jaune" charge skin/face, swells to 1.25x
@@ -801,6 +822,11 @@ class Renderer {
         i = 0;
         while (i < mm.coN) {
             this.drawCow(p, mm.cowAt(i), pixels, zbuf, w, h);
+            i = i + 1;
+        }
+        i = 0;
+        while (i < mm.pgN) {
+            this.drawPig(p, mm.pigAt(i), pixels, zbuf, w, h);
             i = i + 1;
         }
         i = 0;

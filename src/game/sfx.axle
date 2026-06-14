@@ -57,6 +57,7 @@ class AudioManager {
     cowSayBank : SoundBank,
     cowHurtBank : SoundBank,
     sheepSayBank : SoundBank,
+    pigSayBank : SoundBank,
     playerHurtBank : SoundBank,
     splashBank : SoundBank,
     ambientUWBank : SoundBank,
@@ -90,6 +91,7 @@ class AudioManager {
         this.cowSayBank = this.bankFrom("mob/cow/say");
         this.cowHurtBank = this.bankFrom("mob/cow/hurt");
         this.sheepSayBank = this.bankFrom("mob/sheep/say");
+        this.pigSayBank = this.bankFrom("mob/pig/say");
         this.playerHurtBank = this.bankFrom("player/hurt");
         this.splashBank = this.bankFrom("player/splash");
         this.ambientUWBank = this.bankFrom("ambient/underwater");
@@ -189,6 +191,8 @@ class AudioManager {
             this.cowSayBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
         } else if (kind == config::mobSheep) {
             this.sheepSayBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
+        } else if (kind == config::mobPig) {
+            this.pigSayBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
         }
     }
 

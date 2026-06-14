@@ -67,8 +67,8 @@ use crate::configs::trees::{
 };
 
 use crate::configs::mobs::{
-    mobCap, mobChicken, mobSheep, mobCow, mobCreeper,
-    mobChickenHp, mobSheepHp, mobCowHp, mobCreeperHp,
+    mobCap, mobChicken, mobSheep, mobCow, mobCreeper, mobPig,
+    mobChickenHp, mobSheepHp, mobCowHp, mobCreeperHp, mobPigHp, mobPigSpeed,
     mobCreeperSpeed, creeperChaseDist, creeperTriggerDist, creeperMaxVertical,
     creeperFuseFrames, creeperBlastRadius, creeperDamage,
     mobWanderSpeed, mobSheepSpeed, mobCowSpeed,
@@ -112,6 +112,7 @@ use crate::configs::atlas::{
     tlMushroomStem, tlRedMushroom, tlBrownMushroom,
     tlChickenBody, tlChickenHead, tlSheepWool, tlSheepHead,
     tlCowBody, tlCowHead, tlCreeperSkin, tlCreeperFace, tlChargeSkin, tlChargeFace,
+    tlPigBody, tlPigHead,
 };
 
 use crate::configs::audio::{
