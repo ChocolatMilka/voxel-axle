@@ -245,34 +245,40 @@ fn biomeAt(temp : f64, humid : f64, height : i32) : i32 {
     if (height >= config::seaLevel + 34) {
         return config::biMountain;
     }
-    if (temp < 0.25) {
+    // Cool the climate with altitude: higher ground trends toward taiga / snow
+    // even in a warm region, so foothills and uplands read coherently.
+    let t : f64 = temp - ((height - config::seaLevel) as f64) * config::altitudeCooling;
+    if (t < 0.0) {
+        t = 0.0;
+    }
+    if (t < 0.25) {
         return config::biSnowy;
     }
-    if (temp < 0.40) {
+    if (t < 0.40) {
         return config::biTaiga;
     }
-    if (temp > 0.75 && humid < 0.30) {
+    if (t > 0.75 && humid < 0.30) {
         return config::biBadlands;
     }
-    if (temp > 0.70 && humid < 0.40) {
+    if (t > 0.70 && humid < 0.40) {
         return config::biDesert;
     }
-    if (temp > 0.58 && humid < 0.52) {
+    if (t > 0.58 && humid < 0.52) {
         return config::biSavanna;
     }
-    if (humid > 0.85 && temp > 0.72) {
+    if (humid > 0.85 && t > 0.72) {
         return config::biBambooJungle;
     }
-    if (humid > 0.75 && temp > 0.62) {
+    if (humid > 0.75 && t > 0.62) {
         return config::biJungle;
     }
-    if (humid > 0.90 && temp > 0.42 && temp < 0.60) {
+    if (humid > 0.90 && t > 0.42 && t < 0.60) {
         return config::biMushroomFields;
     }
     if (humid > 0.68 && height <= config::seaLevel + 5) {
         return config::biSwamp;
     }
-    if (temp > 0.50 && temp < 0.64 && humid > 0.52 && humid < 0.66) {
+    if (t > 0.50 && t < 0.64 && humid > 0.52 && humid < 0.66) {
         return config::biCherryGrove;
     }
     if (humid > 0.60) {

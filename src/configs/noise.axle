@@ -4,7 +4,14 @@
 
 const seedI : i32 = 1337;       // integer seed for the lattice hash
 const warpScale : f64 = 0.011;
-const contScale : f64 = 0.0065;
+const contScale : f64 = 0.0050;   // larger continents / oceans
 const hillScale : f64 = 0.032;
-const tempScale : f64 = 0.0070;
-const humidScale : f64 = 0.0090;
+// Climate varies slowly over large distances (like latitude), so biome zones
+// are big and gradual: extremes (desert vs snow) are always separated by
+// temperate buffers instead of sitting side by side.
+const tempScale : f64 = 0.0024;
+const humidScale : f64 = 0.0034;
+// Land vs ocean split on continentalness, and how fast terrain cools with
+// altitude (so high ground turns to taiga / snow / bare peaks).
+const oceanLevel : f64 = 0.34;
+const altitudeCooling : f64 = 0.0065;

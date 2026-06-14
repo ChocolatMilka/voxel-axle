@@ -118,10 +118,23 @@ fn terrainHeight(wx : f64, wz : f64) : f64 {
     let cont : f64 = continentalness(wx, wz);
     let hills : f64 = fbm(wx * config::hillScale, wz * config::hillScale, config::seedI + 99, 3);
     let sea : f64 = config::seaLevel as f64;
-    let h : f64 = sea - 8.0 + cont * 34.0 + (hills - 0.5) * 12.0;
-    if (cont > 0.66) {
-        let m : f64 = (cont - 0.66) / 0.34;
-        h = h + m * m * 44.0;
+    let ocean : f64 = config::oceanLevel;
+    if (cont < ocean) {
+        // Ocean basin: a coherent sea floor, deeper toward open water. Never
+        // rises to the surface, so seas are real bodies — not scattered pits.
+        let d : f64 = (ocean - cont) / ocean;
+        return sea - 1.0 - d * 20.0 - hills * 4.0;
+    }
+    // Land: clamped to at least sea + 1, so dry biomes never pool water. Rolling
+    // hills, with steep peaks where the continent is thickest.
+    let land : f64 = (cont - ocean) / (1.0 - ocean);
+    let h : f64 = sea + 1.0 + land * 26.0 + (hills - 0.5) * 13.0;
+    if (cont > 0.72) {
+        let m : f64 = (cont - 0.72) / 0.28;
+        h = h + m * m * 50.0;
+    }
+    if (h < sea + 1.0) {
+        h = sea + 1.0;
     }
     return h;
 }

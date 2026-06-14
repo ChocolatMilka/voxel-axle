@@ -452,7 +452,10 @@ class ChunkManager {
                 if (h > config::seaLevel) {
                     let biome : i32 = biomeAt(temperature(wx as f64, wz as f64),
                         humidity(wx as f64, wz as f64), h);
-                    if (treeHash(wx as f64, wz as f64) > this.reg.treeThreshold(biome)) {
+                    // Thin every biome's trees toward sparser, airier woods.
+                    let thr : f64 = this.reg.treeThreshold(biome);
+                    thr = thr + (1.0 - thr) * config::treeThin;
+                    if (treeHash(wx as f64, wz as f64) > thr) {
                         this.stampTree(this.reg.treeKind(biome), this.reg.treeHeight(biome), slot, olx, h, olz);
                     }
                 }

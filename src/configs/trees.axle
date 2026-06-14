@@ -12,3 +12,8 @@ const treeBamboo : i32 = 7;
 const treeCherry : i32 = 8;
 const treeRedMushroom : i32 = 9;
 const treeBrownMushroom : i32 = 10;
+
+// Global thinning applied to every biome's tree threshold (0 = as authored,
+// →1 = no trees). Raises each threshold toward 1 proportionally, so forests
+// stay forests but woods are airier and less cluttered.
+const treeThin : f64 = 0.6;

@@ -20,6 +20,7 @@ use crate::configs::world::{
 
 use crate::configs::noise::{
     seedI, warpScale, contScale, hillScale, tempScale, humidScale,
+    oceanLevel, altitudeCooling,
 };
 
 use crate::configs::physics::{
@@ -63,7 +64,7 @@ use crate::configs::biomes::{
 
 use crate::configs::trees::{
     treeNone, treeOak, treeBirch, treeSpruce, treeAcacia, treeJungle, treeCactus,
-    treeBamboo, treeCherry, treeRedMushroom, treeBrownMushroom,
+    treeBamboo, treeCherry, treeRedMushroom, treeBrownMushroom, treeThin,
 };
 
 use crate::configs::mobs::{
