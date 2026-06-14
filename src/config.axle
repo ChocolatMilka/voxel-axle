@@ -52,15 +52,18 @@ use crate::configs::blocks::{
     bCactus, bPumpkin, bMelon, bGlowstone,
     bCoalOre, bIronOre, bGoldOre, bDiamondOre, bRedstoneOre, bEmeraldOre, bLapisOre,
     bGrassSavanna, bGrassJungle, bGrassSwamp, bGrassTaiga,
+    bBamboo, bCherryLog, bCherryLeaves, bMushroomStem, bRedMushroom, bBrownMushroom,
 };
 
 use crate::configs::biomes::{
     biOcean, biBeach, biPlains, biForest, biDesert, biSavanna, biSnowy,
     biMountain, biTaiga, biJungle, biSwamp, biBadlands, biBirchForest, biFrozenOcean,
+    biBambooJungle, biCherryGrove, biMushroomFields,
 };
 
 use crate::configs::trees::{
     treeNone, treeOak, treeBirch, treeSpruce, treeAcacia, treeJungle, treeCactus,
+    treeBamboo, treeCherry, treeRedMushroom, treeBrownMushroom,
 };
 
 use crate::configs::mobs::{
@@ -105,6 +108,8 @@ use crate::configs::atlas::{
     tlRedstoneOre, tlEmeraldOre, tlLapisOre,
     tlGrassTopSavanna, tlGrassSideSavanna, tlGrassTopJungle, tlGrassSideJungle,
     tlGrassTopSwamp, tlGrassSideSwamp, tlGrassTopTaiga, tlGrassSideTaiga,
+    tlBambooSide, tlBambooTop, tlCherryLogSide, tlCherryLogTop, tlCherryLeaves,
+    tlMushroomStem, tlRedMushroom, tlBrownMushroom,
     tlChickenBody, tlChickenHead, tlSheepWool, tlSheepHead,
     tlCowBody, tlCowHead, tlCreeperSkin, tlCreeperFace, tlChargeSkin, tlChargeFace,
 };

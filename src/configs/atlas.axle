@@ -7,8 +7,8 @@
 // EXACTLY — keep them in sync.
 
 const tilePx : i32 = 64;
-const blockTiles : i32 = 73;
-const atlasTiles : i32 = 83;
+const blockTiles : i32 = 81;
+const atlasTiles : i32 = 91;
 const useMobTextures : bool = true;
 // Mip chain depth (64 → 32 → … → 1 = 7 levels). Distant faces sample a
 // coarser, pre-averaged level so textures don't shimmer when moving.
@@ -89,14 +89,24 @@ const tlGrassSideSwamp : i32 = 70;
 const tlGrassTopTaiga : i32 = 71;
 const tlGrassSideTaiga : i32 = 72;
 
+// ── Expansion blocks: bamboo, cherry, giant mushrooms ───────
+const tlBambooSide : i32 = 73;
+const tlBambooTop : i32 = 74;
+const tlCherryLogSide : i32 = 75;
+const tlCherryLogTop : i32 = 76;
+const tlCherryLeaves : i32 = 77;
+const tlMushroomStem : i32 = 78;
+const tlRedMushroom : i32 = 79;
+const tlBrownMushroom : i32 = 80;
+
 // ── Mob tiles (after the block tiles) ───────────────────────
-const tlChickenBody : i32 = 73;
-const tlChickenHead : i32 = 74;
-const tlSheepWool : i32 = 75;
-const tlSheepHead : i32 = 76;
-const tlCowBody : i32 = 77;
-const tlCowHead : i32 = 78;
-const tlCreeperSkin : i32 = 79;
-const tlCreeperFace : i32 = 80;
-const tlChargeSkin : i32 = 81;
-const tlChargeFace : i32 = 82;
+const tlChickenBody : i32 = 81;
+const tlChickenHead : i32 = 82;
+const tlSheepWool : i32 = 83;
+const tlSheepHead : i32 = 84;
+const tlCowBody : i32 = 85;
+const tlCowHead : i32 = 86;
+const tlCreeperSkin : i32 = 87;
+const tlCreeperFace : i32 = 88;
+const tlChargeSkin : i32 = 89;
+const tlChargeFace : i32 = 90;

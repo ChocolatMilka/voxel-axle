@@ -16,3 +16,6 @@ const biSwamp : i32 = 10;
 const biBadlands : i32 = 11;
 const biBirchForest : i32 = 12;
 const biFrozenOcean : i32 = 13;
+const biBambooJungle : i32 = 14;
+const biCherryGrove : i32 = 15;
+const biMushroomFields : i32 = 16;

@@ -1,0 +1,23 @@
+// Bamboo jungle — hot, very humid jungle floor dense with tall bamboo.
+
+use crate::world::biomes::Biome;
+use crate::config;
+
+class BambooJungle extends Biome {
+    /** Construct the bamboo jungle biome. */
+    constructor() {
+        super();
+        this.treeThresh = 0.80;   // dense stands of bamboo
+        this.treeKindId = config::treeBamboo;
+        this.treeHt = 12;
+    }
+
+    /**
+     * Top block: jungle grass.
+     * @param height  the column's surface height
+     * @return the surface block id
+     */
+    fn surface(height : i32) : i32 {
+        return config::bGrassJungle;
+    }
+}

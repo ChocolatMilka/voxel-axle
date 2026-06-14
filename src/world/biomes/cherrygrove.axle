@@ -1,0 +1,15 @@
+// Cherry grove — mild hills of grass dotted with pink cherry blossoms.
+
+use crate::world::biomes::Biome;
+use crate::config;
+
+class CherryGrove extends Biome {
+    /** Construct the cherry grove biome. */
+    constructor() {
+        super();
+        this.treeThresh = 0.965;
+        this.treeKindId = config::treeCherry;
+        this.treeHt = 5;
+    }
+    // Grass surface + dirt filler are the base defaults.
+}

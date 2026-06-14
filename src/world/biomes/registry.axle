@@ -25,6 +25,9 @@ use crate::world::biomes::mountain::Mountain;
 use crate::world::biomes::beach::Beach;
 use crate::world::biomes::ocean::Ocean;
 use crate::world::biomes::frozenocean::FrozenOcean;
+use crate::world::biomes::bamboojungle::BambooJungle;
+use crate::world::biomes::cherrygrove::CherryGrove;
+use crate::world::biomes::mushroomfields::MushroomFields;
 use crate::config;
 
 class Biomes {
@@ -42,6 +45,9 @@ class Biomes {
     beach : Beach,
     ocean : Ocean,
     frozen : FrozenOcean,
+    bambooJungle : BambooJungle,
+    cherryGrove : CherryGrove,
+    mushroomFields : MushroomFields,
 
     /** Construct the registry, instantiating one of every biome. */
     constructor() {
@@ -59,6 +65,9 @@ class Biomes {
         this.beach = new Beach();
         this.ocean = new Ocean();
         this.frozen = new FrozenOcean();
+        this.bambooJungle = new BambooJungle();
+        this.cherryGrove = new CherryGrove();
+        this.mushroomFields = new MushroomFields();
     }
 
     /**
@@ -105,6 +114,15 @@ class Biomes {
         }
         if (b == config::biFrozenOcean) {
             return this.frozen as Biome;
+        }
+        if (b == config::biBambooJungle) {
+            return this.bambooJungle as Biome;
+        }
+        if (b == config::biCherryGrove) {
+            return this.cherryGrove as Biome;
+        }
+        if (b == config::biMushroomFields) {
+            return this.mushroomFields as Biome;
         }
         return this.ocean as Biome;
     }
@@ -155,6 +173,15 @@ class Biomes {
         }
         if (b == config::biFrozenOcean) {
             return this.frozen.surface(height);
+        }
+        if (b == config::biBambooJungle) {
+            return this.bambooJungle.surface(height);
+        }
+        if (b == config::biCherryGrove) {
+            return this.cherryGrove.surface(height);
+        }
+        if (b == config::biMushroomFields) {
+            return this.mushroomFields.surface(height);
         }
         return this.ocean.surface(height);
     }
@@ -233,11 +260,20 @@ fn biomeAt(temp : f64, humid : f64, height : i32) : i32 {
     if (temp > 0.58 && humid < 0.52) {
         return config::biSavanna;
     }
+    if (humid > 0.85 && temp > 0.72) {
+        return config::biBambooJungle;
+    }
     if (humid > 0.75 && temp > 0.62) {
         return config::biJungle;
     }
+    if (humid > 0.90 && temp > 0.42 && temp < 0.60) {
+        return config::biMushroomFields;
+    }
     if (humid > 0.68 && height <= config::seaLevel + 5) {
         return config::biSwamp;
+    }
+    if (temp > 0.50 && temp < 0.64 && humid > 0.52 && humid < 0.66) {
+        return config::biCherryGrove;
     }
     if (humid > 0.60) {
         return config::biForest;

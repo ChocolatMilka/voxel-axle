@@ -64,3 +64,10 @@ const bGrassSavanna : i32 = 51;
 const bGrassJungle : i32 = 52;
 const bGrassSwamp : i32 = 53;
 const bGrassTaiga : i32 = 54;
+// Expansion: bamboo, cherry, giant mushrooms
+const bBamboo : i32 = 55;
+const bCherryLog : i32 = 56;
+const bCherryLeaves : i32 = 57;
+const bMushroomStem : i32 = 58;
+const bRedMushroom : i32 = 59;
+const bBrownMushroom : i32 = 60;

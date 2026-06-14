@@ -1,0 +1,23 @@
+// Mushroom fields — rare mycelium islands studded with giant mushrooms.
+
+use crate::world::biomes::Biome;
+use crate::config;
+
+class MushroomFields extends Biome {
+    /** Construct the mushroom fields biome. */
+    constructor() {
+        super();
+        this.treeThresh = 0.955;
+        this.treeKindId = config::treeRedMushroom;
+        this.treeHt = 4;
+    }
+
+    /**
+     * Top block: mycelium.
+     * @param height  the column's surface height
+     * @return the surface block id
+     */
+    fn surface(height : i32) : i32 {
+        return config::bMycelium;
+    }
+}

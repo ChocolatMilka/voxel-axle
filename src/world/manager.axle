@@ -593,8 +593,26 @@ class ChunkManager {
             this.stampAcacia(slot, olx, baseY, olz, height);
             return;
         }
-        // Oak / birch / jungle: a bushy round canopy; they differ only in
-        // wood / leaf species (the trunk height comes from the biome).
+        if (kind == config::treeBamboo) {
+            // A tall, thin bamboo stalk.
+            let t : i32 = 0;
+            while (t < height) {
+                this.setVoxClip(slot, olx, baseY + t, olz, config::bBamboo);
+                t = t + 1;
+            }
+            this.bumpFY(slot, baseY + height);
+            return;
+        }
+        if (kind == config::treeRedMushroom) {
+            this.stampMushroom(slot, olx, baseY, olz, height, config::bRedMushroom);
+            return;
+        }
+        if (kind == config::treeBrownMushroom) {
+            this.stampMushroom(slot, olx, baseY, olz, height, config::bBrownMushroom);
+            return;
+        }
+        // Oak / birch / jungle / cherry: a bushy round canopy; they differ only
+        // in wood / leaf species (the trunk height comes from the biome).
         let wood : i32 = config::bWood;
         let leaf : i32 = config::bLeaves;
         if (kind == config::treeBirch) {
@@ -605,7 +623,27 @@ class ChunkManager {
             wood = config::bWoodJungle;
             leaf = config::bLeavesJungle;
         }
+        if (kind == config::treeCherry) {
+            wood = config::bCherryLog;
+            leaf = config::bCherryLeaves;
+        }
         this.stampBushy(slot, olx, baseY, olz, height, wood, leaf);
+    }
+
+    /**
+     * Giant mushroom: a pale stem topped by a flat round cap of `capId`.
+     * @param slot    the slot index
+     * @param olx     the origin x coordinate
+     * @param baseY   the stem base Y
+     * @param olz     the origin z coordinate
+     * @param height  the stem height
+     * @param capId   the cap block id (red / brown mushroom block)
+     */
+    fn stampMushroom(slot : i32, olx : i32, baseY : i32, olz : i32, height : i32, capId : i32) : void {
+        let cy : i32 = baseY + height;
+        this.leafLayer(slot, olx, cy, olz, 1, capId);
+        this.stampLeafId(slot, olx, cy + 1, olz, capId);
+        this.stampTrunk(slot, olx, baseY, olz, height, config::bMushroomStem);
     }
 
     /**

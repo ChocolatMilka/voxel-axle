@@ -86,12 +86,14 @@ fn materialOf(id : i32) : i32 {
     }
     if (id == config::bWood || id == config::bWoodBirch || id == config::bWoodSpruce
         || id == config::bWoodAcacia || id == config::bWoodJungle || id == config::bWoodDarkOak
-        || id == config::bPlanks || id == config::bPumpkin) {
+        || id == config::bPlanks || id == config::bPumpkin
+        || id == config::bBamboo || id == config::bCherryLog) {
         return config::matWood;
     }
     if (id == config::bLeaves || id == config::bLeavesBirch || id == config::bLeavesSpruce
         || id == config::bLeavesAcacia || id == config::bLeavesJungle || id == config::bLeavesDarkOak
-        || id == config::bCactus || id == config::bMelon) {
+        || id == config::bCactus || id == config::bMelon || id == config::bCherryLeaves
+        || id == config::bMushroomStem || id == config::bRedMushroom || id == config::bBrownMushroom) {
         return config::matFoliage;
     }
     // Stone, cobble, granite/diorite/andesite, bricks, terracotta, glowstone,
@@ -361,6 +363,32 @@ fn tileFor(id : i32, dir : i32) : i32 {
         return config::tlLapisOre;
     }
 
+    // ── Expansion: bamboo, cherry, giant mushrooms ──
+    if (id == config::bBamboo) {
+        if (dir == 2 || dir == 3) {
+            return config::tlBambooTop;
+        }
+        return config::tlBambooSide;
+    }
+    if (id == config::bCherryLog) {
+        if (dir == 2 || dir == 3) {
+            return config::tlCherryLogTop;
+        }
+        return config::tlCherryLogSide;
+    }
+    if (id == config::bCherryLeaves) {
+        return config::tlCherryLeaves;
+    }
+    if (id == config::bMushroomStem) {
+        return config::tlMushroomStem;
+    }
+    if (id == config::bRedMushroom) {
+        return config::tlRedMushroom;
+    }
+    if (id == config::bBrownMushroom) {
+        return config::tlBrownMushroom;
+    }
+
     return config::tlStone;
 }
 
@@ -531,6 +559,24 @@ fn color(id : i32) : i32 {
     }
     if (id == config::bLapisOre) {
         return rgb(90, 100, 140);
+    }
+    if (id == config::bBamboo) {
+        return rgb(120, 160, 80);
+    }
+    if (id == config::bCherryLog) {
+        return rgb(110, 80, 90);
+    }
+    if (id == config::bCherryLeaves) {
+        return rgb(236, 168, 206);
+    }
+    if (id == config::bMushroomStem) {
+        return rgb(206, 200, 186);
+    }
+    if (id == config::bRedMushroom) {
+        return rgb(180, 40, 40);
+    }
+    if (id == config::bBrownMushroom) {
+        return rgb(150, 112, 76);
     }
     return rgb(0, 0, 0);
 }

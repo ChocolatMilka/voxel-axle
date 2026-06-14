@@ -197,6 +197,15 @@ grass_top("grass_top (swamp)", T_SWAMP)          # 69
 grass_side("grass_side (swamp)", T_SWAMP)        # 70
 grass_top("grass_top (taiga)", T_TAIGA)          # 71
 grass_side("grass_side (taiga)", T_TAIGA)        # 72
+# ── Expansion: bamboo, cherry, giant mushrooms ──
+add("bamboo_side", block("bamboo_stalk"), (110, 150, 70))        # 73
+add("bamboo_top", block("bamboo_block_top"), (150, 170, 90))     # 74
+add("cherry_log_side", block("cherry_log"), (96, 64, 74))        # 75
+add("cherry_log_top", block("cherry_log_top"), (124, 92, 102))   # 76
+add("cherry_leaves", block("cherry_leaves"), (236, 168, 206))    # 77
+add("mushroom_stem", block("mushroom_stem"), (206, 200, 186))    # 78
+add("red_mushroom_block", block("red_mushroom_block"), (180, 36, 36))    # 79
+add("brown_mushroom_block", block("brown_mushroom_block"), (150, 112, 76))  # 80
 
 BLOCK_TILES = len(_index)
 
