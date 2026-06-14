@@ -453,7 +453,7 @@ class ChunkManager {
                     let biome : i32 = biomeAt(temperature(wx as f64, wz as f64),
                         humidity(wx as f64, wz as f64), h);
                     if (treeHash(wx as f64, wz as f64) > this.reg.treeThreshold(biome)) {
-                        this.stampTree(this.reg.treeKind(biome), slot, olx, h, olz);
+                        this.stampTree(this.reg.treeKind(biome), this.reg.treeHeight(biome), slot, olx, h, olz);
                     }
                 }
                 olx = olx + 1;
@@ -561,49 +561,47 @@ class ChunkManager {
     }
 
     /**
-     * Stamp a tree of `kind` (config::tree*) with origin column (olx, olz)
-     * and trunk base `baseY`. Leaves first, then the trunk overwrites its
-     * column. Shapes are fixed (no RNG) so the two chunks sharing a
-     * border tree stamp it identically.
-     * @param kind   the tree kind id
-     * @param slot   the slot index
-     * @param olx    the tree origin x coordinate
-     * @param baseY  the trunk base Y
-     * @param olz    the tree origin z coordinate
+     * Stamp a tree of `kind` (config::tree*) with origin column (olx, olz),
+     * trunk base `baseY` and trunk `height` (the biome's `treeHt`). Leaves
+     * first, then the trunk overwrites its column. Shapes are fixed (no RNG)
+     * so the two chunks sharing a border tree stamp it identically.
+     * @param kind    the tree kind id
+     * @param height  the trunk height (from the biome)
+     * @param slot    the slot index
+     * @param olx     the tree origin x coordinate
+     * @param baseY   the trunk base Y
+     * @param olz     the tree origin z coordinate
      */
-    fn stampTree(kind : i32, slot : i32, olx : i32, baseY : i32, olz : i32) : void {
+    fn stampTree(kind : i32, height : i32, slot : i32, olx : i32, baseY : i32, olz : i32) : void {
         if (kind == config::treeNone) {
             return;
         }
         if (kind == config::treeCactus) {
             let c : i32 = 0;
-            while (c < 3) {
+            while (c < height) {
                 this.setVoxClip(slot, olx, baseY + c, olz, config::bCactus);
                 c = c + 1;
             }
-            this.bumpFY(slot, baseY + 3);
+            this.bumpFY(slot, baseY + height);
             return;
         }
         if (kind == config::treeSpruce) {
-            this.stampSpruce(slot, olx, baseY, olz);
+            this.stampSpruce(slot, olx, baseY, olz, height);
             return;
         }
         if (kind == config::treeAcacia) {
-            this.stampAcacia(slot, olx, baseY, olz);
+            this.stampAcacia(slot, olx, baseY, olz, height);
             return;
         }
         // Oak / birch / jungle: a bushy round canopy; they differ only in
-        // trunk height and wood / leaf species.
-        let height : i32 = 4;
+        // wood / leaf species (the trunk height comes from the biome).
         let wood : i32 = config::bWood;
         let leaf : i32 = config::bLeaves;
         if (kind == config::treeBirch) {
-            height = 6;
             wood = config::bWoodBirch;
             leaf = config::bLeavesBirch;
         }
         if (kind == config::treeJungle) {
-            height = 8;
             wood = config::bWoodJungle;
             leaf = config::bLeavesJungle;
         }
@@ -636,13 +634,13 @@ class ChunkManager {
 
     /**
      * Conical spruce: shrinking square rings up a tall trunk, with a tip.
-     * @param slot   the slot index
-     * @param olx    the tree origin x coordinate
-     * @param baseY  the trunk base Y
-     * @param olz    the tree origin z coordinate
+     * @param slot    the slot index
+     * @param olx     the tree origin x coordinate
+     * @param baseY   the trunk base Y
+     * @param olz     the tree origin z coordinate
+     * @param height  the trunk height
      */
-    fn stampSpruce(slot : i32, olx : i32, baseY : i32, olz : i32) : void {
-        let height : i32 = 6;
+    fn stampSpruce(slot : i32, olx : i32, baseY : i32, olz : i32, height : i32) : void {
         let cy : i32 = baseY + height;
         this.leafLayer(slot, olx, cy - 3, olz, 2, config::bLeavesSpruce);
         this.leafLayer(slot, olx, cy - 2, olz, 1, config::bLeavesSpruce);
@@ -653,13 +651,13 @@ class ChunkManager {
 
     /**
      * Flat-topped acacia: a tall trunk and a wide thin canopy.
-     * @param slot   the slot index
-     * @param olx    the tree origin x coordinate
-     * @param baseY  the trunk base Y
-     * @param olz    the tree origin z coordinate
+     * @param slot    the slot index
+     * @param olx     the tree origin x coordinate
+     * @param baseY   the trunk base Y
+     * @param olz     the tree origin z coordinate
+     * @param height  the trunk height
      */
-    fn stampAcacia(slot : i32, olx : i32, baseY : i32, olz : i32) : void {
-        let height : i32 = 5;
+    fn stampAcacia(slot : i32, olx : i32, baseY : i32, olz : i32, height : i32) : void {
         let cy : i32 = baseY + height;
         this.leafLayer(slot, olx, cy, olz, 2, config::bLeavesAcacia);
         this.leafLayer(slot, olx, cy + 1, olz, 1, config::bLeavesAcacia);

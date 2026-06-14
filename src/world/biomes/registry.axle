@@ -1,10 +1,14 @@
-// registry — owns one instance of every biome class and dispatches the
+// registry — owns one instance of every biome class and answers the
 // per-biome queries by id, plus the climate selector `biomeAt`.
 //
-// Axle has no virtual dispatch, so each biome is held as its concrete
-// subclass type here; the `if` ladder calls the right override. Add a
-// biome: a class under biomes/, a field + `new` here, and a branch in each
-// dispatch method (and in `biomeAt`).
+// Axle field access is not virtual, so `byId(b)` resolves a biome id to its
+// instance once (as a base `Biome`) and the data accessors (`filler`,
+// `treeThreshold`, `treeKind`, `treeHeight`) just read the fields off it —
+// no per-trait dispatch ladder. `surface` is the one method that varies by
+// receiver type, so it keeps an explicit by-id dispatch.
+//
+// Add a biome: a class under biomes/, a field + `new` here, and a branch in
+// `byId` + `surface` (and in `biomeAt`).
 
 use crate::world::biomes::Biome;
 use crate::world::biomes::plains::Plains;
@@ -39,9 +43,7 @@ class Biomes {
     ocean : Ocean,
     frozen : FrozenOcean,
 
-    /**
-     * Construct the registry, instantiating one of every biome.
-     */
+    /** Construct the registry, instantiating one of every biome. */
     constructor() {
         this.plains = new Plains();
         this.forest = new Forest();
@@ -60,7 +62,56 @@ class Biomes {
     }
 
     /**
-     * Surface block for biome `b` at the given column height.
+     * The biome instance for id `b`, as a base `Biome` (for its data fields).
+     * @param b  the biome id
+     * @return the biome instance
+     */
+    fn byId(b : i32) : Biome {
+        if (b == config::biPlains) {
+            return this.plains as Biome;
+        }
+        if (b == config::biForest) {
+            return this.forest as Biome;
+        }
+        if (b == config::biBirchForest) {
+            return this.birch as Biome;
+        }
+        if (b == config::biTaiga) {
+            return this.taiga as Biome;
+        }
+        if (b == config::biJungle) {
+            return this.jungle as Biome;
+        }
+        if (b == config::biSavanna) {
+            return this.savanna as Biome;
+        }
+        if (b == config::biDesert) {
+            return this.desert as Biome;
+        }
+        if (b == config::biBadlands) {
+            return this.badlands as Biome;
+        }
+        if (b == config::biSwamp) {
+            return this.swamp as Biome;
+        }
+        if (b == config::biSnowy) {
+            return this.snowy as Biome;
+        }
+        if (b == config::biMountain) {
+            return this.mountain as Biome;
+        }
+        if (b == config::biBeach) {
+            return this.beach as Biome;
+        }
+        if (b == config::biFrozenOcean) {
+            return this.frozen as Biome;
+        }
+        return this.ocean as Biome;
+    }
+
+    /**
+     * Surface block for biome `b` at the given column height. Dispatched by
+     * id because several biomes pick the top block from the height.
      * @param b       the biome id
      * @param height  the column's surface height
      * @return the surface block id
@@ -114,46 +165,7 @@ class Biomes {
      * @return the filler block id
      */
     fn filler(b : i32) : i32 {
-        if (b == config::biPlains) {
-            return this.plains.filler();
-        }
-        if (b == config::biForest) {
-            return this.forest.filler();
-        }
-        if (b == config::biBirchForest) {
-            return this.birch.filler();
-        }
-        if (b == config::biTaiga) {
-            return this.taiga.filler();
-        }
-        if (b == config::biJungle) {
-            return this.jungle.filler();
-        }
-        if (b == config::biSavanna) {
-            return this.savanna.filler();
-        }
-        if (b == config::biDesert) {
-            return this.desert.filler();
-        }
-        if (b == config::biBadlands) {
-            return this.badlands.filler();
-        }
-        if (b == config::biSwamp) {
-            return this.swamp.filler();
-        }
-        if (b == config::biSnowy) {
-            return this.snowy.filler();
-        }
-        if (b == config::biMountain) {
-            return this.mountain.filler();
-        }
-        if (b == config::biBeach) {
-            return this.beach.filler();
-        }
-        if (b == config::biFrozenOcean) {
-            return this.frozen.filler();
-        }
-        return this.ocean.filler();
+        return this.byId(b).fillerBlock;
     }
 
     /**
@@ -162,46 +174,7 @@ class Biomes {
      * @return the tree-placement threshold
      */
     fn treeThreshold(b : i32) : f64 {
-        if (b == config::biPlains) {
-            return this.plains.treeThreshold();
-        }
-        if (b == config::biForest) {
-            return this.forest.treeThreshold();
-        }
-        if (b == config::biBirchForest) {
-            return this.birch.treeThreshold();
-        }
-        if (b == config::biTaiga) {
-            return this.taiga.treeThreshold();
-        }
-        if (b == config::biJungle) {
-            return this.jungle.treeThreshold();
-        }
-        if (b == config::biSavanna) {
-            return this.savanna.treeThreshold();
-        }
-        if (b == config::biDesert) {
-            return this.desert.treeThreshold();
-        }
-        if (b == config::biBadlands) {
-            return this.badlands.treeThreshold();
-        }
-        if (b == config::biSwamp) {
-            return this.swamp.treeThreshold();
-        }
-        if (b == config::biSnowy) {
-            return this.snowy.treeThreshold();
-        }
-        if (b == config::biMountain) {
-            return this.mountain.treeThreshold();
-        }
-        if (b == config::biBeach) {
-            return this.beach.treeThreshold();
-        }
-        if (b == config::biFrozenOcean) {
-            return this.frozen.treeThreshold();
-        }
-        return this.ocean.treeThreshold();
+        return this.byId(b).treeThresh;
     }
 
     /**
@@ -210,46 +183,16 @@ class Biomes {
      * @return the tree kind id
      */
     fn treeKind(b : i32) : i32 {
-        if (b == config::biPlains) {
-            return this.plains.treeKind();
-        }
-        if (b == config::biForest) {
-            return this.forest.treeKind();
-        }
-        if (b == config::biBirchForest) {
-            return this.birch.treeKind();
-        }
-        if (b == config::biTaiga) {
-            return this.taiga.treeKind();
-        }
-        if (b == config::biJungle) {
-            return this.jungle.treeKind();
-        }
-        if (b == config::biSavanna) {
-            return this.savanna.treeKind();
-        }
-        if (b == config::biDesert) {
-            return this.desert.treeKind();
-        }
-        if (b == config::biBadlands) {
-            return this.badlands.treeKind();
-        }
-        if (b == config::biSwamp) {
-            return this.swamp.treeKind();
-        }
-        if (b == config::biSnowy) {
-            return this.snowy.treeKind();
-        }
-        if (b == config::biMountain) {
-            return this.mountain.treeKind();
-        }
-        if (b == config::biBeach) {
-            return this.beach.treeKind();
-        }
-        if (b == config::biFrozenOcean) {
-            return this.frozen.treeKind();
-        }
-        return this.ocean.treeKind();
+        return this.byId(b).treeKindId;
+    }
+
+    /**
+     * Trunk height of biome `b`'s tree.
+     * @param b  the biome id
+     * @return the trunk height
+     */
+    fn treeHeight(b : i32) : i32 {
+        return this.byId(b).treeHt;
     }
 }
 

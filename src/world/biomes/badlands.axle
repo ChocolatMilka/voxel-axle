@@ -4,11 +4,10 @@ use crate::world::biomes::Biome;
 use crate::config;
 
 class Badlands extends Biome {
-    /**
-     * Construct the badlands biome.
-     */
+    /** Construct the badlands biome (red sandstone filler, no trees). */
     constructor() {
         super();
+        this.fillerBlock = config::bRedSandstone;
     }
 
     /**
@@ -29,13 +28,4 @@ class Badlands extends Biome {
         }
         return config::bTerracottaWhite;
     }
-
-    /**
-     * Sub-surface filler block.
-     * @return the filler block id
-     */
-    fn filler() : i32 {
-        return config::bRedSandstone;
-    }
-    // treeThreshold / treeKind default to none.
 }

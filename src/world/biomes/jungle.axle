@@ -4,11 +4,12 @@ use crate::world::biomes::Biome;
 use crate::config;
 
 class Jungle extends Biome {
-    /**
-     * Construct the jungle biome.
-     */
+    /** Construct the jungle biome. */
     constructor() {
         super();
+        this.treeThresh = 0.865;
+        this.treeKindId = config::treeJungle;
+        this.treeHt = 8;
     }
 
     /**
@@ -18,29 +19,5 @@ class Jungle extends Biome {
      */
     fn surface(height : i32) : i32 {
         return config::bGrassJungle;
-    }
-
-    /**
-     * Sub-surface filler block.
-     * @return the filler block id
-     */
-    fn filler() : i32 {
-        return config::bDirt;
-    }
-
-    /**
-     * A column grows a tree when its tree-hash exceeds this.
-     * @return the tree-placement threshold
-     */
-    fn treeThreshold() : f64 {
-        return 0.865;
-    }
-
-    /**
-     * Which tree to stamp.
-     * @return the tree kind id
-     */
-    fn treeKind() : i32 {
-        return config::treeJungle;
     }
 }

@@ -1,49 +1,42 @@
-// Biome — base class every biome extends. Subclasses (under biomes/) override
-// only what differs; the defaults here describe a plain grass biome with no
-// trees.
+// Biome — base class every biome extends. Subclasses (under biomes/) set their
+// parameters in the constructor and override only what is *behavioural*.
 //
-// Axle resolves methods by the receiver's *declared* type (no virtual
-// dispatch), so the registry holds each biome as its concrete subclass type
-// and dispatches by id — see biomes/registry.axle.
+// Most per-biome traits are plain DATA, so they live as fields set in each
+// constructor — `fillerBlock`, the tree-placement threshold `treeThresh`, the
+// `treeKindId` to stamp and its trunk height `treeHt`. The registry reads them
+// straight off a base `Biome` reference (field access is not virtual in Axle,
+// so it returns the subclass's value), which is why a single `byId` lookup
+// replaces a per-trait dispatch ladder — see biomes/registry.axle.
+//
+// `surface(height)` stays a method: several biomes pick the top block from the
+// column height (snow caps, banded mesa, ocean floor), and method calls *are*
+// resolved by the receiver's declared type, so the registry dispatches it by id.
 
 use crate::config;
 
 class Biome {
-    /**
-     * Construct the base biome.
-     */
-    constructor() {}
+    fillerBlock : i32,   // block a few voxels below the surface
+    treeThresh : f64,    // a column grows a tree when its tree-hash exceeds this (≥1.1 = none)
+    treeKindId : i32,    // which tree to stamp (config::tree*)
+    treeHt : i32,        // trunk height for that tree
 
     /**
-     * Top block, given the column's surface height.
+     * Construct the base biome: dirt filler, no trees. Subclasses override
+     * these fields in their own constructor after calling `super()`.
+     */
+    constructor() {
+        this.fillerBlock = config::bDirt;
+        this.treeThresh = 1.1;
+        this.treeKindId = config::treeNone;
+        this.treeHt = 0;
+    }
+
+    /**
+     * Top block, given the column's surface height. Default: grass.
      * @param height  the column's surface height
      * @return the surface block id
      */
     fn surface(height : i32) : i32 {
         return config::bGrass;
-    }
-
-    /**
-     * The few blocks just under the surface.
-     * @return the filler block id
-     */
-    fn filler() : i32 {
-        return config::bDirt;
-    }
-
-    /**
-     * A column grows a tree when its tree-hash exceeds this (1.1 = none).
-     * @return the tree-placement threshold
-     */
-    fn treeThreshold() : f64 {
-        return 1.1;
-    }
-
-    /**
-     * Which tree to stamp (see config::tree*).
-     * @return the tree kind id
-     */
-    fn treeKind() : i32 {
-        return config::treeNone;
     }
 }

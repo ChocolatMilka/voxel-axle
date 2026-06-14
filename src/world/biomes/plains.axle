@@ -1,46 +1,15 @@
-// Plains — flat green grassland with sparse oaks.
+// Plains — flat green grassland with sparse oaks. Grass surface + dirt filler
+// are the base defaults, so only the tree parameters differ.
 
 use crate::world::biomes::Biome;
 use crate::config;
 
 class Plains extends Biome {
-    /**
-     * Construct the plains biome.
-     */
+    /** Construct the plains biome. */
     constructor() {
         super();
-    }
-
-    /**
-     * Top block: grass.
-     * @param height  the column's surface height
-     * @return the surface block id
-     */
-    fn surface(height : i32) : i32 {
-        return config::bGrass;
-    }
-
-    /**
-     * Sub-surface filler block.
-     * @return the filler block id
-     */
-    fn filler() : i32 {
-        return config::bDirt;
-    }
-
-    /**
-     * A column grows a tree when its tree-hash exceeds this.
-     * @return the tree-placement threshold
-     */
-    fn treeThreshold() : f64 {
-        return 0.992;
-    }
-
-    /**
-     * Which tree to stamp.
-     * @return the tree kind id
-     */
-    fn treeKind() : i32 {
-        return config::treeOak;
+        this.treeThresh = 0.992;
+        this.treeKindId = config::treeOak;
+        this.treeHt = 4;
     }
 }

@@ -4,11 +4,13 @@ use crate::world::biomes::Biome;
 use crate::config;
 
 class Mountain extends Biome {
-    /**
-     * Construct the mountain biome.
-     */
+    /** Construct the mountain biome. */
     constructor() {
         super();
+        this.fillerBlock = config::bStone;
+        this.treeThresh = 1.05;    // rare
+        this.treeKindId = config::treeSpruce;
+        this.treeHt = 6;
     }
 
     /**
@@ -24,29 +26,5 @@ class Mountain extends Biome {
             return config::bStone;
         }
         return config::bGrass;
-    }
-
-    /**
-     * Sub-surface filler block.
-     * @return the filler block id
-     */
-    fn filler() : i32 {
-        return config::bStone;
-    }
-
-    /**
-     * A column grows a tree when its tree-hash exceeds this.
-     * @return the tree-placement threshold
-     */
-    fn treeThreshold() : f64 {
-        return 1.05;    // rare
-    }
-
-    /**
-     * Which tree to stamp.
-     * @return the tree kind id
-     */
-    fn treeKind() : i32 {
-        return config::treeSpruce;
     }
 }

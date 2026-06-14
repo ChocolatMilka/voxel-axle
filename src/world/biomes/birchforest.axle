@@ -4,43 +4,11 @@ use crate::world::biomes::Biome;
 use crate::config;
 
 class BirchForest extends Biome {
-    /**
-     * Construct the birch forest biome.
-     */
+    /** Construct the birch forest biome. */
     constructor() {
         super();
-    }
-
-    /**
-     * Top block: grass.
-     * @param height  the column's surface height
-     * @return the surface block id
-     */
-    fn surface(height : i32) : i32 {
-        return config::bGrass;
-    }
-
-    /**
-     * Sub-surface filler block.
-     * @return the filler block id
-     */
-    fn filler() : i32 {
-        return config::bDirt;
-    }
-
-    /**
-     * A column grows a tree when its tree-hash exceeds this.
-     * @return the tree-placement threshold
-     */
-    fn treeThreshold() : f64 {
-        return 0.930;
-    }
-
-    /**
-     * Which tree to stamp.
-     * @return the tree kind id
-     */
-    fn treeKind() : i32 {
-        return config::treeBirch;
+        this.treeThresh = 0.930;
+        this.treeKindId = config::treeBirch;
+        this.treeHt = 6;
     }
 }

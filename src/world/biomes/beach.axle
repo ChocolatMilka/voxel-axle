@@ -4,11 +4,10 @@ use crate::world::biomes::Biome;
 use crate::config;
 
 class Beach extends Biome {
-    /**
-     * Construct the beach biome.
-     */
+    /** Construct the beach biome (sand filler, no trees). */
     constructor() {
         super();
+        this.fillerBlock = config::bSand;
     }
 
     /**
@@ -19,13 +18,4 @@ class Beach extends Biome {
     fn surface(height : i32) : i32 {
         return config::bSand;
     }
-
-    /**
-     * Sub-surface filler block.
-     * @return the filler block id
-     */
-    fn filler() : i32 {
-        return config::bSand;
-    }
-    // treeThreshold / treeKind default to none.
 }

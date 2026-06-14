@@ -4,11 +4,13 @@ use crate::world::biomes::Biome;
 use crate::config;
 
 class Desert extends Biome {
-    /**
-     * Construct the desert biome.
-     */
+    /** Construct the desert biome. */
     constructor() {
         super();
+        this.fillerBlock = config::bSandstone;
+        this.treeThresh = 0.992;
+        this.treeKindId = config::treeCactus;
+        this.treeHt = 3;
     }
 
     /**
@@ -18,29 +20,5 @@ class Desert extends Biome {
      */
     fn surface(height : i32) : i32 {
         return config::bSand;
-    }
-
-    /**
-     * Sub-surface filler block.
-     * @return the filler block id
-     */
-    fn filler() : i32 {
-        return config::bSandstone;
-    }
-
-    /**
-     * A column grows a tree when its tree-hash exceeds this.
-     * @return the tree-placement threshold
-     */
-    fn treeThreshold() : f64 {
-        return 0.992;
-    }
-
-    /**
-     * Which tree to stamp.
-     * @return the tree kind id
-     */
-    fn treeKind() : i32 {
-        return config::treeCactus;
     }
 }

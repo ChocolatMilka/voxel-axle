@@ -4,11 +4,12 @@ use crate::world::biomes::Biome;
 use crate::config;
 
 class Swamp extends Biome {
-    /**
-     * Construct the swamp biome.
-     */
+    /** Construct the swamp biome. */
     constructor() {
         super();
+        this.treeThresh = 0.985;
+        this.treeKindId = config::treeOak;
+        this.treeHt = 4;
     }
 
     /**
@@ -18,29 +19,5 @@ class Swamp extends Biome {
      */
     fn surface(height : i32) : i32 {
         return config::bGrassSwamp;
-    }
-
-    /**
-     * Sub-surface filler block.
-     * @return the filler block id
-     */
-    fn filler() : i32 {
-        return config::bDirt;
-    }
-
-    /**
-     * A column grows a tree when its tree-hash exceeds this.
-     * @return the tree-placement threshold
-     */
-    fn treeThreshold() : f64 {
-        return 0.985;
-    }
-
-    /**
-     * Which tree to stamp.
-     * @return the tree kind id
-     */
-    fn treeKind() : i32 {
-        return config::treeOak;
     }
 }

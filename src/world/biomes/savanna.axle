@@ -4,11 +4,12 @@ use crate::world::biomes::Biome;
 use crate::config;
 
 class Savanna extends Biome {
-    /**
-     * Construct the savanna biome.
-     */
+    /** Construct the savanna biome. */
     constructor() {
         super();
+        this.treeThresh = 0.993;
+        this.treeKindId = config::treeAcacia;
+        this.treeHt = 5;
     }
 
     /**
@@ -18,29 +19,5 @@ class Savanna extends Biome {
      */
     fn surface(height : i32) : i32 {
         return config::bGrassSavanna;
-    }
-
-    /**
-     * Sub-surface filler block.
-     * @return the filler block id
-     */
-    fn filler() : i32 {
-        return config::bDirt;
-    }
-
-    /**
-     * A column grows a tree when its tree-hash exceeds this.
-     * @return the tree-placement threshold
-     */
-    fn treeThreshold() : f64 {
-        return 0.993;
-    }
-
-    /**
-     * Which tree to stamp.
-     * @return the tree kind id
-     */
-    fn treeKind() : i32 {
-        return config::treeAcacia;
     }
 }

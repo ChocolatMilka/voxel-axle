@@ -4,11 +4,10 @@ use crate::world::biomes::Biome;
 use crate::config;
 
 class Ocean extends Biome {
-    /**
-     * Construct the ocean biome.
-     */
+    /** Construct the ocean biome (sand filler, no trees). */
     constructor() {
         super();
+        this.fillerBlock = config::bSand;
     }
 
     /**
@@ -22,13 +21,4 @@ class Ocean extends Biome {
         }
         return config::bSand;
     }
-
-    /**
-     * Sub-surface filler block.
-     * @return the filler block id
-     */
-    fn filler() : i32 {
-        return config::bSand;
-    }
-    // treeThreshold / treeKind default to none.
 }

@@ -5,11 +5,10 @@ use crate::world::biomes::Biome;
 use crate::config;
 
 class FrozenOcean extends Biome {
-    /**
-     * Construct the frozen ocean biome.
-     */
+    /** Construct the frozen ocean biome (sand filler, no trees). */
     constructor() {
         super();
+        this.fillerBlock = config::bSand;
     }
 
     /**
@@ -23,13 +22,4 @@ class FrozenOcean extends Biome {
         }
         return config::bSand;
     }
-
-    /**
-     * Sub-surface filler block.
-     * @return the filler block id
-     */
-    fn filler() : i32 {
-        return config::bSand;
-    }
-    // treeThreshold / treeKind default to none.
 }
