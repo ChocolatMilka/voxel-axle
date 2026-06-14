@@ -1,18 +1,24 @@
-// audio — software mixer over a SINGLE SDL2 audio device.
+// audio — software mixer over a SINGLE SDL2 audio device, with live 3D
+// distance attenuation.
 //
 // SDL only opens a handful of audio devices at once, so one-device-per-sound
 // does not scale to footsteps + mobs + creeper + ambience. Instead every clip
 // is decoded once into raw PCM (no device of its own), and one `Mixer` owns the
 // only device. Active clips are tracked as "voices"; once per frame `pump()`
 // mixes the live voices into a scratch buffer and queues it (push model, so no
-// audio-thread callback and no locking — play() and pump() run on the main
-// thread). Unlimited overlap, one device.
+// audio-thread callback and no locking — everything runs on the main thread).
+//
+// A voice can be positional: it carries a world position and an audible range,
+// and `pump()` recomputes its gain from the CURRENT listener position every
+// block. So a sound fades as the player walks away from its source mid-playback,
+// not just at trigger time. Non-positional voices (the player's own footsteps,
+// hurt, splash, ambience) play at a fixed gain.
 //
 // All clips share the device format: 44.1 kHz mono signed-16 (the converter,
 // tools/convert_sounds.py, emits exactly that), so mixing is a plain add.
 // Requires SDL_INIT_AUDIO.
 
-use std::numeric::math::floorToInt;
+use std::numeric::math::{floorToInt, sqrt};
 use crate::platform::mem::{allocBytes, nullPtr, asPtr, isNull, readI32, readI64, readI16, writeI16, writeU8};
 
 @link_name("SDL_RWFromFile")         native fn SDL_RWFromFile(file : string, mode : string) : ptr;
@@ -77,10 +83,19 @@ class Mixer {
     ok : i32,
     vbuf : i64[],   // each voice's PCM base (0 = free)
     vlen : i32[],   // total samples of the voice's clip
-    vpos : i32[],   // current sample index
-    vvol : i32[],   // fixed-point volume, 0..256
+    vcur : i32[],   // current sample index
+    vbase : f64[],  // base gain 0..1 (before distance attenuation)
+    vpf : i32[],    // 1 = positional (attenuated by listener distance)
+    vpx : f64[],    // world position of the source
+    vpy : f64[],
+    vpz : f64[],
+    vmax : f64[],   // audible range in blocks
     vact : i32[],   // 1 while playing
+    vblk : i32[],   // per-block resolved volume (reused scratch)
     vN : i32,
+    lx : f64,       // listener position
+    ly : f64,
+    lz : f64,
     out : i64,      // mix scratch (S16)
 
     /** Open the single 44.1 kHz mono S16 device and clear the voice pool. */
@@ -90,14 +105,23 @@ class Mixer {
         this.vN = MAX_VOICES;
         this.vbuf = malloc<i64>(MAX_VOICES);
         this.vlen = malloc<i32>(MAX_VOICES);
-        this.vpos = malloc<i32>(MAX_VOICES);
-        this.vvol = malloc<i32>(MAX_VOICES);
+        this.vcur = malloc<i32>(MAX_VOICES);
+        this.vbase = malloc<f64>(MAX_VOICES);
+        this.vpf = malloc<i32>(MAX_VOICES);
+        this.vpx = malloc<f64>(MAX_VOICES);
+        this.vpy = malloc<f64>(MAX_VOICES);
+        this.vpz = malloc<f64>(MAX_VOICES);
+        this.vmax = malloc<f64>(MAX_VOICES);
         this.vact = malloc<i32>(MAX_VOICES);
+        this.vblk = malloc<i32>(MAX_VOICES);
         let i : i32 = 0;
         while (i < this.vN) {
             this.vact[i] = 0;
             i = i + 1;
         }
+        this.lx = 0.0;
+        this.ly = 0.0;
+        this.lz = 0.0;
         this.out = allocBytes((QUEUE_BURST as i64) * 2);
 
         // Desired SDL_AudioSpec: freq@0, format@4 (AUDIO_S16LSB=0x8010),
@@ -122,46 +146,114 @@ class Mixer {
     }
 
     /**
-     * Start a clip as a new voice at gain `vol` in [0, 1]. Reuses a free slot,
-     * or steals slot 0 if all are busy. Silent / failed mixers are no-ops.
+     * Update the listener (player) position used to attenuate positional
+     * voices. Call once per frame.
+     * @param x  listener x
+     * @param y  listener y
+     * @param z  listener z
+     */
+    fn setListener(x : f64, y : f64, z : f64) : void {
+        this.lx = x;
+        this.ly = y;
+        this.lz = z;
+    }
+
+    /**
+     * Reserve a voice slot (a free one, or slot 0 if all are busy).
+     * @return the slot index
+     */
+    fn allocVoice() : i32 {
+        let i : i32 = 0;
+        while (i < this.vN) {
+            if (this.vact[i] == 0) {
+                return i;
+            }
+            i = i + 1;
+        }
+        return 0;
+    }
+
+    /**
+     * Start a non-positional clip (fixed gain), e.g. the player's own sounds.
      * @param buf      the clip's PCM base
      * @param samples  the clip's sample count
-     * @param vol      playback gain in [0, 1]
+     * @param gain     playback gain in [0, 1]
      */
-    fn play(buf : i64, samples : i32, vol : f64) : void {
-        if (this.ok == 0 || buf == 0 || samples <= 0) {
+    fn play(buf : i64, samples : i32, gain : f64) : void {
+        if (this.ok == 0 || buf == 0 || samples <= 0 || gain <= 0.0) {
             return;
         }
-        let v256 : i32 = floorToInt(vol * 256.0) as i32;
-        if (v256 <= 0) {
+        let s : i32 = this.allocVoice();
+        this.vbuf[s] = buf;
+        this.vlen[s] = samples;
+        this.vcur[s] = 0;
+        this.vbase[s] = gain;
+        this.vpf[s] = 0;
+        this.vact[s] = 1;
+    }
+
+    /**
+     * Start a positional clip: its gain follows the listener distance every
+     * frame, fading to silence at `maxDist`.
+     * @param buf      the clip's PCM base
+     * @param samples  the clip's sample count
+     * @param gain     base gain in [0, 1] (at the source)
+     * @param px       source world x
+     * @param py       source world y
+     * @param pz       source world z
+     * @param maxDist  audible range in blocks
+     */
+    fn playPos(buf : i64, samples : i32, gain : f64, px : f64, py : f64, pz : f64, maxDist : f64) : void {
+        if (this.ok == 0 || buf == 0 || samples <= 0 || gain <= 0.0) {
             return;
+        }
+        let s : i32 = this.allocVoice();
+        this.vbuf[s] = buf;
+        this.vlen[s] = samples;
+        this.vcur[s] = 0;
+        this.vbase[s] = gain;
+        this.vpf[s] = 1;
+        this.vpx[s] = px;
+        this.vpy[s] = py;
+        this.vpz[s] = pz;
+        this.vmax[s] = maxDist;
+        this.vact[s] = 1;
+    }
+
+    /**
+     * Current 0..256 mix volume of voice `v` (base gain folded with distance
+     * attenuation for positional voices).
+     * @param v  the voice index
+     * @return the fixed-point volume in [0, 256]
+     */
+    fn voiceVol(v : i32) : i32 {
+        let g : f64 = this.vbase[v];
+        if (this.vpf[v] == 1) {
+            let dx : f64 = this.vpx[v] - this.lx;
+            let dy : f64 = this.vpy[v] - this.ly;
+            let dz : f64 = this.vpz[v] - this.lz;
+            let d : f64 = sqrt(dx * dx + dy * dy + dz * dz);
+            let mx : f64 = this.vmax[v];
+            if (d >= mx) {
+                return 0;
+            }
+            let t : f64 = 1.0 - d / mx;
+            g = g * t * t;
+        }
+        let v256 : i32 = floorToInt(g * 256.0) as i32;
+        if (v256 < 0) {
+            v256 = 0;
         }
         if (v256 > 256) {
             v256 = 256;
         }
-        let slot : i32 = 0 - 1;
-        let i : i32 = 0;
-        while (i < this.vN) {
-            if (this.vact[i] == 0) {
-                slot = i;
-                i = this.vN;
-            } else {
-                i = i + 1;
-            }
-        }
-        if (slot < 0) {
-            slot = 0;
-        }
-        this.vbuf[slot] = buf;
-        this.vlen[slot] = samples;
-        this.vpos[slot] = 0;
-        this.vvol[slot] = v256;
-        this.vact[slot] = 1;
+        return v256;
     }
 
     /**
      * Top the device queue back up to ~QUEUE_TARGET samples, mixing every live
-     * voice into the freshly generated block. Call once per frame.
+     * voice (at its current attenuated gain) into the freshly generated block.
+     * Call once per frame, after setListener.
      */
     fn pump() : void {
         if (this.ok == 0) {
@@ -175,16 +267,24 @@ class Mixer {
         if (need > QUEUE_BURST) {
             need = QUEUE_BURST;
         }
+        // Resolve each voice's volume once for this block (reused scratch).
+        let k : i32 = 0;
+        while (k < this.vN) {
+            if (this.vact[k] == 1) {
+                this.vblk[k] = this.voiceVol(k);
+            }
+            k = k + 1;
+        }
         let s : i32 = 0;
         while (s < need) {
             let acc : i32 = 0;
             let v : i32 = 0;
             while (v < this.vN) {
                 if (this.vact[v] == 1) {
-                    let smp : i32 = readI16(this.vbuf[v], (this.vpos[v] as i64) * 2);
-                    acc = acc + smp * this.vvol[v] / 256;
-                    this.vpos[v] = this.vpos[v] + 1;
-                    if (this.vpos[v] >= this.vlen[v]) {
+                    let smp : i32 = readI16(this.vbuf[v], (this.vcur[v] as i64) * 2);
+                    acc = acc + smp * this.vblk[v] / 256;
+                    this.vcur[v] = this.vcur[v] + 1;
+                    if (this.vcur[v] >= this.vlen[v]) {
                         this.vact[v] = 0;
                     }
                 }
@@ -210,8 +310,7 @@ class SoundBank {
 
     /**
      * An empty bank holding up to `cap` variants. Playback goes through the
-     * caller's shared `Mixer` (passed to playIdx / playRand), so the bank
-     * itself owns no device and no mixer reference.
+     * caller's shared `Mixer`, so the bank owns no device.
      * @param cap  maximum number of variants
      */
     constructor(cap : i32) {
@@ -253,28 +352,13 @@ class SoundBank {
     }
 
     /**
-     * Play variant `i` through `mixer` at gain `vol` in [0, 1].
-     * @param mixer  the shared mixer to play through
-     * @param i      the variant index
-     * @param vol    playback gain in [0, 1]
+     * Index of the variant selected by `rnd` (in [0,1)), or -1 if empty.
+     * @param rnd  selector in [0, 1)
+     * @return the variant index, or -1
      */
-    fn playIdx(mixer : Mixer, i : i32, vol : f64) : void {
-        if (i < 0 || i >= this.n) {
-            return;
-        }
-        let c : Clip = this.clips[i];
-        mixer.play(c.buf, c.samples, vol);
-    }
-
-    /**
-     * Play a variant chosen by `rnd` (in [0,1)) through `mixer` at gain `vol`.
-     * @param mixer  the shared mixer to play through
-     * @param rnd    selector in [0, 1)
-     * @param vol    playback gain in [0, 1]
-     */
-    fn playRand(mixer : Mixer, rnd : f64, vol : f64) : void {
+    fn pick(rnd : f64) : i32 {
         if (this.n <= 0) {
-            return;
+            return 0 - 1;
         }
         let i : i32 = floorToInt(rnd * (this.n as f64)) as i32;
         if (i >= this.n) {
@@ -283,7 +367,42 @@ class SoundBank {
         if (i < 0) {
             i = 0;
         }
-        this.playIdx(mixer, i, vol);
+        return i;
+    }
+
+    /**
+     * Play a random variant through `mixer` at a fixed (non-positional) gain.
+     * @param mixer  the shared mixer
+     * @param rnd    selector in [0, 1)
+     * @param gain   playback gain in [0, 1]
+     */
+    fn playRand(mixer : Mixer, rnd : f64, gain : f64) : void {
+        let i : i32 = this.pick(rnd);
+        if (i < 0) {
+            return;
+        }
+        let c : Clip = this.clips[i];
+        mixer.play(c.buf, c.samples, gain);
+    }
+
+    /**
+     * Play a random variant through `mixer` as a positional source, attenuated
+     * live by listener distance.
+     * @param mixer    the shared mixer
+     * @param rnd      selector in [0, 1)
+     * @param gain     base gain in [0, 1] at the source
+     * @param px       source world x
+     * @param py       source world y
+     * @param pz       source world z
+     * @param maxDist  audible range in blocks
+     */
+    fn playRandPos(mixer : Mixer, rnd : f64, gain : f64, px : f64, py : f64, pz : f64, maxDist : f64) : void {
+        let i : i32 = this.pick(rnd);
+        if (i < 0) {
+            return;
+        }
+        let c : Clip = this.clips[i];
+        mixer.playPos(c.buf, c.samples, gain, px, py, pz, maxDist);
     }
 }
 

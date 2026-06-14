@@ -14,7 +14,7 @@ use crate::entities::creeper::Creeper;
 use crate::entities::player::Player;
 use crate::world::manager::ChunkManager;
 use crate::world::noise::hash2;
-use crate::game::sfx::{AudioManager, dist3};
+use crate::game::sfx::AudioManager;
 use crate::config;
 
 class MobManager {
@@ -189,8 +189,7 @@ class MobManager {
         }
         m.vocalTimer = m.vocalTimer - 1;
         if (m.vocalTimer <= 0) {
-            let d : f64 = dist3(m.posX, m.posY, m.posZ, player.posX, player.posY, player.posZ);
-            sfx.mobSay(m.kind, d, this.rand());
+            sfx.mobSay(m.kind, m.posX, m.posY, m.posZ, this.rand());
             m.vocalTimer = this.nextVocalDelay();
         }
     }
@@ -376,8 +375,7 @@ class MobManager {
         let target : Mob = this.pick(bestArr, bestIdx);
         target.damage(config::attackDamage);
         target.flashHurt();
-        let d : f64 = dist3(target.posX, target.posY, target.posZ, player.posX, player.posY, player.posZ);
-        sfx.mobHurt(target.kind, d, this.rand());
+        sfx.mobHurt(target.kind, target.posX, target.posY, target.posZ, this.rand());
         let kind : i32 = target.kind;
         if (target.isAlive()) {
             target.panicFrom(player.posX, player.posZ);

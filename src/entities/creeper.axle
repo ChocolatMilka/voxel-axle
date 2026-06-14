@@ -60,7 +60,7 @@ class Creeper extends Mob {
             if (hostile && dist <= config::creeperTriggerDist) {
                 this.fuse = config::creeperFuseFrames;
                 this.tick(world, 0.0, 0.0);
-                sfx.creeperFuse(dist);
+                sfx.creeperFuse(this.posX, this.posY, this.posZ);
                 return;
             }
             if (hostile && dist <= config::creeperChaseDist) {
@@ -84,7 +84,7 @@ class Creeper extends Mob {
         this.tick(world, 0.0, 0.0);
         if (this.fuse <= 0) {
             this.explode(world, player);
-            sfx.creeperBlast(dist);
+            sfx.creeperBlast(this.posX, this.posY, this.posZ);
         }
     }
 

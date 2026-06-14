@@ -27,7 +27,7 @@ use crate::entities::player::Player;
 use crate::entities::mobs::MobManager;
 use crate::game::start::{Spawn, openYaw};
 use crate::game::ray::{Picker, cellInPlayer};
-use crate::game::sfx::{AudioManager, dist3};
+use crate::game::sfx::AudioManager;
 use crate::gfx::render::Renderer;
 use crate::gfx::hud::drawHud;
 use crate::gfx::menu::{drawPauseMenu, menuHit};
@@ -322,9 +322,7 @@ fn main() : void {
                 if (kind < 0 && picker.hit == 1) {
                     let broken : i32 = man.worldGet(picker.bx, picker.by, picker.bz);
                     man.breakAt(picker.bx, picker.by, picker.bz);
-                    let bd : f64 = dist3(player.posX, player.posY, player.posZ,
-                        (picker.bx as f64) + 0.5, (picker.by as f64) + 0.5, (picker.bz as f64) + 0.5);
-                    sfx.blockEdit(broken, bd, mobs.rand());
+                    sfx.blockEdit(broken, picker.bx, picker.by, picker.bz, mobs.rand());
                 }
                 attackCd = config::editCooldown;
             }
@@ -333,9 +331,7 @@ fn main() : void {
                 if (!cellInPlayer(player, picker.px, picker.py, picker.pz)) {
                     let held : i32 = player.heldBlock();
                     man.placeAt(picker.px, picker.py, picker.pz, held);
-                    let pd : f64 = dist3(player.posX, player.posY, player.posZ,
-                        (picker.px as f64) + 0.5, (picker.py as f64) + 0.5, (picker.pz as f64) + 0.5);
-                    sfx.blockEdit(held, pd, mobs.rand());
+                    sfx.blockEdit(held, picker.px, picker.py, picker.pz, mobs.rand());
                 }
             }
             wasRight = rightDown;
@@ -398,7 +394,9 @@ fn main() : void {
         SDL_RenderClear(ren);
         SDL_RenderCopy(ren, tex, nullPtr(), nullPtr());
         SDL_RenderPresent(ren);
-        // Feed the audio mixer once per frame (drives all queued sound).
+        // Feed the audio mixer once per frame (drives all queued sound), with
+        // the listener at the player so positional sounds attenuate live.
+        sfx.setListener(player.posX, player.posY, player.posZ);
         sfx.pump();
         // Hold the loop to the tick rate (CPU cap independent of v-sync).
         clock.cap();

@@ -1,17 +1,17 @@
 // sfx — the game's audio orchestrator. Owns the single software Mixer and every
-// sound bank, and exposes semantic, position-aware play methods (footstep on a
-// material, breaking a block, a mob's voice, a hit, a splash, the creeper's
-// fuse / blast). Distance is folded in via `volForDist`, so a sound 10 blocks
-// away is quiet, not at full blast — callers pass the 3D distance.
+// sound bank, and exposes semantic play methods. Positional sounds (a mob's
+// voice, a dug block, the creeper's fuse / blast) carry their WORLD POSITION and
+// an audible range; the mixer attenuates them live against the listener set each
+// frame via `setListener`, so a sound fades as the player walks away — even
+// mid-playback. The player's own sounds (footstep, hurt, splash, ambience) are
+// non-positional and play at a fixed gain.
 //
-// Every clip is mixed through one device (see platform::audio::Mixer), so the
-// number of sounds is unbounded; `pump()` must be called once per frame to feed
-// that device. Footsteps and digs are grouped by material into one bank each
-// (random variant per call); ice with no footfall clip and any other gap fall
-// back to stone. Clips live under `sounds/` (next to the binary or one dir up —
-// the prefix is resolved once). Missing files are silent.
+// `pump()` must be called once per frame to feed the device. Footsteps and digs
+// are grouped by material into one bank each (random variant per call); ice with
+// no footfall clip and any other gap fall back to stone. Clips live under
+// `sounds/` (next to the binary or one dir up — the prefix is resolved once).
+// Missing files are silent.
 
-use std::numeric::math::sqrt;
 use crate::platform::audio::{Mixer, SoundBank};
 use crate::platform::file::fileExists;
 use crate::world::blocks::materialOf;
@@ -93,6 +93,7 @@ class AudioManager {
         this.playerHurtBank = this.bankFrom("player/hurt");
         this.splashBank = this.bankFrom("player/splash");
         this.ambientUWBank = this.bankFrom("ambient/underwater");
+
         // The creeper's charge / blast are single bespoke files (not numbered
         // variant folders), so load them directly.
         this.creeperChargeBank = new SoundBank(1);
@@ -126,27 +127,23 @@ class AudioManager {
         return b;
     }
 
-    /** Feed the audio device. Call once per frame. */
+    /**
+     * Set the listener (player) position for live distance attenuation.
+     * @param x  listener x
+     * @param y  listener y
+     * @param z  listener z
+     */
+    fn setListener(x : f64, y : f64, z : f64) : void {
+        this.mixer.setListener(x, y, z);
+    }
+
+    /** Feed the audio device. Call once per frame, after setListener. */
     fn pump() : void {
         this.mixer.pump();
     }
 
     /**
-     * Distance gain: 1 at the listener, easing to 0 at `maxDist` and beyond.
-     * @param d        distance from the listener, in blocks
-     * @param maxDist  range past which the sound is inaudible
-     * @return a gain in [0, 1]
-     */
-    fn volForDist(d : f64, maxDist : f64) : f64 {
-        if (d >= maxDist) {
-            return 0.0;
-        }
-        let t : f64 = 1.0 - d / maxDist;
-        return t * t;
-    }
-
-    /**
-     * Footstep for the block underfoot (the listener's own step, full range).
+     * Footstep for the block underfoot (the listener's own step, fixed gain).
      * @param blockId  the block stepped on
      * @param rnd      variant selector in [0, 1)
      */
@@ -160,63 +157,62 @@ class AudioManager {
     }
 
     /**
-     * Dig / place sound for a block, attenuated by distance.
+     * Dig / place sound at a block, attenuated live by distance.
      * @param blockId  the block broken or placed
-     * @param dist     distance from the listener, in blocks
+     * @param bx       block x
+     * @param by       block y
+     * @param bz       block z
      * @param rnd      variant selector in [0, 1)
      */
-    fn blockEdit(blockId : i32, dist : f64, rnd : f64) : void {
+    fn blockEdit(blockId : i32, bx : i32, by : i32, bz : i32, rnd : f64) : void {
         let mat : i32 = materialOf(blockId);
         let bank : SoundBank = this.digBanks[mat];
         if (!bank.loaded()) {
             bank = this.digBanks[config::matStone];
         }
-        bank.playRand(this.mixer, rnd, this.volForDist(dist, config::sndBreakDist) * config::volBreak);
+        bank.playRandPos(this.mixer, rnd, config::volBreak,
+            (bx as f64) + 0.5, (by as f64) + 0.5, (bz as f64) + 0.5, config::sndBreakDist);
     }
 
     /**
-     * A mob's idle voice, attenuated by distance.
+     * A mob's idle voice at its world position, attenuated live by distance.
      * @param kind  the mob kind (config::mob*)
-     * @param dist  distance from the listener, in blocks
+     * @param x     source x
+     * @param y     source y
+     * @param z     source z
      * @param rnd   variant selector in [0, 1)
      */
-    fn mobSay(kind : i32, dist : f64, rnd : f64) : void {
-        let v : f64 = this.volForDist(dist, config::sndMobDist) * config::volMob;
-        if (v <= 0.0) {
-            return;
-        }
+    fn mobSay(kind : i32, x : f64, y : f64, z : f64, rnd : f64) : void {
         if (kind == config::mobChicken) {
-            this.chickenSayBank.playRand(this.mixer, rnd, v);
+            this.chickenSayBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
         } else if (kind == config::mobCow) {
-            this.cowSayBank.playRand(this.mixer, rnd, v);
+            this.cowSayBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
         } else if (kind == config::mobSheep) {
-            this.sheepSayBank.playRand(this.mixer, rnd, v);
+            this.sheepSayBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
         }
     }
 
     /**
-     * A mob's hurt cry, attenuated by distance. Species without a dedicated
-     * clip fall back to the generic impact (player hurt) sound.
+     * A mob's hurt cry at its world position. Species without a dedicated clip
+     * fall back to the generic impact (player hurt) sound.
      * @param kind  the mob kind (config::mob*)
-     * @param dist  distance from the listener, in blocks
+     * @param x     source x
+     * @param y     source y
+     * @param z     source z
      * @param rnd   variant selector in [0, 1)
      */
-    fn mobHurt(kind : i32, dist : f64, rnd : f64) : void {
-        let v : f64 = this.volForDist(dist, config::sndMobDist) * config::volMob;
-        if (v <= 0.0) {
-            return;
-        }
+    fn mobHurt(kind : i32, x : f64, y : f64, z : f64, rnd : f64) : void {
         if (kind == config::mobChicken) {
-            this.chickenHurtBank.playRand(this.mixer, rnd, v);
+            this.chickenHurtBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
         } else if (kind == config::mobCow) {
-            this.cowHurtBank.playRand(this.mixer, rnd, v);
+            this.cowHurtBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
         } else {
-            this.playerHurtBank.playRand(this.mixer, rnd, v);
+            this.playerHurtBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
         }
     }
 
     /**
-     * The player taking damage.
+     * The player taking damage (non-positional).
      * @param rnd  variant selector in [0, 1)
      */
     fn playerHurt(rnd : f64) : void {
@@ -224,7 +220,7 @@ class AudioManager {
     }
 
     /**
-     * A splash as the player enters water.
+     * A splash as the player enters water (non-positional).
      * @param rnd  variant selector in [0, 1)
      */
     fn splash(rnd : f64) : void {
@@ -232,7 +228,7 @@ class AudioManager {
     }
 
     /**
-     * A soft underwater ambience while submerged.
+     * A soft underwater ambience while submerged (non-positional).
      * @param rnd  variant selector in [0, 1)
      */
     fn ambientUnderwater(rnd : f64) : void {
@@ -240,35 +236,22 @@ class AudioManager {
     }
 
     /**
-     * The creeper lighting its fuse, attenuated by distance.
-     * @param dist  distance from the listener, in blocks
+     * The creeper lighting its fuse, attenuated live by distance.
+     * @param x  creeper x
+     * @param y  creeper y
+     * @param z  creeper z
      */
-    fn creeperFuse(dist : f64) : void {
-        this.creeperChargeBank.playRand(this.mixer, 0.0, this.volForDist(dist, config::sndCreeperDist) * config::volCreeper);
+    fn creeperFuse(x : f64, y : f64, z : f64) : void {
+        this.creeperChargeBank.playRandPos(this.mixer, 0.0, config::volCreeper, x, y, z, config::sndCreeperDist);
     }
 
     /**
-     * The creeper detonating, attenuated by distance.
-     * @param dist  distance from the listener, in blocks
+     * The creeper detonating, attenuated live by distance.
+     * @param x  creeper x
+     * @param y  creeper y
+     * @param z  creeper z
      */
-    fn creeperBlast(dist : f64) : void {
-        this.creeperBlastBank.playRand(this.mixer, 0.0, this.volForDist(dist, config::sndCreeperDist) * config::volCreeper);
+    fn creeperBlast(x : f64, y : f64, z : f64) : void {
+        this.creeperBlastBank.playRandPos(this.mixer, 0.0, config::volCreeper, x, y, z, config::sndCreeperDist);
     }
-}
-
-/**
- * 3D distance between two points.
- * @param ax  first point x
- * @param ay  first point y
- * @param az  first point z
- * @param bx  second point x
- * @param by  second point y
- * @param bz  second point z
- * @return the Euclidean distance
- */
-fn dist3(ax : f64, ay : f64, az : f64, bx : f64, by : f64, bz : f64) : f64 {
-    let dx : f64 = ax - bx;
-    let dy : f64 = ay - by;
-    let dz : f64 = az - bz;
-    return sqrt(dx * dx + dy * dy + dz * dz);
 }
