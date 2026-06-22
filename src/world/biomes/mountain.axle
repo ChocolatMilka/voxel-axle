@@ -2,14 +2,15 @@
 
 use crate::world::biomes::Biome;
 use crate::config;
+use crate::config::{ Block, TreeKind };
 
 class Mountain extends Biome {
     /** Construct the mountain biome. */
     constructor() {
         super();
-        this.fillerBlock = config::bStone;
+        this.fillerBlock = Block::Stone;
         this.treeThresh = 1.05;    // rare
-        this.treeKindId = config::treeSpruce;
+        this.treeKindId = TreeKind::Spruce;
         this.treeHt = 6;
     }
 
@@ -18,13 +19,13 @@ class Mountain extends Biome {
      * @param height  the column's surface height
      * @return the surface block id
      */
-    fn surface(height : i32) : i32 {
+    fn surface(height : i32) : Block {
         if (height > config::seaLevel + 44) {
-            return config::bSnow;
+            return Block::Snow;
         }
         if (height > config::seaLevel + 38) {
-            return config::bStone;
+            return Block::Stone;
         }
-        return config::bGrass;
+        return Block::Grass;
     }
 }

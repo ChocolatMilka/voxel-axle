@@ -5,7 +5,6 @@
 // and resolves the player's melee against the nearest mob in view. The
 // world has no RNG, so the manager threads its own counter through a hash.
 
-use std::numeric::math::{sin, cos, floorToInt};
 use crate::entities::mob::Mob;
 use crate::entities::chicken::Chicken;
 use crate::entities::sheep::Sheep;
@@ -64,26 +63,21 @@ class MobManager {
     }
 
     /**
-     * The element at (arr, idx) as a base Mob, for the shared melee path
-     * (arr: 0 chicken, 1 sheep, 2 cow, 3 creeper).
-     * @param arr  species array selector (0 chicken, 1 sheep, 2 cow, 3 creeper)
+     * The element at (arr, idx) as a base Mob, for the shared melee path. The
+     * selector matches the `MobKind` discriminants (0 chicken, 1 sheep, 2 cow,
+     * 4 pig, 3 / default creeper).
+     * @param arr  species array selector (MobKind discriminant)
      * @param idx  index within that species array
      * @return the selected mob as a base Mob
      */
     fn pick(arr : i32, idx : i32) : Mob {
-        if (arr == 0) {
-            return this.chickens[idx] as Mob;
-        }
-        if (arr == 1) {
-            return this.sheep[idx] as Mob;
-        }
-        if (arr == 2) {
-            return this.cows[idx] as Mob;
-        }
-        if (arr == 4) {
-            return this.pigs[idx] as Mob;
-        }
-        return this.creepers[idx] as Mob;
+        return match arr {
+            0 => this.chickens[idx] as Mob,
+            1 => this.sheep[idx] as Mob,
+            2 => this.cows[idx] as Mob,
+            4 => this.pigs[idx] as Mob,
+            _ => this.creepers[idx] as Mob,
+        };
     }
 
     // ── Render accessors (so the renderer needs only the Mob type) ──
@@ -144,8 +138,8 @@ class MobManager {
             return false;
         }
         let a : f64 = this.rand() * 6.2831853;
-        let ca : f64 = cos(a);
-        let sa : f64 = sin(a);
+        let ca : f64 = Math::cos(a);
+        let sa : f64 = Math::sin(a);
         // Spawn out of sight: skip directions inside the camera's forward
         // cone so creatures never pop into existence in front of the player.
         let fwdx : f64 = 0.0 - player.siny;
@@ -155,10 +149,10 @@ class MobManager {
         }
         let span : f64 = (config::mobSpawnRadius - config::mobSpawnMin) as f64;
         let r : f64 = (config::mobSpawnMin as f64) + this.rand() * span;
-        let wx : f64 = player.posX + ca * r;
-        let wz : f64 = player.posZ + sa * r;
-        let ix : i32 = floorToInt(wx) as i32;
-        let iz : i32 = floorToInt(wz) as i32;
+        let wx : f64 = player.pos.x + ca * r;
+        let wz : f64 = player.pos.z + sa * r;
+        let ix : i32 = Math::floorToInt(wx) as i32;
+        let iz : i32 = Math::floorToInt(wz) as i32;
         let surf : i32 = world.columnHeight(ix, iz);
         if (surf <= config::seaLevel) {
             return false;
@@ -214,7 +208,7 @@ class MobManager {
      * @return the delay in frames
      */
     fn nextVocalDelay() : i32 {
-        return config::mobVocalMin + floorToInt(this.rand() * (config::mobVocalRand as f64)) as i32;
+        return config::mobVocalMin + Math::floorToInt(this.rand() * (config::mobVocalRand as f64)) as i32;
     }
 
     /**
@@ -230,7 +224,7 @@ class MobManager {
         }
         m.vocalTimer = m.vocalTimer - 1;
         if (m.vocalTimer <= 0) {
-            sfx.mobSay(m.kind, m.posX, m.posY, m.posZ, this.rand());
+            sfx.mobSay(m.kind, m.pos.x, m.pos.y, m.pos.z, this.rand());
             m.vocalTimer = this.nextVocalDelay();
         }
     }
@@ -243,8 +237,8 @@ class MobManager {
      * @return true if the mob should be removed
      */
     fn cull(m : Mob, player : Player) : bool {
-        let dx : f64 = m.posX - player.posX;
-        let dz : f64 = m.posZ - player.posZ;
+        let dx : f64 = m.pos.x - player.pos.x;
+        let dz : f64 = m.pos.z - player.pos.z;
         let despawn2 : f64 = config::mobDespawnDist * config::mobDespawnDist;
         return m.deathDone() || (!m.isDying() && dx * dx + dz * dz > despawn2);
     }
@@ -354,8 +348,8 @@ class MobManager {
         if (m.isDying()) {
             return false;
         }
-        let dx : f64 = m.posX - player.posX;
-        let dz : f64 = m.posZ - player.posZ;
+        let dx : f64 = m.pos.x - player.pos.x;
+        let dz : f64 = m.pos.z - player.pos.z;
         let d2 : f64 = dx * dx + dz * dz;
         if (d2 > bestD) {
             return false;
@@ -380,8 +374,8 @@ class MobManager {
         while (i < this.chN) {
             let m : Mob = this.chickens[i] as Mob;
             if (this.better(m, player, fwdx, fwdz, bestD)) {
-                let dx : f64 = m.posX - player.posX;
-                let dz : f64 = m.posZ - player.posZ;
+                let dx : f64 = m.pos.x - player.pos.x;
+                let dz : f64 = m.pos.z - player.pos.z;
                 bestD = dx * dx + dz * dz;
                 bestArr = 0;
                 bestIdx = i;
@@ -392,8 +386,8 @@ class MobManager {
         while (i < this.shN) {
             let m : Mob = this.sheep[i] as Mob;
             if (this.better(m, player, fwdx, fwdz, bestD)) {
-                let dx : f64 = m.posX - player.posX;
-                let dz : f64 = m.posZ - player.posZ;
+                let dx : f64 = m.pos.x - player.pos.x;
+                let dz : f64 = m.pos.z - player.pos.z;
                 bestD = dx * dx + dz * dz;
                 bestArr = 1;
                 bestIdx = i;
@@ -404,8 +398,8 @@ class MobManager {
         while (i < this.coN) {
             let m : Mob = this.cows[i] as Mob;
             if (this.better(m, player, fwdx, fwdz, bestD)) {
-                let dx : f64 = m.posX - player.posX;
-                let dz : f64 = m.posZ - player.posZ;
+                let dx : f64 = m.pos.x - player.pos.x;
+                let dz : f64 = m.pos.z - player.pos.z;
                 bestD = dx * dx + dz * dz;
                 bestArr = 2;
                 bestIdx = i;
@@ -416,8 +410,8 @@ class MobManager {
         while (i < this.pgN) {
             let m : Mob = this.pigs[i] as Mob;
             if (this.better(m, player, fwdx, fwdz, bestD)) {
-                let dx : f64 = m.posX - player.posX;
-                let dz : f64 = m.posZ - player.posZ;
+                let dx : f64 = m.pos.x - player.pos.x;
+                let dz : f64 = m.pos.z - player.pos.z;
                 bestD = dx * dx + dz * dz;
                 bestArr = 4;
                 bestIdx = i;
@@ -428,8 +422,8 @@ class MobManager {
         while (i < this.crN) {
             let m : Mob = this.creepers[i] as Mob;
             if (this.better(m, player, fwdx, fwdz, bestD)) {
-                let dx : f64 = m.posX - player.posX;
-                let dz : f64 = m.posZ - player.posZ;
+                let dx : f64 = m.pos.x - player.pos.x;
+                let dz : f64 = m.pos.z - player.pos.z;
                 bestD = dx * dx + dz * dz;
                 bestArr = 3;
                 bestIdx = i;
@@ -443,10 +437,10 @@ class MobManager {
         let target : Mob = this.pick(bestArr, bestIdx);
         target.damage(config::attackDamage);
         target.flashHurt();
-        sfx.mobHurt(target.kind, target.posX, target.posY, target.posZ, this.rand());
-        let kind : i32 = target.kind;
+        sfx.mobHurt(target.kind, target.pos.x, target.pos.y, target.pos.z, this.rand());
+        let kind : i32 = target.kind as i32;
         if (target.isAlive()) {
-            target.panicFrom(player.posX, player.posZ);
+            target.panicFrom(player.pos.x, player.pos.z);
         } else {
             target.startDying();
         }

@@ -17,11 +17,23 @@
 // input → simulate → render loop paced by the frame clock. Block picking
 // lives in `game::ray`, the HUD in `gfx::hud`.
 
-use std::numeric::math::floorToInt;
-use crate::platform::sdl::{SDL_Init, SDL_Quit, SDL_CreateWindow, SDL_DestroyWindow, SDL_CreateRenderer, SDL_DestroyRenderer, SDL_CreateTexture, SDL_DestroyTexture, SDL_UpdateTexture, SDL_RenderClear, SDL_RenderCopy, SDL_RenderPresent, SDL_PollEvent, SDL_SetRelativeMouseMode, SDL_GetRelativeMouseState, SDL_GetMouseState, SDL_GetWindowSize, SDL_INIT_VIDEO, SDL_INIT_AUDIO, SDL_WINDOWPOS_CENTERED, SDL_WINDOW_SHOWN, SDL_WINDOW_RESIZABLE, SDL_RENDERER_ACCEL_VSYNC, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, SDL_QUIT, SDL_MOUSEWHEEL, SDL_BUTTON_RMASK, SC_W, SC_A, SC_S, SC_D, SC_SPACE, SC_LCTRL, SC_LSHIFT, SC_F3, SC_F4, SC_ESC, SC_1, keyboardBase};
-use crate::platform::mem::{cfree, nullPtr, asPtr, isNull, allocBytes, readI32, readU8};
-use crate::platform::file::loadAtlas;
-use crate::platform::clock::GameClock;
+use sdl_platform::{
+    SDL_Quit, SDL_DestroyWindow, SDL_DestroyRenderer, SDL_DestroyTexture,
+    SDL_UpdateTexture, SDL_RenderClear, SDL_RenderCopy, SDL_RenderPresent,
+    SDL_PollEvent, SDL_SetRelativeMouseMode, SDL_GetRelativeMouseState,
+    SDL_GetMouseState, SDL_GetWindowSize,
+};
+use sdl_platform::{
+    sdlInitVideoAudio, sdlCreateWindow, sdlCreateVsyncRenderer,
+    sdlCreateStreamTexture, sdlIsQuit, sdlIsMouseWheel, sdlLeftHeld,
+    sdlRightHeld, keyboardBase,
+};
+use sdl_platform::{cfree, nullPtr, asPtr, isNull, allocBytes, readI32, readU8};
+use sdl_platform::loadAtlas;
+use crate::clock::GameClock;
+use crate::input::{
+    SC_W, SC_A, SC_S, SC_D, SC_SPACE, SC_LCTRL, SC_LSHIFT, SC_F3, SC_F4, SC_ESC, SC_1,
+};
 use crate::world::manager::ChunkManager;
 use crate::entities::player::Player;
 use crate::entities::mobs::MobManager;
@@ -32,6 +44,7 @@ use crate::gfx::render::Renderer;
 use crate::gfx::hud::drawHud;
 use crate::gfx::menu::{drawPauseMenu, menuHit};
 use crate::config;
+use crate::config::{ Block };
 
 /**
  * Reads two keyboard scancodes as a -1/0/+1 movement axis.
@@ -57,7 +70,7 @@ fn axis(kb : i64, plus : i32, minus : i32) : f64 {
  * @return the chunk index that contains that coordinate
  */
 fn chunkOf(p : f64) : i32 {
-    return floorToInt(p / (config::chunkSize as f64)) as i32;
+    return Math::floorToInt(p / (config::chunkSize as f64)) as i32;
 }
 
 /**
@@ -69,28 +82,26 @@ fn main() : void {
     let h : i32 = config::renderH;
     let winW : i32 = config::screenW;
     let winH : i32 = config::screenH;
-    if (SDL_Init(SDL_INIT_VIDEO + SDL_INIT_AUDIO) != 0) {
-        Console.println("SDL_Init failed");
+    if (sdlInitVideoAudio() != 0) {
+        Console::println("SDL_Init failed");
         return;
     }
-    let win : ptr = SDL_CreateWindow("Axle Voxel — survival",
-        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, winW, winH,
-        SDL_WINDOW_SHOWN + SDL_WINDOW_RESIZABLE);
+    let win : ptr = sdlCreateWindow("Axle Voxel — survival", winW, winH);
     if (isNull(win)) {
-        Console.println("window failed");
+        Console::println("window failed");
         SDL_Quit();
         return;
     }
-    let ren : ptr = SDL_CreateRenderer(win, 0 - 1, SDL_RENDERER_ACCEL_VSYNC);
+    let ren : ptr = sdlCreateVsyncRenderer(win);
     if (isNull(ren)) {
-        Console.println("renderer failed");
+        Console::println("renderer failed");
         SDL_DestroyWindow(win);
         SDL_Quit();
         return;
     }
-    let tex : ptr = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, h);
+    let tex : ptr = sdlCreateStreamTexture(ren, w, h);
     if (isNull(tex)) {
-        Console.println("texture failed");
+        Console::println("texture failed");
         SDL_Quit();
         return;
     }
@@ -104,7 +115,7 @@ fn main() : void {
     let kb : i64 = keyboardBase();
     SDL_SetRelativeMouseMode(1);
 
-    Console.println("Survive! Mouse look, WASD move, Ctrl sprint, Space jump. Left-click dig/attack, right-click place, 1-9 pick block. Esc pauses.");
+    Console::println("Survive! Mouse look, WASD move, Ctrl sprint, Space jump. Left-click dig/attack, right-click place, 1-9 pick block. Esc pauses.");
     let man : ChunkManager = new ChunkManager();
     man.ensureLoaded(0, 0);
 
@@ -114,7 +125,7 @@ fn main() : void {
     let player : Player = new Player((sp.sx as f64) + 0.5, sp.h as f64, (sp.sz as f64) + 0.5);
     player.yaw = openYaw(man, sp.sx, sp.sz, sp.h);
     player.refresh();
-    man.ensureLoaded(chunkOf(player.posX), chunkOf(player.posZ));
+    man.ensureLoaded(chunkOf(player.pos.x), chunkOf(player.pos.z));
 
     let mobs : MobManager = new MobManager();
     let renderer : Renderer = new Renderer();
@@ -124,7 +135,7 @@ fn main() : void {
     let atlasBytes : i64 = tpx * tpx * 4 * (config::atlasTiles as i64);
     let atlas : i64 = allocBytes(atlasBytes);
     if (loadAtlas(atlas, atlasBytes) != atlasBytes) {
-        Console.println("warning: atlas.raw not found next to the binary — textures will be blank");
+        Console::println("warning: atlas.raw not found next to the binary — textures will be blank");
     }
     renderer.setAtlas(atlas);
 
@@ -149,9 +160,9 @@ fn main() : void {
     while (running) {
         while (SDL_PollEvent(asPtr(ev)) != 0) {
             let etype : i32 = readI32(ev, 0);
-            if (etype == SDL_QUIT) {
+            if (sdlIsQuit(etype)) {
                 running = false;
-            } else if (etype == SDL_MOUSEWHEEL) {
+            } else if (sdlIsMouseWheel(etype)) {
                 // Scroll the hotbar: wheel up = previous slot, down = next.
                 let wy : i32 = readI32(ev, 20);
                 if (wy != 0) {
@@ -193,7 +204,7 @@ fn main() : void {
                 pixels = allocBytes((w as i64) * (h as i64) * 4);
                 zbuf = allocBytes((w as i64) * (h as i64) * 8);
                 SDL_DestroyTexture(tex);
-                tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, h);
+                tex = sdlCreateStreamTexture(ren, w, h);
                 renderer.setViewWidth(w);
             }
         }
@@ -221,9 +232,9 @@ fn main() : void {
             if (gmBoth && !wasGmToggle) {
                 player.toggleGameMode();
                 if (player.creative == 1) {
-                    Console.println("Creative — fly: Space up, Shift down, Ctrl boost.");
+                    Console::println("Creative — fly: Space up, Shift down, Ctrl boost.");
                 } else {
-                    Console.println("Survival.");
+                    Console::println("Survival.");
                 }
             }
             wasGmToggle = gmBoth;
@@ -275,18 +286,18 @@ fn main() : void {
             }
             player.refresh();
 
-            man.ensureLoaded(chunkOf(player.posX), chunkOf(player.posZ));
+            man.ensureLoaded(chunkOf(player.pos.x), chunkOf(player.pos.z));
 
             // Footsteps: keyed to the block underfoot, paced by walk / sprint.
             let movingNow : bool = fwd != 0.0 || strafe != 0.0;
             if (player.creative == 0 && player.onGround == 1 && movingNow && !player.isUnderwater()) {
                 footTimer = footTimer - 1;
                 if (footTimer <= 0) {
-                    let fbx : i32 = floorToInt(player.posX) as i32;
-                    let fby : i32 = (floorToInt(player.posY) as i32) - 1;
-                    let fbz : i32 = floorToInt(player.posZ) as i32;
-                    let under : i32 = man.worldGet(fbx, fby, fbz);
-                    if (under != config::bAir && under != config::bWater) {
+                    let fbx : i32 = Math::floorToInt(player.pos.x) as i32;
+                    let fby : i32 = (Math::floorToInt(player.pos.y) as i32) - 1;
+                    let fbz : i32 = Math::floorToInt(player.pos.z) as i32;
+                    let under : Block = man.worldGet(fbx, fby, fbz);
+                    if (under != Block::Air && under != Block::Water) {
                         sfx.footstep(under, mobs.rand());
                     }
                     if (sprint) {
@@ -309,7 +320,7 @@ fn main() : void {
                 ambientTimer = ambientTimer - 1;
                 if (ambientTimer <= 0) {
                     sfx.ambientUnderwater(mobs.rand());
-                    ambientTimer = config::ambientMin + floorToInt(mobs.rand() * (config::ambientRand as f64)) as i32;
+                    ambientTimer = config::ambientMin + Math::floorToInt(mobs.rand() * (config::ambientRand as f64)) as i32;
                 }
             } else {
                 ambientTimer = 0;
@@ -317,19 +328,19 @@ fn main() : void {
 
             // Aim once; left-click breaks / attacks, right-click places.
             picker.cast(man, player);
-            if ((btn & 1) != 0 && attackCd == 0) {
+            if (sdlLeftHeld(btn) && attackCd == 0) {
                 let kind : i32 = mobs.attackNearest(player, sfx);
                 if (kind < 0 && picker.hit == 1) {
-                    let broken : i32 = man.worldGet(picker.bx, picker.by, picker.bz);
+                    let broken : Block = man.worldGet(picker.bx, picker.by, picker.bz);
                     man.breakAt(picker.bx, picker.by, picker.bz);
                     sfx.blockEdit(broken, picker.bx, picker.by, picker.bz, mobs.rand());
                 }
                 attackCd = config::editCooldown;
             }
-            let rightDown : bool = (btn & SDL_BUTTON_RMASK) != 0;
+            let rightDown : bool = sdlRightHeld(btn);
             if (rightDown && !wasRight && picker.hit == 1) {
                 if (!cellInPlayer(player, picker.px, picker.py, picker.pz)) {
-                    let held : i32 = player.heldBlock();
+                    let held : Block = player.heldBlock();
                     man.placeAt(picker.px, picker.py, picker.pz, held);
                     sfx.blockEdit(held, picker.px, picker.py, picker.pz, mobs.rand());
                 }
@@ -342,9 +353,9 @@ fn main() : void {
                 player.velY = 0.0;
                 player.airTicks = 0;
                 player.sinceHurt = 0;
-                player.posY = man.columnHeight(floorToInt(player.posX) as i32, floorToInt(player.posZ) as i32) as f64;
+                player.pos.y = man.columnHeight(Math::floorToInt(player.pos.x) as i32, Math::floorToInt(player.pos.z) as i32) as f64;
                 player.refresh();
-                Console.println("You died — respawned.");
+                Console::println("You died — respawned.");
             }
         } else {
             // ── Paused: drive the menu with the free cursor. The window is
@@ -396,7 +407,7 @@ fn main() : void {
         SDL_RenderPresent(ren);
         // Feed the audio mixer once per frame (drives all queued sound), with
         // the listener at the player so positional sounds attenuate live.
-        sfx.setListener(player.posX, player.posY, player.posZ);
+        sfx.setListener(player.pos.x, player.pos.y, player.pos.z);
         sfx.pump();
         // Hold the loop to the tick rate (CPU cap independent of v-sync).
         clock.cap();

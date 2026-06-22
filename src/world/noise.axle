@@ -9,7 +9,6 @@
 // lifting land out of the ocean, mid-frequency hills, and a mountain lift
 // where continentalness is high.
 
-use std::numeric::math::floorToInt;
 use crate::config;
 
 /**
@@ -45,8 +44,8 @@ fn smooth(t : f64) : f64 {
  * @return the interpolated noise value
  */
 fn valueNoise(x : f64, y : f64, s : i32) : f64 {
-    let xi : i32 = floorToInt(x) as i32;
-    let yi : i32 = floorToInt(y) as i32;
+    let xi : i32 = Math::floorToInt(x) as i32;
+    let yi : i32 = Math::floorToInt(y) as i32;
     let xf : f64 = x - (xi as f64);
     let yf : f64 = y - (yi as f64);
     let u : f64 = smooth(xf);
@@ -93,7 +92,7 @@ fn fbm(x : f64, y : f64, s : i32, oct : i32) : f64 {
  * @return the scatter value in [0,1)
  */
 fn hash2(wx : f64, wz : f64, s : i32) : f64 {
-    return hashI(floorToInt(wx) as i32, floorToInt(wz) as i32, s);
+    return hashI(Math::floorToInt(wx) as i32, Math::floorToInt(wz) as i32, s);
 }
 
 /**

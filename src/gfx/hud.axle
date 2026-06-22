@@ -4,6 +4,7 @@
 // Stateless: reads hp + the hotbar and paints pixels.
 
 use crate::gfx::hotbar::{drawHotbar, hotbarPanelW, hotbarPanelH};
+use crate::config::{ Block };
 use crate::gfx::health::{drawHealth, healthHeight};
 
 /**
@@ -17,7 +18,7 @@ use crate::gfx::health::{drawHealth, healthHeight};
  * @param hotbar    hotbar slot block ids.
  * @param selected  index of the active hotbar slot.
  */
-fn drawHud(base : i64, fbW : i32, fbH : i32, atlas : i64, hp : i32, maxHp : i32, hotbar : i32[], selected : i32) : void {
+fn drawHud(base : i64, fbW : i32, fbH : i32, atlas : i64, hp : i32, maxHp : i32, hotbar : Block[], selected : i32) : void {
     let pw : i32 = hotbarPanelW();
     let ph : i32 = hotbarPanelH();
     let hx : i32 = (fbW - pw) / 2;

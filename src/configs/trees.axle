@@ -1,17 +1,20 @@
 // configs::trees — tree kinds stamped by world::manager. A biome picks one
 // kind (and a per-biome trunk height; see world::biomes::Biome.treeHt).
 
-const treeNone : i32 = 0;
-const treeOak : i32 = 1;
-const treeBirch : i32 = 2;
-const treeSpruce : i32 = 3;
-const treeAcacia : i32 = 4;
-const treeJungle : i32 = 5;
-const treeCactus : i32 = 6;
-const treeBamboo : i32 = 7;
-const treeCherry : i32 = 8;
-const treeRedMushroom : i32 = 9;
-const treeBrownMushroom : i32 = 10;
+// The kind of tree (if any) a biome stamps. `None` is the no-tree case.
+enum TreeKind : i32 {
+    None,
+    Oak,
+    Birch,
+    Spruce,
+    Acacia,
+    Jungle,
+    Cactus,
+    Bamboo,
+    Cherry,
+    RedMushroom,
+    BrownMushroom,
+}
 
 // Global thinning applied to every biome's tree threshold (0 = as authored,
 // →1 = no trees). Raises each threshold toward 1 proportionally, so forests

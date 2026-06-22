@@ -8,8 +8,7 @@
 // `useMobTextures` is on). The mob pass shares the world's z-buffer, so
 // terrain correctly occludes animals behind it.
 
-use std::numeric::math::{sin, cos, floorToInt, sqrt};
-use crate::platform::mem::{allocBytes, getF64, setF64, putPixel, rgb};
+use sdl_platform::{allocBytes, getF64, setF64, putPixel, rgb};
 use crate::gfx::color::{scaleRgb, tintIf};
 use crate::gfx::raster::{rasterTriTex, rasterTri, clearFrame, buildMipChain, mipChainTexels, mipLevelOffset, mipLevelSize};
 use crate::entities::player::Player;
@@ -17,6 +16,7 @@ use crate::world::manager::ChunkManager;
 use crate::entities::mobs::MobManager;
 use crate::entities::mob::Mob;
 use crate::config;
+use crate::config::{ FaceDir };
 
 class Renderer {
     coff : i32[],
@@ -162,9 +162,9 @@ class Renderer {
      * @param k   scratch slot index to store the result in
      */
     fn projectPoint(p : Player, wx : f64, wy : f64, wz : f64, k : i32) : void {
-        let dx : f64 = wx - p.eyeX;
-        let dy : f64 = wy - p.eyeY;
-        let dz : f64 = wz - p.eyeZ;
+        let dx : f64 = wx - p.eye.x;
+        let dy : f64 = wy - p.eye.y;
+        let dz : f64 = wz - p.eye.z;
         let rx : f64 = dx * p.cosy + dz * p.siny;
         let rz : f64 = (0.0 - dx) * p.siny + dz * p.cosy;
         let ry : f64 = dy;
@@ -207,9 +207,9 @@ class Renderer {
      * @param k   scratch slot index to store the result in
      */
     fn toCam(p : Player, wx : f64, wy : f64, wz : f64, k : i32) : void {
-        let dx : f64 = wx - p.eyeX;
-        let dy : f64 = wy - p.eyeY;
-        let dz : f64 = wz - p.eyeZ;
+        let dx : f64 = wx - p.eye.x;
+        let dy : f64 = wy - p.eye.y;
+        let dz : f64 = wz - p.eye.z;
         let rx : f64 = dx * p.cosy + dz * p.siny;
         let rz : f64 = (0.0 - dx) * p.siny + dz * p.cosy;
         setF64(this.cax, k, rx);
@@ -293,30 +293,37 @@ class Renderer {
         let x : i32 = man.fx[idx];
         let y : i32 = man.fy[idx];
         let z : i32 = man.fz[idx];
-        let dir : i32 = man.fdir[idx];
+        let dir : FaceDir = man.fdir[idx];
         let nx : f64 = 0.0;
         let ny : f64 = 0.0;
         let nz : f64 = 0.0;
-        if (dir == 0) {
-            nx = 1.0;
-        } else if (dir == 1) {
-            nx = 0.0 - 1.0;
-        } else if (dir == 2) {
-            ny = 1.0;
-        } else if (dir == 3) {
-            ny = 0.0 - 1.0;
-        } else if (dir == 4) {
-            nz = 1.0;
-        } else {
-            nz = 0.0 - 1.0;
+        match dir {
+            FaceDir::PosX => {
+                nx = 1.0;
+            }
+            FaceDir::NegX => {
+                nx = 0.0 - 1.0;
+            }
+            FaceDir::Top => {
+                ny = 1.0;
+            }
+            FaceDir::Bottom => {
+                ny = 0.0 - 1.0;
+            }
+            FaceDir::PosZ => {
+                nz = 1.0;
+            }
+            _ => {
+                nz = 0.0 - 1.0;
+            }
         }
 
         let fcx : f64 = (x as f64) + 0.5 + nx * 0.5;
         let fcy : f64 = (y as f64) + 0.5 + ny * 0.5;
         let fcz : f64 = (z as f64) + 0.5 + nz * 0.5;
-        let vx : f64 = p.eyeX - fcx;
-        let vy : f64 = p.eyeY - fcy;
-        let vz : f64 = p.eyeZ - fcz;
+        let vx : f64 = p.eye.x - fcx;
+        let vy : f64 = p.eye.y - fcy;
+        let vz : f64 = p.eye.z - fcz;
         if (vx * nx + vy * ny + vz * nz <= 0.0) {
             return;
         }
@@ -325,10 +332,11 @@ class Renderer {
         }
 
         // Load the 4 corners into camera space + their tile UVs.
-        let q : i32 = dir * 4;
+        let di : i32 = dir as i32;
+        let q : i32 = di * 4;
         let k : i32 = 0;
         while (k < 4) {
-            let b : i32 = (dir * 4 + k) * 3;
+            let b : i32 = (di * 4 + k) * 3;
             this.toCam(p, (x + this.coff[b]) as f64, (y + this.coff[b + 1]) as f64, (z + this.coff[b + 2]) as f64, k);
             setF64(this.cau, k, this.uvu[q + k] as f64);
             setF64(this.cav, k, this.uvv[q + k] as f64);
@@ -358,7 +366,7 @@ class Renderer {
         // Sharpness for sharp-bilinear = output pixels per texel of the
         // chosen mip (≈ projected face size / texels). Clamped so very
         // near faces stay crisp without numeric blow-up.
-        let dd : f64 = sqrt(d2);
+        let dd : f64 = Math::sqrt(d2);
         if (dd < 0.001) {
             dd = 0.001;
         }
@@ -405,8 +413,8 @@ class Renderer {
         let s : f64 = config::chunkSize as f64;
         let wx : f64 = (cx as f64) * s + s * 0.5;
         let wz : f64 = (cz as f64) * s + s * 0.5;
-        let dx : f64 = wx - p.eyeX;
-        let dz : f64 = wz - p.eyeZ;
+        let dx : f64 = wx - p.eye.x;
+        let dz : f64 = wz - p.eye.z;
         let dist2 : f64 = dx * dx + dz * dz;
         let far : f64 = config::renderDist + s;
         if (dist2 > far * far) {
@@ -480,7 +488,7 @@ class Renderer {
         let mx : f64 = (ax + bx + cx + dx) * 0.25;
         let my : f64 = (ay + by + cy + dy) * 0.25;
         let mz : f64 = (az + bz + cz + dz) * 0.25;
-        if ((p.eyeX - mx) * nx + (p.eyeY - my) * ny + (p.eyeZ - mz) * nz <= 0.0) {
+        if ((p.eye.x - mx) * nx + (p.eye.y - my) * ny + (p.eye.z - mz) * nz <= 0.0) {
             return;
         }
 
@@ -511,6 +519,7 @@ class Renderer {
         let iz3 : f64 = getF64(this.ciz, 3);
 
         if (config::useMobTextures && tile >= 0) {
+            // A struck mob glows red: lift the red multiplier, damp green/blue.
             let tr : f64 = bright;
             let tg : f64 = bright;
             let tb : f64 = bright;
@@ -519,6 +528,7 @@ class Renderer {
                 tg = bright * 0.4;
                 tb = bright * 0.4;
             }
+
             rasterTriTex(pixels, zbuf, w, h,
                 sx0, sy0, iz0, 0.0, 1.0, sx1, sy1, iz1, 1.0, 1.0, sx2, sy2, iz2, 1.0, 0.0,
                 this.mips, tile, 0, config::tilePx, 4.0, tr, tg, tb);
@@ -589,10 +599,10 @@ class Renderer {
     fn drawObox(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32,
         mr : f64, my : f64, mf : f64, hr : f64, hy : f64, hf : f64,
         color : i32, skinTile : i32, faceTile : i32) : void {
-        let fwdx : f64 = cos(m.heading);
-        let fwdz : f64 = sin(m.heading);
-        let rgtx : f64 = sin(m.heading);
-        let rgtz : f64 = 0.0 - cos(m.heading);
+        let fwdx : f64 = Math::cos(m.heading);
+        let fwdz : f64 = Math::sin(m.heading);
+        let rgtx : f64 = Math::sin(m.heading);
+        let rgtz : f64 = 0.0 - Math::cos(m.heading);
         // Death: topple onto one side like Minecraft — rotate the whole
         // model up→right about the feet by up to ~90° as the collapse
         // plays out, instead of sinking straight down. `lr`, `lu` are the
@@ -601,8 +611,8 @@ class Renderer {
         // flank from dipping far into the ground.
         let pr : f64 = m.deathProgress();
         let theta : f64 = pr * 1.5707963;
-        let ct : f64 = cos(theta);
-        let st : f64 = sin(theta);
+        let ct : f64 = Math::cos(theta);
+        let st : f64 = Math::sin(theta);
         let lift : f64 = 0.15 * st;
         let ci : i32 = 0;
         while (ci < 8) {
@@ -623,9 +633,9 @@ class Renderer {
             let lf : f64 = mf + sf * hf;
             let lr : f64 = lr0 * ct + hun * st;
             let lu : f64 = hun * ct - lr0 * st + lift;
-            setF64(this.obx, ci, m.posX + lr * rgtx + lf * fwdx);
-            setF64(this.oby, ci, m.posY + lu);
-            setF64(this.obz, ci, m.posZ + lr * rgtz + lf * fwdz);
+            setF64(this.obx, ci, m.pos.x + lr * rgtx + lf * fwdx);
+            setF64(this.oby, ci, m.pos.y + lu);
+            setF64(this.obz, ci, m.pos.z + lr * rgtz + lf * fwdz);
             ci = ci + 1;
         }
         let hurt : bool = m.hurtTimer > 0;
@@ -661,7 +671,7 @@ class Renderer {
      * @param h       framebuffer height
      */
     fn drawChicken(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
-        let sw : f64 = sin(m.walkPhase) * 0.08;   // forward leg stride
+        let sw : f64 = Math::sin(m.walkPhase) * 0.08;   // forward leg stride
         let leg : i32 = rgb(232, 150, 40);
         let body : i32 = rgb(236, 236, 232);
         this.drawObox(p, m, pixels, zbuf, w, h, 0.07, 0.10, sw, 0.035, 0.10, 0.04, leg, 0 - 1, 0 - 1);
@@ -683,7 +693,7 @@ class Renderer {
      * @param h       framebuffer height
      */
     fn drawSheep(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
-        let sw : f64 = sin(m.walkPhase) * 0.11;
+        let sw : f64 = Math::sin(m.walkPhase) * 0.11;
         let leg : i32 = rgb(54, 46, 40);
         this.drawObox(p, m, pixels, zbuf, w, h, 0.0 - 0.20, 0.16, 0.18 + sw, 0.07, 0.16, 0.07, leg, 0 - 1, 0 - 1);
         this.drawObox(p, m, pixels, zbuf, w, h, 0.20, 0.16, 0.18 - sw, 0.07, 0.16, 0.07, leg, 0 - 1, 0 - 1);
@@ -703,7 +713,7 @@ class Renderer {
      * @param h       framebuffer height
      */
     fn drawCow(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
-        let sw : f64 = sin(m.walkPhase) * 0.12;
+        let sw : f64 = Math::sin(m.walkPhase) * 0.12;
         let leg : i32 = rgb(70, 54, 44);
         this.drawObox(p, m, pixels, zbuf, w, h, 0.0 - 0.26, 0.20, 0.24 + sw, 0.09, 0.20, 0.09, leg, 0 - 1, 0 - 1);
         this.drawObox(p, m, pixels, zbuf, w, h, 0.26, 0.20, 0.24 - sw, 0.09, 0.20, 0.09, leg, 0 - 1, 0 - 1);
@@ -723,7 +733,7 @@ class Renderer {
      * @param h       framebuffer height
      */
     fn drawPig(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
-        let sw : f64 = sin(m.walkPhase) * 0.10;
+        let sw : f64 = Math::sin(m.walkPhase) * 0.10;
         let leg : i32 = rgb(196, 128, 128);
         this.drawObox(p, m, pixels, zbuf, w, h, 0.0 - 0.20, 0.16, 0.20 + sw, 0.07, 0.16, 0.07, leg, 0 - 1, 0 - 1);
         this.drawObox(p, m, pixels, zbuf, w, h, 0.20, 0.16, 0.20 - sw, 0.07, 0.16, 0.07, leg, 0 - 1, 0 - 1);
@@ -748,7 +758,7 @@ class Renderer {
      * @param h       framebuffer height
      */
     fn drawCreeper(p : Player, m : Mob, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
-        let sw : f64 = sin(m.walkPhase) * 0.10;
+        let sw : f64 = Math::sin(m.walkPhase) * 0.10;
 
         // Pick the skin/face tiles and matching base tints for the current
         // state (calm green vs. charging gilet jaune).
@@ -865,9 +875,9 @@ class Renderer {
      * @return true if the point is in front of the near plane
      */
     fn projCorner(p : Player, wx : f64, wy : f64, wz : f64, k : i32) : bool {
-        let dx : f64 = wx - p.eyeX;
-        let dy : f64 = wy - p.eyeY;
-        let dz : f64 = wz - p.eyeZ;
+        let dx : f64 = wx - p.eye.x;
+        let dy : f64 = wy - p.eye.y;
+        let dz : f64 = wz - p.eye.z;
         let rx : f64 = dx * p.cosy + dz * p.siny;
         let rz : f64 = (0.0 - dx) * p.siny + dz * p.cosy;
         let ry2 : f64 = dy * p.cosp - rz * p.sinp;
@@ -943,9 +953,9 @@ class Renderer {
         if (ady < 0.0) {
             ady = 0.0 - ady;
         }
-        let steps : i32 = floorToInt(adx) as i32;
-        if (floorToInt(ady) as i32 > steps) {
-            steps = floorToInt(ady) as i32;
+        let steps : i32 = Math::floorToInt(adx) as i32;
+        if (Math::floorToInt(ady) as i32 > steps) {
+            steps = Math::floorToInt(ady) as i32;
         }
         if (steps < 1) {
             steps = 1;
@@ -954,8 +964,8 @@ class Renderer {
         let i : i32 = 0;
         while (i <= steps) {
             let t : f64 = (i as f64) * inv;
-            let px : i32 = floorToInt(ax + ddx * t) as i32;
-            let py : i32 = floorToInt(ay + ddy * t) as i32;
+            let px : i32 = Math::floorToInt(ax + ddx * t) as i32;
+            let py : i32 = Math::floorToInt(ay + ddy * t) as i32;
             let iz : f64 = aiz + (biz - aiz) * t;
             this.selDot(pixels, zbuf, w, h, px, py, iz, color);
             i = i + 1;

@@ -13,30 +13,31 @@
 // resolved by the receiver's declared type, so the registry dispatches it by id.
 
 use crate::config;
+use crate::config::{ Block, TreeKind };
 
 class Biome {
-    fillerBlock : i32,   // block a few voxels below the surface
-    treeThresh : f64,    // a column grows a tree when its tree-hash exceeds this (≥1.1 = none)
-    treeKindId : i32,    // which tree to stamp (config::tree*)
-    treeHt : i32,        // trunk height for that tree
+    fillerBlock : Block,    // block a few voxels below the surface
+    treeThresh : f64,       // a column grows a tree when its tree-hash exceeds this (≥1.1 = none)
+    treeKindId : TreeKind,  // which tree to stamp
+    treeHt : i32,           // trunk height for that tree
 
     /**
      * Construct the base biome: dirt filler, no trees. Subclasses override
      * these fields in their own constructor after calling `super()`.
      */
     constructor() {
-        this.fillerBlock = config::bDirt;
+        this.fillerBlock = Block::Dirt;
         this.treeThresh = 1.1;
-        this.treeKindId = config::treeNone;
+        this.treeKindId = TreeKind::None;
         this.treeHt = 0;
     }
 
     /**
      * Top block, given the column's surface height. Default: grass.
      * @param height  the column's surface height
-     * @return the surface block id
+     * @return the surface block
      */
-    fn surface(height : i32) : i32 {
-        return config::bGrass;
+    fn surface(height : i32) : Block {
+        return Block::Grass;
     }
 }

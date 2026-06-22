@@ -1,0 +1,15 @@
+// configs::face — the six cube-face directions. The mesher tags every baked
+// face with one; the renderer turns it into a surface normal and the block
+// table (world::blocks::tileFor) picks the per-face atlas tile from it.
+//
+// The discriminants are load-bearing: they index the renderer's per-face
+// geometry tables (corner offsets / UVs), so the order must stay PosX, NegX,
+// Top, Bottom, PosZ, NegZ.
+enum FaceDir : i32 {
+    PosX,    // +x
+    NegX,    // -x
+    Top,     // +y
+    Bottom,  // -y
+    PosZ,    // +z
+    NegZ,    // -z
+}

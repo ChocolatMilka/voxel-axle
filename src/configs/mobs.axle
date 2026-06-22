@@ -6,11 +6,16 @@
 // vertical gap so hovering above a creeper never trips its fuse.
 
 const mobCap : i32 = 32;
-const mobChicken : i32 = 0;
-const mobSheep : i32 = 1;
-const mobCow : i32 = 2;
-const mobCreeper : i32 = 3;
-const mobPig : i32 = 4;
+
+// The creature species. Discriminants double as the per-species array selector
+// in the manager's melee path, so keep this order in sync there.
+enum MobKind : i32 {
+    Chicken,
+    Sheep,
+    Cow,
+    Creeper,
+    Pig,
+}
 const mobChickenHp : i32 = 4;
 const mobSheepHp : i32 = 8;
 const mobCowHp : i32 = 10;

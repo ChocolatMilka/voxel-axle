@@ -3,12 +3,13 @@
 
 use crate::world::biomes::Biome;
 use crate::config;
+use crate::config::{ Block };
 
 class FrozenOcean extends Biome {
     /** Construct the frozen ocean biome (sand filler, no trees). */
     constructor() {
         super();
-        this.fillerBlock = config::bSand;
+        this.fillerBlock = Block::Sand;
     }
 
     /**
@@ -16,10 +17,10 @@ class FrozenOcean extends Biome {
      * @param height  the column's surface height
      * @return the surface block id
      */
-    fn surface(height : i32) : i32 {
+    fn surface(height : i32) : Block {
         if (height < config::seaLevel - 6) {
-            return config::bGravel;
+            return Block::Gravel;
         }
-        return config::bSand;
+        return Block::Sand;
     }
 }

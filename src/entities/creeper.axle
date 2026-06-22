@@ -2,17 +2,17 @@
 // lights a fuse, holds, then explodes; defuses if the player flees or
 // switches to creative. Overrides the passive base with its own `step`.
 
-use std::numeric::math::{sin, cos, sqrt, floorToInt};
 use crate::entities::mob::{Mob, atan2};
 use crate::entities::player::Player;
 use crate::world::manager::ChunkManager;
 use crate::game::sfx::AudioManager;
 use crate::config;
+use crate::config::{ MobKind };
 
 class Creeper extends Mob {
     /** Create a creeper at (x, y, z). */
     constructor(x : f64, y : f64, z : f64) {
-        super(x, y, z, config::mobCreeper, config::mobCreeperHp);
+        super(x, y, z, MobKind::Creeper, config::mobCreeperHp);
         this.speed = config::mobCreeperSpeed;
         this.height = 1.5;
     }
@@ -38,13 +38,13 @@ class Creeper extends Mob {
             this.tick(world, 0.0, 0.0);
             return;
         }
-        let dx : f64 = player.posX - this.posX;
-        let dy : f64 = player.posY - this.posY;
-        let dz : f64 = player.posZ - this.posZ;
+        let dx : f64 = player.pos.x - this.pos.x;
+        let dy : f64 = player.pos.y - this.pos.y;
+        let dz : f64 = player.pos.z - this.pos.z;
         // 3D distance + an explicit vertical cap: a player flying or standing
         // high overhead is NOT in range, so the creeper won't chase or blow up
         // under an out-of-reach target.
-        let dist : f64 = sqrt(dx * dx + dy * dy + dz * dz);
+        let dist : f64 = Math::sqrt(dx * dx + dy * dy + dz * dz);
         let vert : f64 = dy;
         if (vert < 0.0) {
             vert = 0.0 - vert;
@@ -60,13 +60,13 @@ class Creeper extends Mob {
             if (hostile && dist <= config::creeperTriggerDist) {
                 this.fuse = config::creeperFuseFrames;
                 this.tick(world, 0.0, 0.0);
-                sfx.creeperFuse(this.posX, this.posY, this.posZ);
+                sfx.creeperFuse(this.pos.x, this.pos.y, this.pos.z);
                 return;
             }
             if (hostile && dist <= config::creeperChaseDist) {
                 let spd : f64 = config::mobCreeperSpeed;
                 this.walkPhase = this.walkPhase + 0.35;
-                this.tick(world, cos(this.heading) * spd, sin(this.heading) * spd);
+                this.tick(world, Math::cos(this.heading) * spd, Math::sin(this.heading) * spd);
             } else {
                 this.tick(world, 0.0, 0.0);
             }
@@ -84,7 +84,7 @@ class Creeper extends Mob {
         this.tick(world, 0.0, 0.0);
         if (this.fuse <= 0) {
             this.explode(world, player);
-            sfx.creeperBlast(this.posX, this.posY, this.posZ);
+            sfx.creeperBlast(this.pos.x, this.pos.y, this.pos.z);
         }
     }
 
@@ -95,22 +95,22 @@ class Creeper extends Mob {
      * @param player  the player to damage by the blast
      */
     fn explode(world : ChunkManager, player : Player) : void {
-        let dx : f64 = player.posX - this.posX;
-        let dy : f64 = player.posY - this.posY;
-        let dz : f64 = player.posZ - this.posZ;
-        let d : f64 = sqrt(dx * dx + dy * dy + dz * dz);
+        let dx : f64 = player.pos.x - this.pos.x;
+        let dy : f64 = player.pos.y - this.pos.y;
+        let dz : f64 = player.pos.z - this.pos.z;
+        let d : f64 = Math::sqrt(dx * dx + dy * dy + dz * dz);
         let reach : f64 = config::creeperBlastRadius * 2.0;
         if (d < reach) {
             let f : f64 = 1.0 - d / reach;
-            let dmg : i32 = floorToInt(f * (config::creeperDamage as f64)) as i32;
+            let dmg : i32 = Math::floorToInt(f * (config::creeperDamage as f64)) as i32;
             if (dmg > 0) {
                 player.hurt(dmg);
             }
         }
-        let r : i32 = floorToInt(config::creeperBlastRadius) as i32;
-        let cx : i32 = floorToInt(this.posX) as i32;
-        let cy : i32 = floorToInt(this.posY) as i32;
-        let cz : i32 = floorToInt(this.posZ) as i32;
+        let r : i32 = Math::floorToInt(config::creeperBlastRadius) as i32;
+        let cx : i32 = Math::floorToInt(this.pos.x) as i32;
+        let cy : i32 = Math::floorToInt(this.pos.y) as i32;
+        let cz : i32 = Math::floorToInt(this.pos.z) as i32;
         let ox : i32 = 0 - r;
         while (ox <= r) {
             let oy : i32 = 0 - r;

@@ -4,14 +4,18 @@
 // block id to one of the `mat*` ids below.
 
 // ── Footstep / dig materials (index into game::sfx banks) ───
-const matGrass : i32 = 0;
-const matSand : i32 = 1;
-const matGravel : i32 = 2;
-const matSnow : i32 = 3;
-const matStone : i32 = 4;
-const matWood : i32 = 5;
-const matFoliage : i32 = 6;   // leaves — soft "cloth" footfall
-const matGlass : i32 = 7;     // ice digs with a glassy crack
+// How a block sounds underfoot and when dug. The discriminants are the bank
+// index in game::sfx, so the order here matches the loaded folders.
+enum AudioMaterial : i32 {
+    Grass,
+    Sand,
+    Gravel,
+    Snow,
+    Stone,
+    Wood,
+    Foliage,    // leaves — soft "cloth" footfall
+    Glass,      // ice digs with a glassy crack
+}
 const matCount : i32 = 8;
 
 // ── Audible ranges (blocks): a positional sound fades to silence here ──

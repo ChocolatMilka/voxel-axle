@@ -16,11 +16,14 @@
 // top, the highest collidable voxel per column) still drives entity
 // physics — both interfaces are unchanged, so nothing downstream moved.
 
-use std::numeric::math::floorToInt;
 use crate::world::noise::{terrainHeight, temperature, humidity, treeHash, hashI};
 use crate::world::biomes::registry::{biomeAt, Biomes};
 use crate::world::blocks::{tileFor, isSolid, isCollidable};
 use crate::config;
+use crate::config::{ Block };
+use crate::config::{ BiomeId };
+use crate::config::{ TreeKind };
+use crate::config::{ FaceDir };
 
 class ChunkManager {
     cxs : i32[],
@@ -30,11 +33,11 @@ class ChunkManager {
     fx : i32[],
     fy : i32[],
     fz : i32[],
-    fdir : i32[],
+    fdir : FaceDir[],
     ftile : i32[],
     hmap : i32[],
     ctop : i32[],
-    vox : i32[],
+    vox : Block[],
     maxFY : i32[],
     reg : Biomes,
 
@@ -55,11 +58,11 @@ class ChunkManager {
         this.fx = malloc<i32>(faceCap);
         this.fy = malloc<i32>(faceCap);
         this.fz = malloc<i32>(faceCap);
-        this.fdir = malloc<i32>(faceCap);
+        this.fdir = malloc<FaceDir>(faceCap);
         this.ftile = malloc<i32>(faceCap);
         this.hmap = malloc<i32>(slots * hSide * hSide);
         this.ctop = malloc<i32>(slots * s * s);
-        this.vox = malloc<i32>(slots * hSide * hSide * config::worldHeight);
+        this.vox = malloc<Block>(slots * hSide * hSide * config::worldHeight);
         this.maxFY = malloc<i32>(slots);
         let i : i32 = 0;
         while (i < slots) {
@@ -147,12 +150,12 @@ class ChunkManager {
      * @param lz    the local z coordinate
      * @return the block id
      */
-    fn getVox(slot : i32, lx : i32, ly : i32, lz : i32) : i32 {
+    fn getVox(slot : i32, lx : i32, ly : i32, lz : i32) : Block {
         if (ly < 0) {
-            return config::bStone;
+            return Block::Stone;
         }
         if (ly >= config::worldHeight) {
-            return config::bAir;
+            return Block::Air;
         }
         return this.vox[this.voxIdx(slot, lx, ly, lz)];
     }
@@ -165,7 +168,7 @@ class ChunkManager {
      * @param lz    the local z coordinate
      * @param id    the block id to write
      */
-    fn setVoxLocal(slot : i32, lx : i32, ly : i32, lz : i32, id : i32) : void {
+    fn setVoxLocal(slot : i32, lx : i32, ly : i32, lz : i32, own id : Block) : void {
         this.vox[this.voxIdx(slot, lx, ly, lz)] = id;
     }
 
@@ -178,7 +181,7 @@ class ChunkManager {
      * @param lz    the local z coordinate
      * @param id    the block id to write
      */
-    fn setVoxClip(slot : i32, lx : i32, ly : i32, lz : i32, id : i32) : void {
+    fn setVoxClip(slot : i32, lx : i32, ly : i32, lz : i32, id : Block) : void {
         let s : i32 = config::chunkSize;
         if (lx < 0 - 1 || lx > s || lz < 0 - 1 || lz > s) {
             return;
@@ -186,7 +189,8 @@ class ChunkManager {
         if (ly < 0 || ly >= config::worldHeight) {
             return;
         }
-        this.setVoxLocal(slot, lx, ly, lz, id);
+        let v : Block = id;
+        this.setVoxLocal(slot, lx, ly, lz, v);
     }
 
     /**
@@ -246,19 +250,19 @@ class ChunkManager {
      * @param wz  the world z coordinate
      * @return the block id
      */
-    fn worldGet(wx : i32, wy : i32, wz : i32) : i32 {
+    fn worldGet(wx : i32, wy : i32, wz : i32) : Block {
         if (wy < 0) {
-            return config::bStone;
+            return Block::Stone;
         }
         if (wy >= config::worldHeight) {
-            return config::bAir;
+            return Block::Air;
         }
         let s : i32 = config::chunkSize;
         let cx : i32 = this.floorDiv(wx, s);
         let cz : i32 = this.floorDiv(wz, s);
         let slot : i32 = this.slotFor(cx, cz);
         if (this.loaded[slot] == 0 || this.cxs[slot] != cx || this.czs[slot] != cz) {
-            return config::bAir;
+            return Block::Air;
         }
         return this.getVox(slot, wx - cx * s, wy, wz - cz * s);
     }
@@ -342,7 +346,7 @@ class ChunkManager {
             while (lx <= s) {
                 let wx : f64 = (cx * s + lx) as f64;
                 let wz : f64 = (cz * s + lz) as f64;
-                let h : i32 = floorToInt(terrainHeight(wx, wz)) as i32;
+                let h : i32 = Math::floorToInt(terrainHeight(wx, wz)) as i32;
                 if (h < 2) {
                     h = 2;
                 }
@@ -364,7 +368,7 @@ class ChunkManager {
      * @return the clamped terrain height
      */
     fn colHeightWorld(wx : i32, wz : i32) : i32 {
-        let h : i32 = floorToInt(terrainHeight(wx as f64, wz as f64)) as i32;
+        let h : i32 = Math::floorToInt(terrainHeight(wx as f64, wz as f64)) as i32;
         if (h < 2) {
             h = 2;
         }
@@ -393,10 +397,10 @@ class ChunkManager {
                 let wx : i32 = cx * s + lx;
                 let wz : i32 = cz * s + lz;
                 let h : i32 = this.heightAt(slot, lx, lz);
-                let biome : i32 = biomeAt(temperature(wx as f64, wz as f64),
+                let biome : BiomeId = biomeAt(temperature(wx as f64, wz as f64),
                     humidity(wx as f64, wz as f64), h);
-                let surf : i32 = this.reg.surface(biome, h);
-                let filler : i32 = this.reg.filler(biome);
+                let surf : Block = this.reg.surface(biome, h);
+                let filler : Block = this.reg.filler(biome);
                 let topY : i32 = h - 1;
                 if (h <= config::seaLevel) {
                     topY = config::seaLevel;
@@ -404,7 +408,7 @@ class ChunkManager {
                 this.bumpFY(slot, topY);
                 let ly : i32 = 0;
                 while (ly < config::worldHeight) {
-                    let id : i32 = config::bAir;
+                    let id : Block = Block::Air;
                     if (ly < h) {
                         if (ly == h - 1) {
                             id = surf;
@@ -414,10 +418,10 @@ class ChunkManager {
                             id = this.oreAt(wx, ly, wz);
                         }
                     } else if (h <= config::seaLevel && ly <= config::seaLevel) {
-                        id = config::bWater;
+                        id = Block::Water;
                         // Frozen ocean: the water surface freezes to ice.
-                        if (biome == config::biFrozenOcean && ly == config::seaLevel) {
-                            id = config::bIce;
+                        if (biome == BiomeId::FrozenOcean && ly == config::seaLevel) {
+                            id = Block::Ice;
                         }
                     }
                     this.setVoxLocal(slot, lx, ly, lz, id);
@@ -450,7 +454,7 @@ class ChunkManager {
                 let wz : i32 = cz * s + olz;
                 let h : i32 = this.colHeightWorld(wx, wz);
                 if (h > config::seaLevel) {
-                    let biome : i32 = biomeAt(temperature(wx as f64, wz as f64),
+                    let biome : BiomeId = biomeAt(temperature(wx as f64, wz as f64),
                         humidity(wx as f64, wz as f64), h);
                     // Thin every biome's trees toward sparser, airier woods.
                     let thr : f64 = this.reg.treeThreshold(biome);
@@ -475,32 +479,32 @@ class ChunkManager {
      * @param wz  the world z coordinate
      * @return the block id (ore or stone)
      */
-    fn oreAt(wx : i32, wy : i32, wz : i32) : i32 {
+    fn oreAt(wx : i32, wy : i32, wz : i32) : Block {
         let r : f64 = hashI(wx * 7 + wy * 131, wz * 13 + wy * 977, config::seedI + 9171);
         if (wy < 14) {
             if (r > 0.9930) {
-                return config::bDiamondOre;
+                return Block::DiamondOre;
             }
             if (r > 0.9870) {
-                return config::bEmeraldOre;
+                return Block::EmeraldOre;
             }
             if (r > 0.9790) {
-                return config::bRedstoneOre;
+                return Block::RedstoneOre;
             }
             if (r > 0.9680) {
-                return config::bGoldOre;
+                return Block::GoldOre;
             }
         }
         if (wy < 36 && r > 0.9700) {
-            return config::bLapisOre;
+            return Block::LapisOre;
         }
         if (r > 0.9550) {
-            return config::bIronOre;
+            return Block::IronOre;
         }
         if (r > 0.9150) {
-            return config::bCoalOre;
+            return Block::CoalOre;
         }
-        return config::bStone;
+        return Block::Stone;
     }
 
     /**
@@ -511,7 +515,7 @@ class ChunkManager {
      * @param lz      the local z coordinate
      * @param leafId  the leaf block id
      */
-    fn stampLeafId(slot : i32, lx : i32, ly : i32, lz : i32, leafId : i32) : void {
+    fn stampLeafId(slot : i32, lx : i32, ly : i32, lz : i32, leafId : Block) : void {
         let s : i32 = config::chunkSize;
         if (lx < 0 - 1 || lx > s || lz < 0 - 1 || lz > s) {
             return;
@@ -519,8 +523,9 @@ class ChunkManager {
         if (ly < 0 || ly >= config::worldHeight) {
             return;
         }
-        if (this.getVox(slot, lx, ly, lz) == config::bAir) {
-            this.setVoxLocal(slot, lx, ly, lz, leafId);
+        if (this.getVox(slot, lx, ly, lz) == Block::Air) {
+            let v : Block = leafId;
+            this.setVoxLocal(slot, lx, ly, lz, v);
         }
     }
 
@@ -533,7 +538,7 @@ class ChunkManager {
      * @param rad     the half-size of the square
      * @param leafId  the leaf block id
      */
-    fn leafLayer(slot : i32, cx : i32, cy : i32, cz : i32, rad : i32, leafId : i32) : void {
+    fn leafLayer(slot : i32, cx : i32, cy : i32, cz : i32, rad : i32, leafId : Block) : void {
         let dz : i32 = 0 - rad;
         while (dz <= rad) {
             let dx : i32 = 0 - rad;
@@ -554,7 +559,7 @@ class ChunkManager {
      * @param height  the trunk height
      * @param woodId  the wood block id
      */
-    fn stampTrunk(slot : i32, olx : i32, baseY : i32, olz : i32, height : i32, woodId : i32) : void {
+    fn stampTrunk(slot : i32, olx : i32, baseY : i32, olz : i32, height : i32, woodId : Block) : void {
         let t : i32 = 0;
         while (t < height) {
             this.setVoxClip(slot, olx, baseY + t, olz, woodId);
@@ -575,62 +580,58 @@ class ChunkManager {
      * @param baseY   the trunk base Y
      * @param olz     the tree origin z coordinate
      */
-    fn stampTree(kind : i32, height : i32, slot : i32, olx : i32, baseY : i32, olz : i32) : void {
-        if (kind == config::treeNone) {
-            return;
-        }
-        if (kind == config::treeCactus) {
-            let c : i32 = 0;
-            while (c < height) {
-                this.setVoxClip(slot, olx, baseY + c, olz, config::bCactus);
-                c = c + 1;
+    fn stampTree(kind : TreeKind, height : i32, slot : i32, olx : i32, baseY : i32, olz : i32) : void {
+        match kind {
+            TreeKind::None => {
+                return;
             }
-            this.bumpFY(slot, baseY + height);
-            return;
-        }
-        if (kind == config::treeSpruce) {
-            this.stampSpruce(slot, olx, baseY, olz, height);
-            return;
-        }
-        if (kind == config::treeAcacia) {
-            this.stampAcacia(slot, olx, baseY, olz, height);
-            return;
-        }
-        if (kind == config::treeBamboo) {
-            // A tall, thin bamboo stalk.
-            let t : i32 = 0;
-            while (t < height) {
-                this.setVoxClip(slot, olx, baseY + t, olz, config::bBamboo);
-                t = t + 1;
+            TreeKind::Cactus => {
+                let c : i32 = 0;
+                while (c < height) {
+                    this.setVoxClip(slot, olx, baseY + c, olz, Block::Cactus);
+                    c = c + 1;
+                }
+                this.bumpFY(slot, baseY + height);
             }
-            this.bumpFY(slot, baseY + height);
-            return;
+            TreeKind::Spruce => {
+                this.stampSpruce(slot, olx, baseY, olz, height);
+            }
+            TreeKind::Acacia => {
+                this.stampAcacia(slot, olx, baseY, olz, height);
+            }
+            TreeKind::Bamboo => {
+                // A tall, thin bamboo stalk.
+                let t : i32 = 0;
+                while (t < height) {
+                    this.setVoxClip(slot, olx, baseY + t, olz, Block::Bamboo);
+                    t = t + 1;
+                }
+                this.bumpFY(slot, baseY + height);
+            }
+            TreeKind::RedMushroom => {
+                this.stampMushroom(slot, olx, baseY, olz, height, Block::RedMushroom);
+            }
+            TreeKind::BrownMushroom => {
+                this.stampMushroom(slot, olx, baseY, olz, height, Block::BrownMushroom);
+            }
+            // Oak / birch / jungle / cherry: a bushy round canopy; they differ
+            // only in wood / leaf species (the trunk height comes from the biome).
+            _ => {
+                let wood : Block = match kind {
+                    TreeKind::Birch => Block::WoodBirch,
+                    TreeKind::Jungle => Block::WoodJungle,
+                    TreeKind::Cherry => Block::CherryLog,
+                    _ => Block::Wood,
+                };
+                let leaf : Block = match kind {
+                    TreeKind::Birch => Block::LeavesBirch,
+                    TreeKind::Jungle => Block::LeavesJungle,
+                    TreeKind::Cherry => Block::CherryLeaves,
+                    _ => Block::Leaves,
+                };
+                this.stampBushy(slot, olx, baseY, olz, height, wood, leaf);
+            }
         }
-        if (kind == config::treeRedMushroom) {
-            this.stampMushroom(slot, olx, baseY, olz, height, config::bRedMushroom);
-            return;
-        }
-        if (kind == config::treeBrownMushroom) {
-            this.stampMushroom(slot, olx, baseY, olz, height, config::bBrownMushroom);
-            return;
-        }
-        // Oak / birch / jungle / cherry: a bushy round canopy; they differ only
-        // in wood / leaf species (the trunk height comes from the biome).
-        let wood : i32 = config::bWood;
-        let leaf : i32 = config::bLeaves;
-        if (kind == config::treeBirch) {
-            wood = config::bWoodBirch;
-            leaf = config::bLeavesBirch;
-        }
-        if (kind == config::treeJungle) {
-            wood = config::bWoodJungle;
-            leaf = config::bLeavesJungle;
-        }
-        if (kind == config::treeCherry) {
-            wood = config::bCherryLog;
-            leaf = config::bCherryLeaves;
-        }
-        this.stampBushy(slot, olx, baseY, olz, height, wood, leaf);
     }
 
     /**
@@ -642,11 +643,11 @@ class ChunkManager {
      * @param height  the stem height
      * @param capId   the cap block id (red / brown mushroom block)
      */
-    fn stampMushroom(slot : i32, olx : i32, baseY : i32, olz : i32, height : i32, capId : i32) : void {
+    fn stampMushroom(slot : i32, olx : i32, baseY : i32, olz : i32, height : i32, capId : Block) : void {
         let cy : i32 = baseY + height;
         this.leafLayer(slot, olx, cy, olz, 1, capId);
         this.stampLeafId(slot, olx, cy + 1, olz, capId);
-        this.stampTrunk(slot, olx, baseY, olz, height, config::bMushroomStem);
+        this.stampTrunk(slot, olx, baseY, olz, height, Block::MushroomStem);
     }
 
     /**
@@ -660,7 +661,7 @@ class ChunkManager {
      * @param wood    the wood block id
      * @param leaf    the leaf block id
      */
-    fn stampBushy(slot : i32, olx : i32, baseY : i32, olz : i32, height : i32, wood : i32, leaf : i32) : void {
+    fn stampBushy(slot : i32, olx : i32, baseY : i32, olz : i32, height : i32, wood : Block, leaf : Block) : void {
         let cy : i32 = baseY + height;
         this.leafLayer(slot, olx, cy - 2, olz, 2, leaf);
         this.leafLayer(slot, olx, cy - 1, olz, 2, leaf);
@@ -683,11 +684,11 @@ class ChunkManager {
      */
     fn stampSpruce(slot : i32, olx : i32, baseY : i32, olz : i32, height : i32) : void {
         let cy : i32 = baseY + height;
-        this.leafLayer(slot, olx, cy - 3, olz, 2, config::bLeavesSpruce);
-        this.leafLayer(slot, olx, cy - 2, olz, 1, config::bLeavesSpruce);
-        this.leafLayer(slot, olx, cy - 1, olz, 1, config::bLeavesSpruce);
-        this.stampLeafId(slot, olx, cy, olz, config::bLeavesSpruce);
-        this.stampTrunk(slot, olx, baseY, olz, height, config::bWoodSpruce);
+        this.leafLayer(slot, olx, cy - 3, olz, 2, Block::LeavesSpruce);
+        this.leafLayer(slot, olx, cy - 2, olz, 1, Block::LeavesSpruce);
+        this.leafLayer(slot, olx, cy - 1, olz, 1, Block::LeavesSpruce);
+        this.stampLeafId(slot, olx, cy, olz, Block::LeavesSpruce);
+        this.stampTrunk(slot, olx, baseY, olz, height, Block::WoodSpruce);
     }
 
     /**
@@ -700,9 +701,9 @@ class ChunkManager {
      */
     fn stampAcacia(slot : i32, olx : i32, baseY : i32, olz : i32, height : i32) : void {
         let cy : i32 = baseY + height;
-        this.leafLayer(slot, olx, cy, olz, 2, config::bLeavesAcacia);
-        this.leafLayer(slot, olx, cy + 1, olz, 1, config::bLeavesAcacia);
-        this.stampTrunk(slot, olx, baseY, olz, height, config::bWoodAcacia);
+        this.leafLayer(slot, olx, cy, olz, 2, Block::LeavesAcacia);
+        this.leafLayer(slot, olx, cy + 1, olz, 1, Block::LeavesAcacia);
+        this.stampTrunk(slot, olx, baseY, olz, height, Block::WoodAcacia);
     }
 
     // ── Meshing ─────────────────────────────────────────────────
@@ -716,7 +717,7 @@ class ChunkManager {
      * @param dir   the face direction
      * @param tile  the atlas tile index
      */
-    fn addFace(slot : i32, wx : i32, wy : i32, wz : i32, dir : i32, tile : i32) : void {
+    fn addFace(slot : i32, wx : i32, wy : i32, wz : i32, own dir : FaceDir, tile : i32) : void {
         let fc : i32 = this.fcount[slot];
         if (fc >= config::maxFacesPerChunk) {
             return;
@@ -745,7 +746,7 @@ class ChunkManager {
         this.fcount[slot] = 0;
         let s : i32 = config::chunkSize;
         let top : i32 = this.maxFY[slot];
-        let air : i32 = config::bAir;
+        let air : Block = Block::Air;
         let lz : i32 = 0;
         while (lz < s) {
             let lx : i32 = 0;
@@ -755,33 +756,33 @@ class ChunkManager {
                 let coll : i32 = 0;
                 let ly : i32 = 0;
                 while (ly <= top) {
-                    let id : i32 = this.getVox(slot, lx, ly, lz);
+                    let id : Block = this.getVox(slot, lx, ly, lz);
                     if (id != air) {
-                        if (id == config::bWater) {
+                        if (id == Block::Water) {
                             if (this.getVox(slot, lx, ly + 1, lz) == air) {
-                                this.addFace(slot, wx, ly, wz, 2, tileFor(id, 2));
+                                this.addFace(slot, wx, ly, wz, FaceDir::Top, tileFor(id, FaceDir::Top));
                             }
                         } else {
                             if (isCollidable(id)) {
                                 coll = ly + 1;
                             }
                             if (this.getVox(slot, lx + 1, ly, lz) == air) {
-                                this.addFace(slot, wx, ly, wz, 0, tileFor(id, 0));
+                                this.addFace(slot, wx, ly, wz, FaceDir::PosX, tileFor(id, FaceDir::PosX));
                             }
                             if (this.getVox(slot, lx - 1, ly, lz) == air) {
-                                this.addFace(slot, wx, ly, wz, 1, tileFor(id, 1));
+                                this.addFace(slot, wx, ly, wz, FaceDir::NegX, tileFor(id, FaceDir::NegX));
                             }
                             if (this.getVox(slot, lx, ly + 1, lz) == air) {
-                                this.addFace(slot, wx, ly, wz, 2, tileFor(id, 2));
+                                this.addFace(slot, wx, ly, wz, FaceDir::Top, tileFor(id, FaceDir::Top));
                             }
                             if (this.getVox(slot, lx, ly - 1, lz) == air) {
-                                this.addFace(slot, wx, ly, wz, 3, tileFor(id, 3));
+                                this.addFace(slot, wx, ly, wz, FaceDir::Bottom, tileFor(id, FaceDir::Bottom));
                             }
                             if (this.getVox(slot, lx, ly, lz + 1) == air) {
-                                this.addFace(slot, wx, ly, wz, 4, tileFor(id, 4));
+                                this.addFace(slot, wx, ly, wz, FaceDir::PosZ, tileFor(id, FaceDir::PosZ));
                             }
                             if (this.getVox(slot, lx, ly, lz - 1) == air) {
-                                this.addFace(slot, wx, ly, wz, 5, tileFor(id, 5));
+                                this.addFace(slot, wx, ly, wz, FaceDir::NegZ, tileFor(id, FaceDir::NegZ));
                             }
                         }
                     }
@@ -806,7 +807,7 @@ class ChunkManager {
      * @param wz  the world z coordinate
      * @param id  the block id to write
      */
-    fn setVoxel(wx : i32, wy : i32, wz : i32, id : i32) : void {
+    fn setVoxel(wx : i32, wy : i32, wz : i32, id : Block) : void {
         if (wy < 0 || wy >= config::worldHeight) {
             return;
         }
@@ -824,8 +825,9 @@ class ChunkManager {
                 if (lx >= 0 - 1 && lx <= s && lz >= 0 - 1 && lz <= s) {
                     let slot : i32 = this.slotFor(ccx, ccz);
                     if (this.loaded[slot] == 1 && this.cxs[slot] == ccx && this.czs[slot] == ccz) {
-                        this.setVoxLocal(slot, lx, wy, lz, id);
-                        if (id != config::bAir) {
+                        let v : Block = id;
+                        this.setVoxLocal(slot, lx, wy, lz, v);
+                        if (id != Block::Air) {
                             this.bumpFY(slot, wy);
                         }
                         this.buildMesh(slot, ccx, ccz);
@@ -844,7 +846,7 @@ class ChunkManager {
      * @param wz  the world z coordinate
      */
     fn breakAt(wx : i32, wy : i32, wz : i32) : void {
-        this.setVoxel(wx, wy, wz, config::bAir);
+        this.setVoxel(wx, wy, wz, Block::Air);
     }
 
     /**
@@ -854,7 +856,7 @@ class ChunkManager {
      * @param wz     the world z coordinate
      * @param block  the block id to place
      */
-    fn placeAt(wx : i32, wy : i32, wz : i32, block : i32) : void {
+    fn placeAt(wx : i32, wy : i32, wz : i32, block : Block) : void {
         this.setVoxel(wx, wy, wz, block);
     }
 }

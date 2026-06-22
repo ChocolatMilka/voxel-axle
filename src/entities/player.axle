@@ -6,10 +6,12 @@
 // floating fly-camera any more — where you look is where you walk, and
 // gravity always has a say.
 
-use std::numeric::math::{sin, cos, floorToInt};
 use crate::entities::entity::Entity;
 use crate::world::manager::ChunkManager;
 use crate::config;
+use crate::config::{ Block };
+use crate::mathx::{ clampF64 };
+use crate::vec3::{ Vec3, vec3 };
 
 class Player extends Entity {
     yaw : f64,
@@ -18,22 +20,18 @@ class Player extends Entity {
     cosy : f64,
     sinp : f64,
     cosp : f64,
-    eyeX : f64,
-    eyeY : f64,
-    eyeZ : f64,
+    eye : Vec3,
     airTicks : i32,
     drownTick : i32,
     sinceHurt : i32,
     regenTick : i32,
     creative : i32,   // 0 = survival, 1 = creative (fly)
-    hotbar : i32[],   // block id held in each inventory slot
+    hotbar : Block[],   // block id held in each inventory slot
     selected : i32,   // active hotbar slot (0-based)
 
     /** Construct a player at (x, y, z) with a stocked hotbar and full HP. */
     constructor(x : f64, y : f64, z : f64) {
-        this.posX = x;
-        this.posY = y;
-        this.posZ = z;
+        this.pos = vec3(x, y, z);
         this.velY = 0.0;
         this.radius = config::playerRadius;
         this.height = config::playerHeight;
@@ -51,24 +49,22 @@ class Player extends Entity {
         this.cosy = 1.0;
         this.sinp = 0.0;
         this.cosp = 1.0;
-        this.eyeX = x;
-        this.eyeY = y + config::eyeHeight;
-        this.eyeZ = z;
+        this.eye = vec3(x, y + config::eyeHeight, z);
         this.airTicks = 0;
         this.drownTick = config::drownEveryFrames;
         this.sinceHurt = 0;
         this.regenTick = config::regenEveryFrames;
         this.creative = 0;
-        this.hotbar = malloc<i32>(config::hotbarSize);
-        this.hotbar[0] = config::bGrass;
-        this.hotbar[1] = config::bDirt;
-        this.hotbar[2] = config::bStone;
-        this.hotbar[3] = config::bSand;
-        this.hotbar[4] = config::bSnow;
-        this.hotbar[5] = config::bGravel;
-        this.hotbar[6] = config::bWood;
-        this.hotbar[7] = config::bLeaves;
-        this.hotbar[8] = config::bWater;
+        this.hotbar = malloc<Block>(config::hotbarSize);
+        this.hotbar[0] = Block::Grass;
+        this.hotbar[1] = Block::Dirt;
+        this.hotbar[2] = Block::Stone;
+        this.hotbar[3] = Block::Sand;
+        this.hotbar[4] = Block::Snow;
+        this.hotbar[5] = Block::Gravel;
+        this.hotbar[6] = Block::Wood;
+        this.hotbar[7] = Block::Leaves;
+        this.hotbar[8] = Block::Water;
         this.selected = 0;
     }
 
@@ -86,7 +82,7 @@ class Player extends Entity {
      * The block id currently held for placing.
      * @return block id in the active hotbar slot
      */
-    fn heldBlock() : i32 {
+    fn heldBlock() : Block {
         return this.hotbar[this.selected];
     }
 
@@ -105,13 +101,13 @@ class Player extends Entity {
 
     /** Recompute look trig and the eye position the renderer projects from. */
     fn refresh() : void {
-        this.siny = sin(this.yaw);
-        this.cosy = cos(this.yaw);
-        this.sinp = sin(this.pitch);
-        this.cosp = cos(this.pitch);
-        this.eyeX = this.posX;
-        this.eyeY = this.posY + config::eyeHeight - this.stepUp;
-        this.eyeZ = this.posZ;
+        this.siny = Math::sin(this.yaw);
+        this.cosy = Math::cos(this.yaw);
+        this.sinp = Math::sin(this.pitch);
+        this.cosp = Math::cos(this.pitch);
+        this.eye.x = this.pos.x;
+        this.eye.y = this.pos.y + config::eyeHeight - this.stepUp;
+        this.eye.z = this.pos.z;
     }
 
     /**
@@ -121,13 +117,7 @@ class Player extends Entity {
      */
     fn look(dyaw : f64, dpitch : f64) : void {
         this.yaw = this.yaw + dyaw;
-        this.pitch = this.pitch + dpitch;
-        if (this.pitch > config::pitchMax) {
-            this.pitch = config::pitchMax;
-        }
-        if (this.pitch < 0.0 - config::pitchMax) {
-            this.pitch = 0.0 - config::pitchMax;
-        }
+        this.pitch = clampF64(this.pitch + dpitch, 0.0 - config::pitchMax, config::pitchMax);
     }
 
     /**
@@ -144,7 +134,7 @@ class Player extends Entity {
      * @return true when the eye height is under the sea level
      */
     fn isUnderwater() : bool {
-        return (this.posY + config::eyeHeight) < (config::seaLevel as f64);
+        return (this.pos.y + config::eyeHeight) < (config::seaLevel as f64);
     }
 
     /**
@@ -216,24 +206,24 @@ class Player extends Entity {
         this.velY = 0.0;
         this.onGround = 0;
         // Horizontal move with voxel collision (no auto-step in flight).
-        if (!this.collidesAt(world, this.posX + dx, this.posY, this.posZ)) {
-            this.posX = this.posX + dx;
+        if (!this.collidesAt(world, this.pos.x + dx, this.pos.y, this.pos.z)) {
+            this.pos.x = this.pos.x + dx;
         }
-        if (!this.collidesAt(world, this.posX, this.posY, this.posZ + dz)) {
-            this.posZ = this.posZ + dz;
+        if (!this.collidesAt(world, this.pos.x, this.pos.y, this.pos.z + dz)) {
+            this.pos.z = this.pos.z + dz;
         }
         if (up) {
-            this.posY = this.posY + config::flyVertSpeed;
+            this.pos.y = this.pos.y + config::flyVertSpeed;
         }
         if (down) {
-            this.posY = this.posY - config::flyVertSpeed;
+            this.pos.y = this.pos.y - config::flyVertSpeed;
         }
         // Don't sink into the ground: if the body intersects blocks, lift
         // the feet onto the highest support beneath them.
-        if (this.collidesAt(world, this.posX, this.posY, this.posZ)) {
-            let top : f64 = this.supportTop(world, this.posX, this.posZ,
-                floorToInt(this.posY) as i32, floorToInt(this.posY + this.height) as i32);
-            this.posY = top;
+        if (this.collidesAt(world, this.pos.x, this.pos.y, this.pos.z)) {
+            let top : f64 = this.supportTop(world, this.pos.x, this.pos.z,
+                Math::floorToInt(this.pos.y) as i32, Math::floorToInt(this.pos.y + this.height) as i32);
+            this.pos.y = top;
             this.onGround = 1;
         }
     }
@@ -248,7 +238,7 @@ class Player extends Entity {
         // Water cushions a fall; on land, falling far hurts (`impact` is
         // the distance dropped from the apex).
         if (!water && this.impact > config::safeFallDist) {
-            let dmg : i32 = floorToInt((this.impact - config::safeFallDist) * config::fallDamagePerBlock) as i32;
+            let dmg : i32 = Math::floorToInt((this.impact - config::safeFallDist) * config::fallDamagePerBlock) as i32;
             if (dmg > 0) {
                 this.hurt(dmg);
             }

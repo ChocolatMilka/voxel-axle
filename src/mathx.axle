@@ -1,0 +1,56 @@
+// mathx — small numeric helpers the stdlib `Math` module doesn't provide:
+// value clamps and angle wrapping, plus the circle constants. Kept in one place
+// so the renderer, the player camera and the mob AI stop re-deriving them.
+
+pub const PI : f64 = 3.14159265358979;
+pub const TAU : f64 = 6.28318530717959;   // 2π
+
+/**
+ * Clamp `v` into the inclusive range [lo, hi].
+ * @param v   the value
+ * @param lo  the lower bound
+ * @param hi  the upper bound
+ * @return v clamped to [lo, hi]
+ */
+pub fn clampF64(v : f64, lo : f64, hi : f64) : f64 {
+    if (v < lo) {
+        return lo;
+    }
+    if (v > hi) {
+        return hi;
+    }
+    return v;
+}
+
+/**
+ * Clamp `v` into the inclusive range [lo, hi].
+ * @param v   the value
+ * @param lo  the lower bound
+ * @param hi  the upper bound
+ * @return v clamped to [lo, hi]
+ */
+pub fn clampI32(v : i32, lo : i32, hi : i32) : i32 {
+    if (v < lo) {
+        return lo;
+    }
+    if (v > hi) {
+        return hi;
+    }
+    return v;
+}
+
+/**
+ * Wrap an angle (radians) into (-π, π], the shortest signed form.
+ * @param a  the angle in radians
+ * @return the equivalent angle in (-π, π]
+ */
+pub fn wrapAngle(a : f64) : f64 {
+    let r : f64 = a;
+    while (r > PI) {
+        r = r - TAU;
+    }
+    while (r < 0.0 - PI) {
+        r = r + TAU;
+    }
+    return r;
+}

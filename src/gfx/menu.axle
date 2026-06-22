@@ -3,7 +3,7 @@
 // the renderer and the mouse hit-test agree. All coordinates are in the
 // 640×400 framebuffer; `main` maps the window-space cursor into it.
 
-use crate::platform::mem::rgb;
+use sdl_platform::rgb;
 use crate::gfx::color::{fillRect, dimScreen};
 use crate::gfx::font::{drawText, textWidth};
 

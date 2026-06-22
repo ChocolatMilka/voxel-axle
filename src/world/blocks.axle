@@ -1,582 +1,320 @@
-// blocks — the block table: id → atlas tile (per face), colour, predicates.
+// blocks — the block table: Block → atlas tile (per face), colour, predicates.
 //
-// To add a block: give it an id in `config`, an atlas tile in `bake_atlas.py`
-// (+ its `tl*` index in config), map it here in `tileFor`, give it a fallback
-// `color`, and place it in a biome / the generator. The mesher and renderer
-// are id-agnostic.
+// To add a block: give it a variant in `configs::blocks` (the `Block` enum), an
+// atlas tile in `bake_atlas.py` (+ its `tl*` index in config), map it here in
+// `tileFor`, give it a fallback `color`, and place it in a biome / the
+// generator. The mesher and renderer are Block-agnostic.
 
-use crate::platform::mem::rgb;
+use sdl_platform::rgb;
 use crate::config;
+use crate::config::{ Block, AudioMaterial, FaceDir };
 
 /**
  * True when `id` is the air block.
- * @param id  the block id
+ * @param id  the block
  * @return whether the block is air
  */
-fn isAir(id : i32) : bool {
-    return id == config::bAir;
+fn isAir(id : Block) : bool {
+    return id == Block::Air;
 }
 
 /**
  * A face between a block and `id` is drawn when `id` lets light/air
  * through. Air (and, later, glass) are non-occluding.
- * @param id  the block id
+ * @param id  the block
  * @return whether the block is transparent
  */
-fn isTransparent(id : i32) : bool {
-    return id == config::bAir;
+fn isTransparent(id : Block) : bool {
+    return id == Block::Air;
 }
 
 /**
  * A "real" block the look-ray can target and that occludes more than
  * air: everything except air and water. Water is see-through for aiming.
- * @param id  the block id
+ * @param id  the block
  * @return whether the block is solid
  */
-fn isSolid(id : i32) : bool {
-    return id != config::bAir && id != config::bWater;
+fn isSolid(id : Block) : bool {
+    return id != Block::Air && id != Block::Water;
 }
 
 /**
  * A block the player physically stands on / can't walk through — every
  * real block (anything but air and water). Leaves included, like MC.
- * @param id  the block id
+ * @param id  the block
  * @return whether the block is collidable
  */
-fn isCollidable(id : i32) : bool {
+fn isCollidable(id : Block) : bool {
     return isSolid(id);
 }
 
 /**
  * True for the grass-family blocks (grass top/side + dirt bottom).
- * @param id  the block id
+ * @param id  the block
  * @return whether the block is grassy
  */
-fn isGrassy(id : i32) : bool {
-    return id == config::bGrass || id == config::bGrassSavanna
-        || id == config::bGrassJungle || id == config::bGrassSwamp
-        || id == config::bGrassTaiga;
+fn isGrassy(id : Block) : bool {
+    return match id {
+        Block::Grass | Block::GrassSavanna | Block::GrassJungle
+            | Block::GrassSwamp | Block::GrassTaiga => true,
+        _ => false,
+    };
 }
 
 /**
- * Sound material of a block id (config::mat*), shared by footsteps and the
+ * Sound material of a block (config::mat*), shared by footsteps and the
  * dig / place sound. Groups the blocks by how they sound underfoot: grassy
  * soils, sand, gravel, snow, stone (incl. bricks / ores), wood, soft foliage
  * (leaves / cactus) and the glassy crack of ice.
- * @param id  the block id
+ * @param id  the block
  * @return the material id (config::mat*)
  */
-fn materialOf(id : i32) : i32 {
-    if (isGrassy(id) || id == config::bDirt || id == config::bCoarseDirt
-        || id == config::bPodzol || id == config::bMycelium) {
-        return config::matGrass;
-    }
-    if (id == config::bSand || id == config::bRedSand
-        || id == config::bSandstone || id == config::bRedSandstone) {
-        return config::matSand;
-    }
-    if (id == config::bGravel || id == config::bClay) {
-        return config::matGravel;
-    }
-    if (id == config::bSnow) {
-        return config::matSnow;
-    }
-    if (id == config::bIce || id == config::bPackedIce) {
-        return config::matGlass;
-    }
-    if (id == config::bWood || id == config::bWoodBirch || id == config::bWoodSpruce
-        || id == config::bWoodAcacia || id == config::bWoodJungle || id == config::bWoodDarkOak
-        || id == config::bPlanks || id == config::bPumpkin
-        || id == config::bBamboo || id == config::bCherryLog) {
-        return config::matWood;
-    }
-    if (id == config::bLeaves || id == config::bLeavesBirch || id == config::bLeavesSpruce
-        || id == config::bLeavesAcacia || id == config::bLeavesJungle || id == config::bLeavesDarkOak
-        || id == config::bCactus || id == config::bMelon || id == config::bCherryLeaves
-        || id == config::bMushroomStem || id == config::bRedMushroom || id == config::bBrownMushroom) {
-        return config::matFoliage;
-    }
-    // Stone, cobble, granite/diorite/andesite, bricks, terracotta, glowstone,
-    // ores and anything unclassified.
-    return config::matStone;
+fn materialOf(id : Block) : AudioMaterial {
+    return match id {
+        Block::Grass | Block::GrassSavanna | Block::GrassJungle | Block::GrassSwamp
+            | Block::GrassTaiga | Block::Dirt | Block::CoarseDirt | Block::Podzol
+            | Block::Mycelium => AudioMaterial::Grass,
+        Block::Sand | Block::RedSand | Block::Sandstone
+            | Block::RedSandstone => AudioMaterial::Sand,
+        Block::Gravel | Block::Clay => AudioMaterial::Gravel,
+        Block::Snow => AudioMaterial::Snow,
+        Block::Ice | Block::PackedIce => AudioMaterial::Glass,
+        Block::Wood | Block::WoodBirch | Block::WoodSpruce | Block::WoodAcacia
+            | Block::WoodJungle | Block::WoodDarkOak | Block::Planks | Block::Pumpkin
+            | Block::Bamboo | Block::CherryLog => AudioMaterial::Wood,
+        Block::Leaves | Block::LeavesBirch | Block::LeavesSpruce | Block::LeavesAcacia
+            | Block::LeavesJungle | Block::LeavesDarkOak | Block::Cactus | Block::Melon
+            | Block::CherryLeaves | Block::MushroomStem | Block::RedMushroom
+            | Block::BrownMushroom => AudioMaterial::Foliage,
+        // Stone, cobble, granite/diorite/andesite, bricks, terracotta,
+        // glowstone, ores and anything unclassified.
+        _ => AudioMaterial::Stone,
+    };
 }
 
 /**
- * Atlas tile for a block id on face `dir` (2 = top, 3 = bottom, else side).
- * @param id   the block id
+ * Atlas tile for a block on face `dir` (top / bottom get their own tile on
+ * many blocks; the four sides share one).
+ * @param id   the block
  * @param dir  the face direction
  * @return the atlas tile index
  */
-fn tileFor(id : i32, dir : i32) : i32 {
-    // ── Grass family: tinted top, dirt bottom, tinted side ──
-    if (id == config::bGrass) {
-        if (dir == 2) {
-            return config::tlGrassTop;
-        }
-        if (dir == 3) {
-            return config::tlDirt;
-        }
-        return config::tlGrassSide;
-    }
-    if (id == config::bGrassSavanna) {
-        if (dir == 2) {
-            return config::tlGrassTopSavanna;
-        }
-        if (dir == 3) {
-            return config::tlDirt;
-        }
-        return config::tlGrassSideSavanna;
-    }
-    if (id == config::bGrassJungle) {
-        if (dir == 2) {
-            return config::tlGrassTopJungle;
-        }
-        if (dir == 3) {
-            return config::tlDirt;
-        }
-        return config::tlGrassSideJungle;
-    }
-    if (id == config::bGrassSwamp) {
-        if (dir == 2) {
-            return config::tlGrassTopSwamp;
-        }
-        if (dir == 3) {
-            return config::tlDirt;
-        }
-        return config::tlGrassSideSwamp;
-    }
-    if (id == config::bGrassTaiga) {
-        if (dir == 2) {
-            return config::tlGrassTopTaiga;
-        }
-        if (dir == 3) {
-            return config::tlDirt;
-        }
-        return config::tlGrassSideTaiga;
-    }
-    if (id == config::bPodzol) {
-        if (dir == 2) {
-            return config::tlPodzolTop;
-        }
-        if (dir == 3) {
-            return config::tlDirt;
-        }
-        return config::tlPodzolSide;
-    }
-    if (id == config::bMycelium) {
-        if (dir == 2) {
-            return config::tlMyceliumTop;
-        }
-        if (dir == 3) {
-            return config::tlDirt;
-        }
-        return config::tlMyceliumSide;
-    }
+fn tileFor(id : Block, dir : FaceDir) : i32 {
+    return match id {
+        // ── Grass family: tinted top, dirt bottom, tinted side ──
+        Block::Grass => match dir {
+            FaceDir::Top => config::tlGrassTop,
+            FaceDir::Bottom => config::tlDirt,
+            _ => config::tlGrassSide,
+        },
+        Block::GrassSavanna => match dir {
+            FaceDir::Top => config::tlGrassTopSavanna,
+            FaceDir::Bottom => config::tlDirt,
+            _ => config::tlGrassSideSavanna,
+        },
+        Block::GrassJungle => match dir {
+            FaceDir::Top => config::tlGrassTopJungle,
+            FaceDir::Bottom => config::tlDirt,
+            _ => config::tlGrassSideJungle,
+        },
+        Block::GrassSwamp => match dir {
+            FaceDir::Top => config::tlGrassTopSwamp,
+            FaceDir::Bottom => config::tlDirt,
+            _ => config::tlGrassSideSwamp,
+        },
+        Block::GrassTaiga => match dir {
+            FaceDir::Top => config::tlGrassTopTaiga,
+            FaceDir::Bottom => config::tlDirt,
+            _ => config::tlGrassSideTaiga,
+        },
+        Block::Podzol => match dir {
+            FaceDir::Top => config::tlPodzolTop,
+            FaceDir::Bottom => config::tlDirt,
+            _ => config::tlPodzolSide,
+        },
+        Block::Mycelium => match dir {
+            FaceDir::Top => config::tlMyceliumTop,
+            FaceDir::Bottom => config::tlDirt,
+            _ => config::tlMyceliumSide,
+        },
 
-    // ── Soils / loose ──
-    if (id == config::bDirt) {
-        return config::tlDirt;
-    }
-    if (id == config::bCoarseDirt) {
-        return config::tlCoarseDirt;
-    }
-    if (id == config::bSand) {
-        return config::tlSand;
-    }
-    if (id == config::bRedSand) {
-        return config::tlRedSand;
-    }
-    if (id == config::bGravel) {
-        return config::tlGravel;
-    }
-    if (id == config::bClay) {
-        return config::tlClay;
-    }
-    if (id == config::bSnow) {
-        return config::tlSnow;
-    }
-    if (id == config::bIce) {
-        return config::tlIce;
-    }
-    if (id == config::bPackedIce) {
-        return config::tlPackedIce;
-    }
+        // ── Soils / loose ──
+        Block::Dirt => config::tlDirt,
+        Block::CoarseDirt => config::tlCoarseDirt,
+        Block::Sand => config::tlSand,
+        Block::RedSand => config::tlRedSand,
+        Block::Gravel => config::tlGravel,
+        Block::Clay => config::tlClay,
+        Block::Snow => config::tlSnow,
+        Block::Ice => config::tlIce,
+        Block::PackedIce => config::tlPackedIce,
 
-    // ── Stones / bricks ──
-    if (id == config::bStone) {
-        return config::tlStone;
-    }
-    if (id == config::bCobble) {
-        return config::tlCobble;
-    }
-    if (id == config::bMossyCobble) {
-        return config::tlMossyCobble;
-    }
-    if (id == config::bGranite) {
-        return config::tlGranite;
-    }
-    if (id == config::bDiorite) {
-        return config::tlDiorite;
-    }
-    if (id == config::bAndesite) {
-        return config::tlAndesite;
-    }
-    if (id == config::bStoneBricks) {
-        return config::tlStoneBricks;
-    }
-    if (id == config::bBricks) {
-        return config::tlBricks;
-    }
-    if (id == config::bSandstone) {
-        if (dir == 2) {
-            return config::tlSandstoneTop;
-        }
-        if (dir == 3) {
-            return config::tlSandstoneBottom;
-        }
-        return config::tlSandstoneSide;
-    }
-    if (id == config::bRedSandstone) {
-        if (dir == 2) {
-            return config::tlRedSandstoneTop;
-        }
-        if (dir == 3) {
-            return config::tlRedSandstoneTop;
-        }
-        return config::tlRedSandstoneSide;
-    }
-    if (id == config::bTerracotta) {
-        return config::tlTerracotta;
-    }
-    if (id == config::bTerracottaOrange) {
-        return config::tlTerracottaOrange;
-    }
-    if (id == config::bTerracottaWhite) {
-        return config::tlTerracottaWhite;
-    }
+        // ── Stones / bricks ──
+        Block::Stone => config::tlStone,
+        Block::Cobble => config::tlCobble,
+        Block::MossyCobble => config::tlMossyCobble,
+        Block::Granite => config::tlGranite,
+        Block::Diorite => config::tlDiorite,
+        Block::Andesite => config::tlAndesite,
+        Block::StoneBricks => config::tlStoneBricks,
+        Block::Bricks => config::tlBricks,
+        Block::Sandstone => match dir {
+            FaceDir::Top => config::tlSandstoneTop,
+            FaceDir::Bottom => config::tlSandstoneBottom,
+            _ => config::tlSandstoneSide,
+        },
+        Block::RedSandstone => match dir {
+            FaceDir::Top => config::tlRedSandstoneTop,
+            FaceDir::Bottom => config::tlRedSandstoneTop,
+            _ => config::tlRedSandstoneSide,
+        },
+        Block::Terracotta => config::tlTerracotta,
+        Block::TerracottaOrange => config::tlTerracottaOrange,
+        Block::TerracottaWhite => config::tlTerracottaWhite,
 
-    // ── Logs (top/bottom = ring, side = bark) + leaves + planks ──
-    if (id == config::bWood) {
-        if (dir == 2 || dir == 3) {
-            return config::tlOakLogTop;
-        }
-        return config::tlOakLogSide;
-    }
-    if (id == config::bLeaves) {
-        return config::tlOakLeaves;
-    }
-    if (id == config::bPlanks) {
-        return config::tlPlanks;
-    }
-    if (id == config::bWoodBirch) {
-        if (dir == 2 || dir == 3) {
-            return config::tlBirchLogTop;
-        }
-        return config::tlBirchLogSide;
-    }
-    if (id == config::bLeavesBirch) {
-        return config::tlBirchLeaves;
-    }
-    if (id == config::bWoodSpruce) {
-        if (dir == 2 || dir == 3) {
-            return config::tlSpruceLogTop;
-        }
-        return config::tlSpruceLogSide;
-    }
-    if (id == config::bLeavesSpruce) {
-        return config::tlSpruceLeaves;
-    }
-    if (id == config::bWoodAcacia) {
-        if (dir == 2 || dir == 3) {
-            return config::tlAcaciaLogTop;
-        }
-        return config::tlAcaciaLogSide;
-    }
-    if (id == config::bLeavesAcacia) {
-        return config::tlAcaciaLeaves;
-    }
-    if (id == config::bWoodJungle) {
-        if (dir == 2 || dir == 3) {
-            return config::tlJungleLogTop;
-        }
-        return config::tlJungleLogSide;
-    }
-    if (id == config::bLeavesJungle) {
-        return config::tlJungleLeaves;
-    }
-    if (id == config::bWoodDarkOak) {
-        if (dir == 2 || dir == 3) {
-            return config::tlDarkOakLogTop;
-        }
-        return config::tlDarkOakLogSide;
-    }
-    if (id == config::bLeavesDarkOak) {
-        return config::tlDarkOakLeaves;
-    }
+        // ── Logs (top/bottom = ring, side = bark) + leaves + planks ──
+        Block::Wood => match dir {
+            FaceDir::Top | FaceDir::Bottom => config::tlOakLogTop,
+            _ => config::tlOakLogSide,
+        },
+        Block::Leaves => config::tlOakLeaves,
+        Block::Planks => config::tlPlanks,
+        Block::WoodBirch => match dir {
+            FaceDir::Top | FaceDir::Bottom => config::tlBirchLogTop,
+            _ => config::tlBirchLogSide,
+        },
+        Block::LeavesBirch => config::tlBirchLeaves,
+        Block::WoodSpruce => match dir {
+            FaceDir::Top | FaceDir::Bottom => config::tlSpruceLogTop,
+            _ => config::tlSpruceLogSide,
+        },
+        Block::LeavesSpruce => config::tlSpruceLeaves,
+        Block::WoodAcacia => match dir {
+            FaceDir::Top | FaceDir::Bottom => config::tlAcaciaLogTop,
+            _ => config::tlAcaciaLogSide,
+        },
+        Block::LeavesAcacia => config::tlAcaciaLeaves,
+        Block::WoodJungle => match dir {
+            FaceDir::Top | FaceDir::Bottom => config::tlJungleLogTop,
+            _ => config::tlJungleLogSide,
+        },
+        Block::LeavesJungle => config::tlJungleLeaves,
+        Block::WoodDarkOak => match dir {
+            FaceDir::Top | FaceDir::Bottom => config::tlDarkOakLogTop,
+            _ => config::tlDarkOakLogSide,
+        },
+        Block::LeavesDarkOak => config::tlDarkOakLeaves,
 
-    // ── Decoration ──
-    if (id == config::bCactus) {
-        if (dir == 2 || dir == 3) {
-            return config::tlCactusTop;
-        }
-        return config::tlCactusSide;
-    }
-    if (id == config::bPumpkin) {
-        if (dir == 2 || dir == 3) {
-            return config::tlPumpkinTop;
-        }
-        return config::tlPumpkinSide;
-    }
-    if (id == config::bMelon) {
-        if (dir == 2 || dir == 3) {
-            return config::tlMelonTop;
-        }
-        return config::tlMelonSide;
-    }
-    if (id == config::bGlowstone) {
-        return config::tlGlowstone;
-    }
-    if (id == config::bWater) {
-        return config::tlWater;
-    }
+        // ── Decoration ──
+        Block::Cactus => match dir {
+            FaceDir::Top | FaceDir::Bottom => config::tlCactusTop,
+            _ => config::tlCactusSide,
+        },
+        Block::Pumpkin => match dir {
+            FaceDir::Top | FaceDir::Bottom => config::tlPumpkinTop,
+            _ => config::tlPumpkinSide,
+        },
+        Block::Melon => match dir {
+            FaceDir::Top | FaceDir::Bottom => config::tlMelonTop,
+            _ => config::tlMelonSide,
+        },
+        Block::Glowstone => config::tlGlowstone,
+        Block::Water => config::tlWater,
 
-    // ── Ores ──
-    if (id == config::bCoalOre) {
-        return config::tlCoalOre;
-    }
-    if (id == config::bIronOre) {
-        return config::tlIronOre;
-    }
-    if (id == config::bGoldOre) {
-        return config::tlGoldOre;
-    }
-    if (id == config::bDiamondOre) {
-        return config::tlDiamondOre;
-    }
-    if (id == config::bRedstoneOre) {
-        return config::tlRedstoneOre;
-    }
-    if (id == config::bEmeraldOre) {
-        return config::tlEmeraldOre;
-    }
-    if (id == config::bLapisOre) {
-        return config::tlLapisOre;
-    }
+        // ── Ores ──
+        Block::CoalOre => config::tlCoalOre,
+        Block::IronOre => config::tlIronOre,
+        Block::GoldOre => config::tlGoldOre,
+        Block::DiamondOre => config::tlDiamondOre,
+        Block::RedstoneOre => config::tlRedstoneOre,
+        Block::EmeraldOre => config::tlEmeraldOre,
+        Block::LapisOre => config::tlLapisOre,
 
-    // ── Expansion: bamboo, cherry, giant mushrooms ──
-    if (id == config::bBamboo) {
-        if (dir == 2 || dir == 3) {
-            return config::tlBambooTop;
-        }
-        return config::tlBambooSide;
-    }
-    if (id == config::bCherryLog) {
-        if (dir == 2 || dir == 3) {
-            return config::tlCherryLogTop;
-        }
-        return config::tlCherryLogSide;
-    }
-    if (id == config::bCherryLeaves) {
-        return config::tlCherryLeaves;
-    }
-    if (id == config::bMushroomStem) {
-        return config::tlMushroomStem;
-    }
-    if (id == config::bRedMushroom) {
-        return config::tlRedMushroom;
-    }
-    if (id == config::bBrownMushroom) {
-        return config::tlBrownMushroom;
-    }
+        // ── Expansion: bamboo, cherry, giant mushrooms ──
+        Block::Bamboo => match dir {
+            FaceDir::Top | FaceDir::Bottom => config::tlBambooTop,
+            _ => config::tlBambooSide,
+        },
+        Block::CherryLog => match dir {
+            FaceDir::Top | FaceDir::Bottom => config::tlCherryLogTop,
+            _ => config::tlCherryLogSide,
+        },
+        Block::CherryLeaves => config::tlCherryLeaves,
+        Block::MushroomStem => config::tlMushroomStem,
+        Block::RedMushroom => config::tlRedMushroom,
+        Block::BrownMushroom => config::tlBrownMushroom,
 
-    return config::tlStone;
+        _ => config::tlStone,
+    };
 }
 
 /**
- * Base RGB colour of a block id (fallback / hotbar swatch).
- * @param id  the block id
+ * Base RGB colour of a block (fallback / hotbar swatch).
+ * @param id  the block
  * @return the packed RGB colour
  */
-fn color(id : i32) : i32 {
-    if (id == config::bGrass) {
-        return rgb(110, 170, 90);
-    }
-    if (id == config::bGrassSavanna) {
-        return rgb(168, 156, 70);
-    }
-    if (id == config::bGrassJungle) {
-        return rgb(80, 160, 56);
-    }
-    if (id == config::bGrassSwamp) {
-        return rgb(96, 120, 80);
-    }
-    if (id == config::bGrassTaiga) {
-        return rgb(120, 160, 130);
-    }
-    if (id == config::bDirt) {
-        return rgb(140, 100, 64);
-    }
-    if (id == config::bCoarseDirt) {
-        return rgb(122, 90, 58);
-    }
-    if (id == config::bPodzol) {
-        return rgb(96, 68, 36);
-    }
-    if (id == config::bMycelium) {
-        return rgb(120, 104, 116);
-    }
-    if (id == config::bStone) {
-        return rgb(128, 128, 132);
-    }
-    if (id == config::bCobble) {
-        return rgb(122, 120, 120);
-    }
-    if (id == config::bMossyCobble) {
-        return rgb(104, 116, 96);
-    }
-    if (id == config::bGranite) {
-        return rgb(154, 110, 92);
-    }
-    if (id == config::bDiorite) {
-        return rgb(188, 188, 190);
-    }
-    if (id == config::bAndesite) {
-        return rgb(136, 138, 138);
-    }
-    if (id == config::bStoneBricks) {
-        return rgb(122, 122, 124);
-    }
-    if (id == config::bBricks) {
-        return rgb(150, 96, 80);
-    }
-    if (id == config::bSand) {
-        return rgb(218, 205, 145);
-    }
-    if (id == config::bRedSand) {
-        return rgb(190, 110, 56);
-    }
-    if (id == config::bSandstone) {
-        return rgb(220, 208, 152);
-    }
-    if (id == config::bRedSandstone) {
-        return rgb(184, 96, 38);
-    }
-    if (id == config::bTerracotta) {
-        return rgb(150, 92, 66);
-    }
-    if (id == config::bTerracottaOrange) {
-        return rgb(162, 84, 38);
-    }
-    if (id == config::bTerracottaWhite) {
-        return rgb(208, 176, 156);
-    }
-    if (id == config::bGravel) {
-        return rgb(122, 118, 112);
-    }
-    if (id == config::bClay) {
-        return rgb(160, 165, 172);
-    }
-    if (id == config::bSnow) {
-        return rgb(236, 240, 246);
-    }
-    if (id == config::bIce) {
-        return rgb(150, 180, 235);
-    }
-    if (id == config::bPackedIce) {
-        return rgb(140, 168, 222);
-    }
-    if (id == config::bWater) {
-        return rgb(58, 110, 200);
-    }
-    if (id == config::bWood) {
-        return rgb(110, 78, 48);
-    }
-    if (id == config::bLeaves) {
-        return rgb(58, 132, 60);
-    }
-    if (id == config::bPlanks) {
-        return rgb(150, 112, 66);
-    }
-    if (id == config::bWoodBirch) {
-        return rgb(196, 196, 188);
-    }
-    if (id == config::bLeavesBirch) {
-        return rgb(110, 150, 70);
-    }
-    if (id == config::bWoodSpruce) {
-        return rgb(66, 48, 28);
-    }
-    if (id == config::bLeavesSpruce) {
-        return rgb(54, 92, 64);
-    }
-    if (id == config::bWoodAcacia) {
-        return rgb(104, 78, 64);
-    }
-    if (id == config::bLeavesAcacia) {
-        return rgb(100, 126, 46);
-    }
-    if (id == config::bWoodJungle) {
-        return rgb(88, 68, 36);
-    }
-    if (id == config::bLeavesJungle) {
-        return rgb(50, 132, 38);
-    }
-    if (id == config::bWoodDarkOak) {
-        return rgb(66, 50, 32);
-    }
-    if (id == config::bLeavesDarkOak) {
-        return rgb(62, 96, 48);
-    }
-    if (id == config::bCactus) {
-        return rgb(80, 118, 52);
-    }
-    if (id == config::bPumpkin) {
-        return rgb(190, 122, 38);
-    }
-    if (id == config::bMelon) {
-        return rgb(110, 140, 40);
-    }
-    if (id == config::bGlowstone) {
-        return rgb(180, 150, 92);
-    }
-    if (id == config::bCoalOre) {
-        return rgb(70, 70, 72);
-    }
-    if (id == config::bIronOre) {
-        return rgb(150, 132, 116);
-    }
-    if (id == config::bGoldOre) {
-        return rgb(160, 150, 96);
-    }
-    if (id == config::bDiamondOre) {
-        return rgb(120, 170, 170);
-    }
-    if (id == config::bRedstoneOre) {
-        return rgb(140, 90, 88);
-    }
-    if (id == config::bEmeraldOre) {
-        return rgb(90, 150, 104);
-    }
-    if (id == config::bLapisOre) {
-        return rgb(90, 100, 140);
-    }
-    if (id == config::bBamboo) {
-        return rgb(120, 160, 80);
-    }
-    if (id == config::bCherryLog) {
-        return rgb(110, 80, 90);
-    }
-    if (id == config::bCherryLeaves) {
-        return rgb(236, 168, 206);
-    }
-    if (id == config::bMushroomStem) {
-        return rgb(206, 200, 186);
-    }
-    if (id == config::bRedMushroom) {
-        return rgb(180, 40, 40);
-    }
-    if (id == config::bBrownMushroom) {
-        return rgb(150, 112, 76);
-    }
-    return rgb(0, 0, 0);
+fn color(id : Block) : i32 {
+    return match id {
+        Block::Grass => rgb(110, 170, 90),
+        Block::GrassSavanna => rgb(168, 156, 70),
+        Block::GrassJungle => rgb(80, 160, 56),
+        Block::GrassSwamp => rgb(96, 120, 80),
+        Block::GrassTaiga => rgb(120, 160, 130),
+        Block::Dirt => rgb(140, 100, 64),
+        Block::CoarseDirt => rgb(122, 90, 58),
+        Block::Podzol => rgb(96, 68, 36),
+        Block::Mycelium => rgb(120, 104, 116),
+        Block::Stone => rgb(128, 128, 132),
+        Block::Cobble => rgb(122, 120, 120),
+        Block::MossyCobble => rgb(104, 116, 96),
+        Block::Granite => rgb(154, 110, 92),
+        Block::Diorite => rgb(188, 188, 190),
+        Block::Andesite => rgb(136, 138, 138),
+        Block::StoneBricks => rgb(122, 122, 124),
+        Block::Bricks => rgb(150, 96, 80),
+        Block::Sand => rgb(218, 205, 145),
+        Block::RedSand => rgb(190, 110, 56),
+        Block::Sandstone => rgb(220, 208, 152),
+        Block::RedSandstone => rgb(184, 96, 38),
+        Block::Terracotta => rgb(150, 92, 66),
+        Block::TerracottaOrange => rgb(162, 84, 38),
+        Block::TerracottaWhite => rgb(208, 176, 156),
+        Block::Gravel => rgb(122, 118, 112),
+        Block::Clay => rgb(160, 165, 172),
+        Block::Snow => rgb(236, 240, 246),
+        Block::Ice => rgb(150, 180, 235),
+        Block::PackedIce => rgb(140, 168, 222),
+        Block::Water => rgb(58, 110, 200),
+        Block::Wood => rgb(110, 78, 48),
+        Block::Leaves => rgb(58, 132, 60),
+        Block::Planks => rgb(150, 112, 66),
+        Block::WoodBirch => rgb(196, 196, 188),
+        Block::LeavesBirch => rgb(110, 150, 70),
+        Block::WoodSpruce => rgb(66, 48, 28),
+        Block::LeavesSpruce => rgb(54, 92, 64),
+        Block::WoodAcacia => rgb(104, 78, 64),
+        Block::LeavesAcacia => rgb(100, 126, 46),
+        Block::WoodJungle => rgb(88, 68, 36),
+        Block::LeavesJungle => rgb(50, 132, 38),
+        Block::WoodDarkOak => rgb(66, 50, 32),
+        Block::LeavesDarkOak => rgb(62, 96, 48),
+        Block::Cactus => rgb(80, 118, 52),
+        Block::Pumpkin => rgb(190, 122, 38),
+        Block::Melon => rgb(110, 140, 40),
+        Block::Glowstone => rgb(180, 150, 92),
+        Block::CoalOre => rgb(70, 70, 72),
+        Block::IronOre => rgb(150, 132, 116),
+        Block::GoldOre => rgb(160, 150, 96),
+        Block::DiamondOre => rgb(120, 170, 170),
+        Block::RedstoneOre => rgb(140, 90, 88),
+        Block::EmeraldOre => rgb(90, 150, 104),
+        Block::LapisOre => rgb(90, 100, 140),
+        Block::Bamboo => rgb(120, 160, 80),
+        Block::CherryLog => rgb(110, 80, 90),
+        Block::CherryLeaves => rgb(236, 168, 206),
+        Block::MushroomStem => rgb(206, 200, 186),
+        Block::RedMushroom => rgb(180, 40, 40),
+        Block::BrownMushroom => rgb(150, 112, 76),
+        _ => rgb(0, 0, 0),
+    };
 }

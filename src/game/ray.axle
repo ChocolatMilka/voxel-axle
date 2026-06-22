@@ -4,7 +4,6 @@
 // small "would this block trap the player?" test used to refuse placing
 // inside yourself.
 
-use std::numeric::math::floorToInt;
 use crate::world::manager::ChunkManager;
 use crate::entities::player::Player;
 use crate::config;
@@ -41,17 +40,17 @@ class Picker {
      */
     fn cast(man : ChunkManager, p : Player) : void {
         this.hit = 0;
-        let ox : f64 = p.eyeX;
-        let oy : f64 = p.eyeY;
-        let oz : f64 = p.eyeZ;
+        let ox : f64 = p.eye.x;
+        let oy : f64 = p.eye.y;
+        let oz : f64 = p.eye.z;
         let dx : f64 = (0.0 - p.siny) * p.cosp;
         let dy : f64 = p.sinp;
         let dz : f64 = p.cosy * p.cosp;
         let big : f64 = 1.0e30;
 
-        let x : i32 = floorToInt(ox) as i32;
-        let y : i32 = floorToInt(oy) as i32;
-        let z : i32 = floorToInt(oz) as i32;
+        let x : i32 = Math::floorToInt(ox) as i32;
+        let y : i32 = Math::floorToInt(oy) as i32;
+        let z : i32 = Math::floorToInt(oz) as i32;
 
         let stepX : i32 = 0;
         let tMaxX : f64 = big;
@@ -138,12 +137,12 @@ class Picker {
  */
 fn cellInPlayer(p : Player, cx : i32, cy : i32, cz : i32) : bool {
     let r : f64 = config::playerRadius;
-    let minX : f64 = p.posX - r;
-    let maxX : f64 = p.posX + r;
-    let minZ : f64 = p.posZ - r;
-    let maxZ : f64 = p.posZ + r;
-    let minY : f64 = p.posY;
-    let maxY : f64 = p.posY + 1.8;
+    let minX : f64 = p.pos.x - r;
+    let maxX : f64 = p.pos.x + r;
+    let minZ : f64 = p.pos.z - r;
+    let maxZ : f64 = p.pos.z + r;
+    let minY : f64 = p.pos.y;
+    let maxY : f64 = p.pos.y + 1.8;
     let fx : f64 = cx as f64;
     let fy : f64 = cy as f64;
     let fz : f64 = cz as f64;

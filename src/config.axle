@@ -43,32 +43,20 @@ use crate::configs::render::{
     lightX, lightY, lightZ, ambient, edgeShade,
 };
 
-use crate::configs::blocks::{
-    bAir, bGrass, bDirt, bStone, bSand, bSnow, bWater, bWood, bLeaves, bGravel,
-    bCoarseDirt, bPodzol, bMycelium, bRedSand, bClay, bIce, bPackedIce,
-    bCobble, bMossyCobble, bGranite, bDiorite, bAndesite, bStoneBricks, bBricks,
-    bSandstone, bRedSandstone, bTerracotta, bTerracottaOrange, bTerracottaWhite,
-    bWoodBirch, bLeavesBirch, bWoodSpruce, bLeavesSpruce, bWoodAcacia, bLeavesAcacia,
-    bWoodJungle, bLeavesJungle, bWoodDarkOak, bLeavesDarkOak, bPlanks,
-    bCactus, bPumpkin, bMelon, bGlowstone,
-    bCoalOre, bIronOre, bGoldOre, bDiamondOre, bRedstoneOre, bEmeraldOre, bLapisOre,
-    bGrassSavanna, bGrassJungle, bGrassSwamp, bGrassTaiga,
-    bBamboo, bCherryLog, bCherryLeaves, bMushroomStem, bRedMushroom, bBrownMushroom,
-};
+use crate::configs::blocks::{ Block };
 
-use crate::configs::biomes::{
-    biOcean, biBeach, biPlains, biForest, biDesert, biSavanna, biSnowy,
-    biMountain, biTaiga, biJungle, biSwamp, biBadlands, biBirchForest, biFrozenOcean,
-    biBambooJungle, biCherryGrove, biMushroomFields,
-};
+use crate::configs::biomes::{ BiomeId };
 
-use crate::configs::trees::{
-    treeNone, treeOak, treeBirch, treeSpruce, treeAcacia, treeJungle, treeCactus,
-    treeBamboo, treeCherry, treeRedMushroom, treeBrownMushroom, treeThin,
-};
+use crate::configs::face::{ FaceDir };
+
+use crate::configs::trees::{ TreeKind };
+
+use crate::configs::trees::{ treeThin };
+
+use crate::configs::mobs::{ MobKind };
 
 use crate::configs::mobs::{
-    mobCap, mobChicken, mobSheep, mobCow, mobCreeper, mobPig,
+    mobCap,
     mobChickenHp, mobSheepHp, mobCowHp, mobCreeperHp, mobPigHp, mobPigSpeed,
     mobCreeperSpeed, creeperChaseDist, creeperTriggerDist, creeperMaxVertical,
     creeperFuseFrames, creeperBlastRadius, creeperDamage,
@@ -116,8 +104,10 @@ use crate::configs::atlas::{
     tlPigBody, tlPigHead,
 };
 
+use crate::configs::audio::{ AudioMaterial };
+
 use crate::configs::audio::{
-    matGrass, matSand, matGravel, matSnow, matStone, matWood, matFoliage, matGlass, matCount,
+    matCount,
     sndMobDist, sndCreeperDist, sndBreakDist,
     volFootstep, volBreak, volMob, volCreeper, volPlayer, volAmbient,
     footWalkFrames, footSprintFrames,

@@ -12,39 +12,47 @@
 // `sounds/` (next to the binary or one dir up — the prefix is resolved once).
 // Missing files are silent.
 
-use crate::platform::audio::{Mixer, SoundBank};
-use crate::platform::file::fileExists;
+use sdl_platform::{Mixer, SoundBank};
+use sdl_platform::fileExists;
 use crate::world::blocks::materialOf;
 use crate::config;
+use crate::config::{ Block, AudioMaterial, MobKind };
 
 /**
- * Folder name under `step/` and `dig/` for material id `m` (config::mat*).
- * @param m  the material id
+ * The material with bank index `i` (inverse of the enum discriminant), used to
+ * walk the materials 0..matCount when loading banks.
+ * @param i  the bank index
+ * @return the corresponding material
+ */
+fn materialAt(i : i32) : AudioMaterial {
+    return match i {
+        0 => AudioMaterial::Grass,
+        1 => AudioMaterial::Sand,
+        2 => AudioMaterial::Gravel,
+        3 => AudioMaterial::Snow,
+        4 => AudioMaterial::Stone,
+        5 => AudioMaterial::Wood,
+        6 => AudioMaterial::Foliage,
+        _ => AudioMaterial::Glass,
+    };
+}
+
+/**
+ * Folder name under `step/` and `dig/` for material `m`.
+ * @param m  the material
  * @return the material's folder name
  */
-fn matFolder(m : i32) : string {
-    if (m == config::matGrass) {
-        return "grass";
-    }
-    if (m == config::matSand) {
-        return "sand";
-    }
-    if (m == config::matGravel) {
-        return "gravel";
-    }
-    if (m == config::matSnow) {
-        return "snow";
-    }
-    if (m == config::matStone) {
-        return "stone";
-    }
-    if (m == config::matWood) {
-        return "wood";
-    }
-    if (m == config::matFoliage) {
-        return "foliage";
-    }
-    return "glass";
+fn matFolder(m : AudioMaterial) : string {
+    return match m {
+        AudioMaterial::Grass => "grass",
+        AudioMaterial::Sand => "sand",
+        AudioMaterial::Gravel => "gravel",
+        AudioMaterial::Snow => "snow",
+        AudioMaterial::Stone => "stone",
+        AudioMaterial::Wood => "wood",
+        AudioMaterial::Foliage => "foliage",
+        AudioMaterial::Glass => "glass",
+    };
 }
 
 class AudioManager {
@@ -77,11 +85,12 @@ class AudioManager {
         this.digBanks = malloc<SoundBank>(config::matCount);
         let m : i32 = 0;
         while (m < config::matCount) {
+            let mat : AudioMaterial = materialAt(m);
             let fb : SoundBank = new SoundBank(8);
-            this.loadDir(fb, "step/" + matFolder(m));
+            this.loadDir(fb, "step/" + matFolder(mat));
             this.footstepBanks[m] = fb;
             let db : SoundBank = new SoundBank(8);
-            this.loadDir(db, "dig/" + matFolder(m));
+            this.loadDir(db, "dig/" + matFolder(mat));
             this.digBanks[m] = db;
             m = m + 1;
         }
@@ -149,11 +158,11 @@ class AudioManager {
      * @param blockId  the block stepped on
      * @param rnd      variant selector in [0, 1)
      */
-    fn footstep(blockId : i32, rnd : f64) : void {
-        let mat : i32 = materialOf(blockId);
-        let bank : SoundBank = this.footstepBanks[mat];
+    fn footstep(blockId : Block, rnd : f64) : void {
+        let mat : AudioMaterial = materialOf(blockId);
+        let bank : SoundBank = this.footstepBanks[mat as i32];
         if (!bank.loaded()) {
-            bank = this.footstepBanks[config::matStone];
+            bank = this.footstepBanks[AudioMaterial::Stone as i32];
         }
         bank.playRand(this.mixer, rnd, config::volFootstep);
     }
@@ -166,11 +175,11 @@ class AudioManager {
      * @param bz       block z
      * @param rnd      variant selector in [0, 1)
      */
-    fn blockEdit(blockId : i32, bx : i32, by : i32, bz : i32, rnd : f64) : void {
-        let mat : i32 = materialOf(blockId);
-        let bank : SoundBank = this.digBanks[mat];
+    fn blockEdit(blockId : Block, bx : i32, by : i32, bz : i32, rnd : f64) : void {
+        let mat : AudioMaterial = materialOf(blockId);
+        let bank : SoundBank = this.digBanks[mat as i32];
         if (!bank.loaded()) {
-            bank = this.digBanks[config::matStone];
+            bank = this.digBanks[AudioMaterial::Stone as i32];
         }
         bank.playRandPos(this.mixer, rnd, config::volBreak,
             (bx as f64) + 0.5, (by as f64) + 0.5, (bz as f64) + 0.5, config::sndBreakDist);
@@ -178,40 +187,52 @@ class AudioManager {
 
     /**
      * A mob's idle voice at its world position, attenuated live by distance.
-     * @param kind  the mob kind (config::mob*)
+     * @param kind  the mob kind
      * @param x     source x
      * @param y     source y
      * @param z     source z
      * @param rnd   variant selector in [0, 1)
      */
-    fn mobSay(kind : i32, x : f64, y : f64, z : f64, rnd : f64) : void {
-        if (kind == config::mobChicken) {
-            this.chickenSayBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
-        } else if (kind == config::mobCow) {
-            this.cowSayBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
-        } else if (kind == config::mobSheep) {
-            this.sheepSayBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
-        } else if (kind == config::mobPig) {
-            this.pigSayBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
+    fn mobSay(kind : MobKind, x : f64, y : f64, z : f64, rnd : f64) : void {
+        match kind {
+            MobKind::Chicken => {
+                this.chickenSayBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
+            }
+            MobKind::Cow => {
+                this.cowSayBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
+            }
+            MobKind::Sheep => {
+                this.sheepSayBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
+            }
+            MobKind::Pig => {
+                this.pigSayBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
+            }
+            // The creeper has no idle voice (only its fuse / blast).
+            _ => {}
         }
     }
 
     /**
      * A mob's hurt cry at its world position. Species without a dedicated clip
      * fall back to the generic impact (player hurt) sound.
-     * @param kind  the mob kind (config::mob*)
+     * @param kind  the mob kind
      * @param x     source x
      * @param y     source y
      * @param z     source z
      * @param rnd   variant selector in [0, 1)
      */
-    fn mobHurt(kind : i32, x : f64, y : f64, z : f64, rnd : f64) : void {
-        if (kind == config::mobChicken) {
-            this.chickenHurtBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
-        } else if (kind == config::mobCow) {
-            this.cowHurtBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
-        } else {
-            this.playerHurtBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
+    fn mobHurt(kind : MobKind, x : f64, y : f64, z : f64, rnd : f64) : void {
+        match kind {
+            MobKind::Chicken => {
+                this.chickenHurtBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
+            }
+            MobKind::Cow => {
+                this.cowHurtBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
+            }
+            // Species without a dedicated clip fall back to the generic impact.
+            _ => {
+                this.playerHurtBank.playRandPos(this.mixer, rnd, config::volMob, x, y, z, config::sndMobDist);
+            }
         }
     }
 

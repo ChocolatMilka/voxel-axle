@@ -11,8 +11,11 @@
 // `cap()` then sleeps any leftover frame budget so the loop doesn't spin
 // the CPU at hundreds of fps when v-sync is missing or disabled
 // (`SDL_RenderPresent` alone is not a guaranteed cap).
+//
+// Timing primitives come from the `sdl_platform` crate; the tick rate is a
+// game tunable, so this stays in the game rather than the platform layer.
 
-use crate::platform::sdl::{ticks, delay};
+use sdl_platform::{ticks, delay};
 use crate::config;
 
 class GameClock {

@@ -3,13 +3,14 @@
 
 use crate::world::biomes::Biome;
 use crate::config;
+use crate::config::{ TreeKind };
 
 class Plains extends Biome {
     /** Construct the plains biome. */
     constructor() {
         super();
         this.treeThresh = 0.992;
-        this.treeKindId = config::treeOak;
+        this.treeKindId = TreeKind::Oak;
         this.treeHt = 4;
     }
 }

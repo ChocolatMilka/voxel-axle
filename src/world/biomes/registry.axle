@@ -29,6 +29,7 @@ use crate::world::biomes::bamboojungle::BambooJungle;
 use crate::world::biomes::cherrygrove::CherryGrove;
 use crate::world::biomes::mushroomfields::MushroomFields;
 use crate::config;
+use crate::config::{ BiomeId, TreeKind };
 
 class Biomes {
     plains : Plains,
@@ -75,56 +76,26 @@ class Biomes {
      * @param b  the biome id
      * @return the biome instance
      */
-    fn byId(b : i32) : Biome {
-        if (b == config::biPlains) {
-            return this.plains as Biome;
-        }
-        if (b == config::biForest) {
-            return this.forest as Biome;
-        }
-        if (b == config::biBirchForest) {
-            return this.birch as Biome;
-        }
-        if (b == config::biTaiga) {
-            return this.taiga as Biome;
-        }
-        if (b == config::biJungle) {
-            return this.jungle as Biome;
-        }
-        if (b == config::biSavanna) {
-            return this.savanna as Biome;
-        }
-        if (b == config::biDesert) {
-            return this.desert as Biome;
-        }
-        if (b == config::biBadlands) {
-            return this.badlands as Biome;
-        }
-        if (b == config::biSwamp) {
-            return this.swamp as Biome;
-        }
-        if (b == config::biSnowy) {
-            return this.snowy as Biome;
-        }
-        if (b == config::biMountain) {
-            return this.mountain as Biome;
-        }
-        if (b == config::biBeach) {
-            return this.beach as Biome;
-        }
-        if (b == config::biFrozenOcean) {
-            return this.frozen as Biome;
-        }
-        if (b == config::biBambooJungle) {
-            return this.bambooJungle as Biome;
-        }
-        if (b == config::biCherryGrove) {
-            return this.cherryGrove as Biome;
-        }
-        if (b == config::biMushroomFields) {
-            return this.mushroomFields as Biome;
-        }
-        return this.ocean as Biome;
+    fn byId(b : BiomeId) : Biome {
+        return match b {
+            BiomeId::Plains => this.plains as Biome,
+            BiomeId::Forest => this.forest as Biome,
+            BiomeId::BirchForest => this.birch as Biome,
+            BiomeId::Taiga => this.taiga as Biome,
+            BiomeId::Jungle => this.jungle as Biome,
+            BiomeId::Savanna => this.savanna as Biome,
+            BiomeId::Desert => this.desert as Biome,
+            BiomeId::Badlands => this.badlands as Biome,
+            BiomeId::Swamp => this.swamp as Biome,
+            BiomeId::Snowy => this.snowy as Biome,
+            BiomeId::Mountain => this.mountain as Biome,
+            BiomeId::Beach => this.beach as Biome,
+            BiomeId::FrozenOcean => this.frozen as Biome,
+            BiomeId::BambooJungle => this.bambooJungle as Biome,
+            BiomeId::CherryGrove => this.cherryGrove as Biome,
+            BiomeId::MushroomFields => this.mushroomFields as Biome,
+            _ => this.ocean as Biome,
+        };
     }
 
     /**
@@ -134,56 +105,26 @@ class Biomes {
      * @param height  the column's surface height
      * @return the surface block id
      */
-    fn surface(b : i32, height : i32) : i32 {
-        if (b == config::biPlains) {
-            return this.plains.surface(height);
-        }
-        if (b == config::biForest) {
-            return this.forest.surface(height);
-        }
-        if (b == config::biBirchForest) {
-            return this.birch.surface(height);
-        }
-        if (b == config::biTaiga) {
-            return this.taiga.surface(height);
-        }
-        if (b == config::biJungle) {
-            return this.jungle.surface(height);
-        }
-        if (b == config::biSavanna) {
-            return this.savanna.surface(height);
-        }
-        if (b == config::biDesert) {
-            return this.desert.surface(height);
-        }
-        if (b == config::biBadlands) {
-            return this.badlands.surface(height);
-        }
-        if (b == config::biSwamp) {
-            return this.swamp.surface(height);
-        }
-        if (b == config::biSnowy) {
-            return this.snowy.surface(height);
-        }
-        if (b == config::biMountain) {
-            return this.mountain.surface(height);
-        }
-        if (b == config::biBeach) {
-            return this.beach.surface(height);
-        }
-        if (b == config::biFrozenOcean) {
-            return this.frozen.surface(height);
-        }
-        if (b == config::biBambooJungle) {
-            return this.bambooJungle.surface(height);
-        }
-        if (b == config::biCherryGrove) {
-            return this.cherryGrove.surface(height);
-        }
-        if (b == config::biMushroomFields) {
-            return this.mushroomFields.surface(height);
-        }
-        return this.ocean.surface(height);
+    fn surface(b : BiomeId, height : i32) : Block {
+        return match b {
+            BiomeId::Plains => this.plains.surface(height),
+            BiomeId::Forest => this.forest.surface(height),
+            BiomeId::BirchForest => this.birch.surface(height),
+            BiomeId::Taiga => this.taiga.surface(height),
+            BiomeId::Jungle => this.jungle.surface(height),
+            BiomeId::Savanna => this.savanna.surface(height),
+            BiomeId::Desert => this.desert.surface(height),
+            BiomeId::Badlands => this.badlands.surface(height),
+            BiomeId::Swamp => this.swamp.surface(height),
+            BiomeId::Snowy => this.snowy.surface(height),
+            BiomeId::Mountain => this.mountain.surface(height),
+            BiomeId::Beach => this.beach.surface(height),
+            BiomeId::FrozenOcean => this.frozen.surface(height),
+            BiomeId::BambooJungle => this.bambooJungle.surface(height),
+            BiomeId::CherryGrove => this.cherryGrove.surface(height),
+            BiomeId::MushroomFields => this.mushroomFields.surface(height),
+            _ => this.ocean.surface(height),
+        };
     }
 
     /**
@@ -191,7 +132,7 @@ class Biomes {
      * @param b  the biome id
      * @return the filler block id
      */
-    fn filler(b : i32) : i32 {
+    fn filler(b : BiomeId) : Block {
         return this.byId(b).fillerBlock;
     }
 
@@ -200,7 +141,7 @@ class Biomes {
      * @param b  the biome id
      * @return the tree-placement threshold
      */
-    fn treeThreshold(b : i32) : f64 {
+    fn treeThreshold(b : BiomeId) : f64 {
         return this.byId(b).treeThresh;
     }
 
@@ -209,7 +150,7 @@ class Biomes {
      * @param b  the biome id
      * @return the tree kind id
      */
-    fn treeKind(b : i32) : i32 {
+    fn treeKind(b : BiomeId) : TreeKind {
         return this.byId(b).treeKindId;
     }
 
@@ -218,7 +159,7 @@ class Biomes {
      * @param b  the biome id
      * @return the trunk height
      */
-    fn treeHeight(b : i32) : i32 {
+    fn treeHeight(b : BiomeId) : i32 {
         return this.byId(b).treeHt;
     }
 }
@@ -232,18 +173,18 @@ class Biomes {
  * @param height  the column's surface height
  * @return the chosen biome id
  */
-fn biomeAt(temp : f64, humid : f64, height : i32) : i32 {
+fn biomeAt(temp : f64, humid : f64, height : i32) : BiomeId {
     if (height <= config::seaLevel) {
         if (temp < 0.26) {
-            return config::biFrozenOcean;
+            return BiomeId::FrozenOcean;
         }
-        return config::biOcean;
+        return BiomeId::Ocean;
     }
     if (height <= config::seaLevel + 1) {
-        return config::biBeach;
+        return BiomeId::Beach;
     }
     if (height >= config::seaLevel + 34) {
-        return config::biMountain;
+        return BiomeId::Mountain;
     }
     // Cool the climate with altitude: higher ground trends toward taiga / snow
     // even in a warm region, so foothills and uplands read coherently.
@@ -252,40 +193,40 @@ fn biomeAt(temp : f64, humid : f64, height : i32) : i32 {
         t = 0.0;
     }
     if (t < 0.25) {
-        return config::biSnowy;
+        return BiomeId::Snowy;
     }
     if (t < 0.40) {
-        return config::biTaiga;
+        return BiomeId::Taiga;
     }
     if (t > 0.75 && humid < 0.30) {
-        return config::biBadlands;
+        return BiomeId::Badlands;
     }
     if (t > 0.70 && humid < 0.40) {
-        return config::biDesert;
+        return BiomeId::Desert;
     }
     if (t > 0.58 && humid < 0.52) {
-        return config::biSavanna;
+        return BiomeId::Savanna;
     }
     if (humid > 0.85 && t > 0.72) {
-        return config::biBambooJungle;
+        return BiomeId::BambooJungle;
     }
     if (humid > 0.75 && t > 0.62) {
-        return config::biJungle;
+        return BiomeId::Jungle;
     }
     if (humid > 0.90 && t > 0.42 && t < 0.60) {
-        return config::biMushroomFields;
+        return BiomeId::MushroomFields;
     }
     if (humid > 0.68 && height <= config::seaLevel + 5) {
-        return config::biSwamp;
+        return BiomeId::Swamp;
     }
     if (t > 0.50 && t < 0.64 && humid > 0.52 && humid < 0.66) {
-        return config::biCherryGrove;
+        return BiomeId::CherryGrove;
     }
     if (humid > 0.60) {
-        return config::biForest;
+        return BiomeId::Forest;
     }
     if (humid > 0.48) {
-        return config::biBirchForest;
+        return BiomeId::BirchForest;
     }
-    return config::biPlains;
+    return BiomeId::Plains;
 }

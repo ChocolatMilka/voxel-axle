@@ -2,6 +2,11 @@
 name = "voxel"
 version = "0.1.0"
 
+[dependencies]
+# SDL2 + libc platform layer (window, renderer, audio mixer, raw memory,
+# file IO). Its whole src/ compiles together with ours; `use sdl_platform::X`.
+sdl_platform = { path = "vendor/sdl_platform" }
+
 [link]
 libs  = ["SDL2"]
 # `lib` has SDL2.lib (used to link); `bin` has SDL2.dll. Axle's build

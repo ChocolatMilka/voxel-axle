@@ -3,11 +3,12 @@
 
 use crate::entities::mob::Mob;
 use crate::config;
+use crate::config::{ MobKind };
 
 class Pig extends Mob {
     /** Create a pig at (x, y, z). */
     constructor(x : f64, y : f64, z : f64) {
-        super(x, y, z, config::mobPig, config::mobPigHp);
+        super(x, y, z, MobKind::Pig, config::mobPigHp);
         this.speed = config::mobPigSpeed;
         this.height = 0.9;
     }

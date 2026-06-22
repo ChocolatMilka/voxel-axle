@@ -2,13 +2,14 @@
 
 use crate::world::biomes::Biome;
 use crate::config;
+use crate::config::{ TreeKind };
 
 class BirchForest extends Biome {
     /** Construct the birch forest biome. */
     constructor() {
         super();
         this.treeThresh = 0.930;
-        this.treeKindId = config::treeBirch;
+        this.treeKindId = TreeKind::Birch;
         this.treeHt = 6;
     }
 }

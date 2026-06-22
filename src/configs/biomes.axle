@@ -1,21 +1,26 @@
-// configs::biomes — biome ids (Minecraft-inspired). The climate selector
-// `world::biomes::registry::biomeAt` maps temperature/humidity/height to one
-// of these, and the registry holds one class instance per id.
+// configs::biomes — the biome id enum (Minecraft-inspired). The climate
+// selector `world::biomes::registry::biomeAt` maps temperature/humidity/height
+// to one of these, and the registry holds one `Biome` class instance per id.
+//
+// `BiomeId` is the lightweight tag; `world::biomes::Biome` (+ its subclasses) is
+// the behaviour. The backing i32 discriminants follow declaration order.
 
-const biOcean : i32 = 0;
-const biBeach : i32 = 1;
-const biPlains : i32 = 2;
-const biForest : i32 = 3;
-const biDesert : i32 = 4;
-const biSavanna : i32 = 5;
-const biSnowy : i32 = 6;
-const biMountain : i32 = 7;
-const biTaiga : i32 = 8;
-const biJungle : i32 = 9;
-const biSwamp : i32 = 10;
-const biBadlands : i32 = 11;
-const biBirchForest : i32 = 12;
-const biFrozenOcean : i32 = 13;
-const biBambooJungle : i32 = 14;
-const biCherryGrove : i32 = 15;
-const biMushroomFields : i32 = 16;
+enum BiomeId : i32 {
+    Ocean,
+    Beach,
+    Plains,
+    Forest,
+    Desert,
+    Savanna,
+    Snowy,
+    Mountain,
+    Taiga,
+    Jungle,
+    Swamp,
+    Badlands,
+    BirchForest,
+    FrozenOcean,
+    BambooJungle,
+    CherryGrove,
+    MushroomFields,
+}

@@ -1,0 +1,21 @@
+// vec3 — a tiny value-type 3D vector, copied on assignment. Groups the
+// world-space coordinates that used to be passed and stored as loose
+// `x` / `y` / `z` scalars (entity positions, etc.) into one named shape.
+
+/** A 3D vector / point in world space. Plain data, value semantics. */
+struct Vec3 {
+    x : f64,
+    y : f64,
+    z : f64,
+}
+
+/**
+ * Build a Vec3 from its components.
+ * @param x  the x component
+ * @param y  the y component
+ * @param z  the z component
+ * @return the vector
+ */
+fn vec3(x : f64, y : f64, z : f64) : Vec3 {
+    return Vec3 { x: x, y: y, z: z };
+}

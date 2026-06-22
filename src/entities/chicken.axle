@@ -2,11 +2,12 @@
 
 use crate::entities::mob::Mob;
 use crate::config;
+use crate::config::{ MobKind };
 
 class Chicken extends Mob {
     /** Create a chicken at (x, y, z). */
     constructor(x : f64, y : f64, z : f64) {
-        super(x, y, z, config::mobChicken, config::mobChickenHp);
+        super(x, y, z, MobKind::Chicken, config::mobChickenHp);
         this.gravityScale = config::chickenGravityScale;
         this.height = 0.6;
     }

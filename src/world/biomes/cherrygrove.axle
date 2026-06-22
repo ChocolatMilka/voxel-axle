@@ -2,13 +2,14 @@
 
 use crate::world::biomes::Biome;
 use crate::config;
+use crate::config::{ TreeKind };
 
 class CherryGrove extends Biome {
     /** Construct the cherry grove biome. */
     constructor() {
         super();
         this.treeThresh = 0.965;
-        this.treeKindId = config::treeCherry;
+        this.treeKindId = TreeKind::Cherry;
         this.treeHt = 5;
     }
     // Grass surface + dirt filler are the base defaults.

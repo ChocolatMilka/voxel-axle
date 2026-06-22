@@ -1,0 +1,17 @@
+// input — physical key bindings as SDL scancodes. These map "which key does
+// what" for this game, so they live with the game rather than the platform
+// crate (which exposes the keyboard-state buffer via `keyboardBase`; read a key
+// with `readU8(kb, SC_x as i64)`). SDL scancodes are stable ABI values.
+
+pub const SC_A : i32 = 4;
+pub const SC_D : i32 = 7;
+pub const SC_S : i32 = 22;
+pub const SC_W : i32 = 26;
+pub const SC_SPACE : i32 = 44;
+pub const SC_ESC : i32 = 41;
+pub const SC_LSHIFT : i32 = 225;
+pub const SC_LCTRL : i32 = 224;
+pub const SC_F3 : i32 = 60;
+pub const SC_F4 : i32 = 61;
+// Number row: SDL scancodes for 1..9 are contiguous (1 = 30 … 9 = 38).
+pub const SC_1 : i32 = 30;

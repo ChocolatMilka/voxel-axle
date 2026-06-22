@@ -4,7 +4,6 @@
 // entry point stays a thin setup + loop. (Named `start`, not `spawn`,
 // because `spawn` is a reserved keyword.)
 
-use std::numeric::math::{sin, cos, floorToInt};
 use crate::world::manager::ChunkManager;
 use crate::config;
 
@@ -59,14 +58,14 @@ fn openYaw(man : ChunkManager, sx : i32, sz : i32, baseH : i32) : f64 {
     let k : i32 = 0;
     while (k < 8) {
         let yaw : f64 = (k as f64) * 0.7853981634;
-        let fwx : f64 = 0.0 - sin(yaw);
-        let fwz : f64 = cos(yaw);
+        let fwx : f64 = 0.0 - Math::sin(yaw);
+        let fwz : f64 = Math::cos(yaw);
         let score : i32 = 0;
         let blocked : bool = false;
         let d : f64 = 1.5;
         while (d < 8.0 && !blocked) {
-            let cx : i32 = floorToInt((sx as f64) + 0.5 + fwx * d) as i32;
-            let cz : i32 = floorToInt((sz as f64) + 0.5 + fwz * d) as i32;
+            let cx : i32 = Math::floorToInt((sx as f64) + 0.5 + fwx * d) as i32;
+            let cz : i32 = Math::floorToInt((sz as f64) + 0.5 + fwz * d) as i32;
             let hc : i32 = man.columnHeight(cx, cz);
             if (man.collisionHeight(cx, cz) != hc || hc > baseH + 1) {
                 blocked = true;

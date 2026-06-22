@@ -2,12 +2,13 @@
 
 use crate::world::biomes::Biome;
 use crate::config;
+use crate::config::{ Block };
 
 class Badlands extends Biome {
     /** Construct the badlands biome (red sandstone filler, no trees). */
     constructor() {
         super();
-        this.fillerBlock = config::bRedSandstone;
+        this.fillerBlock = Block::RedSandstone;
     }
 
     /**
@@ -15,17 +16,17 @@ class Badlands extends Biome {
      * @param height  the column's surface height
      * @return the surface block id
      */
-    fn surface(height : i32) : i32 {
+    fn surface(height : i32) : Block {
         if (height <= config::seaLevel + 2) {
-            return config::bRedSand;
+            return Block::RedSand;
         }
         let band : i32 = (height / 3) % 3;
         if (band == 0) {
-            return config::bTerracotta;
+            return Block::Terracotta;
         }
         if (band == 1) {
-            return config::bTerracottaOrange;
+            return Block::TerracottaOrange;
         }
-        return config::bTerracottaWhite;
+        return Block::TerracottaWhite;
     }
 }

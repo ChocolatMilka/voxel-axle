@@ -4,7 +4,7 @@
 // health reads as hollow hearts. Each heart = 2 hp; odd hp shows a
 // half-heart. Stateless: reads hp, paints pixels.
 
-use crate::platform::mem::rgb;
+use sdl_platform::rgb;
 use crate::gfx::color::fillRect;
 
 /**

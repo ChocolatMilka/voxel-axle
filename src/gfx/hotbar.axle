@@ -3,10 +3,11 @@
 // -downscaled into the cell; the active slot is ringed in white. Drawn at a
 // caller-supplied origin so the HUD can lay it out.
 
-use crate::platform::mem::{rgb, readI32, putPixel};
+use sdl_platform::{rgb, readI32, putPixel};
 use crate::gfx::color::fillRect;
 use crate::world::blocks::tileFor;
 use crate::config;
+use crate::config::{ Block, FaceDir };
 
 /**
  * Pixel width of the hotbar panel.
@@ -64,7 +65,7 @@ fn drawTileIcon(base : i64, fbW : i32, fbH : i32, atlas : i64, tile : i32, x : i
  * @param hotbar    hotbar slot block ids.
  * @param selected  index of the active hotbar slot.
  */
-fn drawHotbar(base : i64, fbW : i32, fbH : i32, x0 : i32, y0 : i32, atlas : i64, hotbar : i32[], selected : i32) : void {
+fn drawHotbar(base : i64, fbW : i32, fbH : i32, x0 : i32, y0 : i32, atlas : i64, hotbar : Block[], selected : i32) : void {
     let cell : i32 = config::hotbarCell;
     let pad : i32 = config::hotbarPad;
     let n : i32 = config::hotbarSize;
@@ -79,7 +80,7 @@ fn drawHotbar(base : i64, fbW : i32, fbH : i32, x0 : i32, y0 : i32, atlas : i64,
         let cx : i32 = x0 + pad + i * (cell + pad);
         let cy : i32 = y0 + pad;
         fillRect(base, fbW, fbH, cx, cy, cell, cell, rgb(48, 48, 56));
-        drawTileIcon(base, fbW, fbH, atlas, tileFor(hotbar[i], 2), cx + 2, cy + 2, cell - 4);
+        drawTileIcon(base, fbW, fbH, atlas, tileFor(hotbar[i], FaceDir::Top), cx + 2, cy + 2, cell - 4);
         i = i + 1;
     }
 

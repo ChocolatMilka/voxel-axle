@@ -11,14 +11,12 @@
 // (`collisionHeight` already folds tree trunks into the solid surface),
 // which is exact enough for heightmap terrain with solid trees.
 
-use std::numeric::math::floorToInt;
 use crate::world::manager::ChunkManager;
 use crate::config;
+use crate::vec3::{ Vec3, vec3 };
 
 class Entity {
-    posX : f64,
-    posY : f64,
-    posZ : f64,
+    pos : Vec3,          // body centre on X/Z, foot height on Y
     velY : f64,
     radius : f64,
     height : f64,        // body AABB height (feet at posY, head at posY+height)
@@ -33,9 +31,7 @@ class Entity {
 
     /** Construct an entity at (x, y, z) with the given max (and current) HP. */
     constructor(x : f64, y : f64, z : f64, maxHp : i32) {
-        this.posX = x;
-        this.posY = y;
-        this.posZ = z;
+        this.pos = vec3(x, y, z);
         this.velY = 0.0;
         this.radius = config::playerRadius;
         this.height = config::playerHeight;
@@ -94,12 +90,12 @@ class Entity {
     fn collidesAt(world : ChunkManager, px : f64, py : f64, pz : f64) : bool {
         let r : f64 = this.radius;
         let eps : f64 = 0.0001;
-        let x0 : i32 = floorToInt(px - r) as i32;
-        let x1 : i32 = floorToInt(px + r - eps) as i32;
-        let z0 : i32 = floorToInt(pz - r) as i32;
-        let z1 : i32 = floorToInt(pz + r - eps) as i32;
-        let y0 : i32 = floorToInt(py) as i32;
-        let y1 : i32 = floorToInt(py + this.height - eps) as i32;
+        let x0 : i32 = Math::floorToInt(px - r) as i32;
+        let x1 : i32 = Math::floorToInt(px + r - eps) as i32;
+        let z0 : i32 = Math::floorToInt(pz - r) as i32;
+        let z1 : i32 = Math::floorToInt(pz + r - eps) as i32;
+        let y0 : i32 = Math::floorToInt(py) as i32;
+        let y1 : i32 = Math::floorToInt(py + this.height - eps) as i32;
         let y : i32 = y0;
         while (y <= y1) {
             let x : i32 = x0;
@@ -132,10 +128,10 @@ class Entity {
     fn supportTop(world : ChunkManager, px : f64, pz : f64, yLo : i32, yHi : i32) : f64 {
         let r : f64 = this.radius;
         let eps : f64 = 0.0001;
-        let x0 : i32 = floorToInt(px - r) as i32;
-        let x1 : i32 = floorToInt(px + r - eps) as i32;
-        let z0 : i32 = floorToInt(pz - r) as i32;
-        let z1 : i32 = floorToInt(pz + r - eps) as i32;
+        let x0 : i32 = Math::floorToInt(px - r) as i32;
+        let x1 : i32 = Math::floorToInt(px + r - eps) as i32;
+        let z0 : i32 = Math::floorToInt(pz - r) as i32;
+        let z1 : i32 = Math::floorToInt(pz + r - eps) as i32;
         let best : i32 = 0 - 1000000;
         let x : i32 = x0;
         while (x <= x1) {
@@ -169,21 +165,21 @@ class Entity {
         if (dx == 0.0) {
             return;
         }
-        let nx : f64 = this.posX + dx;
-        if (!this.collidesAt(world, nx, this.posY, this.posZ)) {
-            this.posX = nx;
+        let nx : f64 = this.pos.x + dx;
+        if (!this.collidesAt(world, nx, this.pos.y, this.pos.z)) {
+            this.pos.x = nx;
             return;
         }
         if (this.onGround == 1) {
-            let stepY : f64 = this.posY + config::stepHeight;
-            if (!this.collidesAt(world, nx, stepY, this.posZ)) {
-                let top : f64 = this.supportTop(world, nx, this.posZ,
-                    floorToInt(this.posY) as i32, floorToInt(stepY) as i32);
-                if (top > this.posY && top - this.posY <= config::stepHeight
-                    && !this.collidesAt(world, nx, top, this.posZ)) {
-                    this.stepUp = this.stepUp + (top - this.posY);
-                    this.posX = nx;
-                    this.posY = top;
+            let stepY : f64 = this.pos.y + config::stepHeight;
+            if (!this.collidesAt(world, nx, stepY, this.pos.z)) {
+                let top : f64 = this.supportTop(world, nx, this.pos.z,
+                    Math::floorToInt(this.pos.y) as i32, Math::floorToInt(stepY) as i32);
+                if (top > this.pos.y && top - this.pos.y <= config::stepHeight
+                    && !this.collidesAt(world, nx, top, this.pos.z)) {
+                    this.stepUp = this.stepUp + (top - this.pos.y);
+                    this.pos.x = nx;
+                    this.pos.y = top;
                 }
             }
         }
@@ -199,21 +195,21 @@ class Entity {
         if (dz == 0.0) {
             return;
         }
-        let nz : f64 = this.posZ + dz;
-        if (!this.collidesAt(world, this.posX, this.posY, nz)) {
-            this.posZ = nz;
+        let nz : f64 = this.pos.z + dz;
+        if (!this.collidesAt(world, this.pos.x, this.pos.y, nz)) {
+            this.pos.z = nz;
             return;
         }
         if (this.onGround == 1) {
-            let stepY : f64 = this.posY + config::stepHeight;
-            if (!this.collidesAt(world, this.posX, stepY, nz)) {
-                let top : f64 = this.supportTop(world, this.posX, nz,
-                    floorToInt(this.posY) as i32, floorToInt(stepY) as i32);
-                if (top > this.posY && top - this.posY <= config::stepHeight
-                    && !this.collidesAt(world, this.posX, top, nz)) {
-                    this.stepUp = this.stepUp + (top - this.posY);
-                    this.posZ = nz;
-                    this.posY = top;
+            let stepY : f64 = this.pos.y + config::stepHeight;
+            if (!this.collidesAt(world, this.pos.x, stepY, nz)) {
+                let top : f64 = this.supportTop(world, this.pos.x, nz,
+                    Math::floorToInt(this.pos.y) as i32, Math::floorToInt(stepY) as i32);
+                if (top > this.pos.y && top - this.pos.y <= config::stepHeight
+                    && !this.collidesAt(world, this.pos.x, top, nz)) {
+                    this.stepUp = this.stepUp + (top - this.pos.y);
+                    this.pos.z = nz;
+                    this.pos.y = top;
                 }
             }
         }
@@ -233,28 +229,28 @@ class Entity {
         if (this.velY < term) {
             this.velY = term;
         }
-        let ny : f64 = this.posY + this.velY;
+        let ny : f64 = this.pos.y + this.velY;
         if (this.velY <= 0.0) {
-            if (this.collidesAt(world, this.posX, ny, this.posZ)) {
-                let top : f64 = this.supportTop(world, this.posX, this.posZ,
-                    floorToInt(ny) as i32, floorToInt(this.posY) as i32);
+            if (this.collidesAt(world, this.pos.x, ny, this.pos.z)) {
+                let top : f64 = this.supportTop(world, this.pos.x, this.pos.z,
+                    Math::floorToInt(ny) as i32, Math::floorToInt(this.pos.y) as i32);
                 this.impact = this.apexY - top;
-                this.posY = top;
+                this.pos.y = top;
                 this.velY = 0.0;
                 this.onGround = 1;
                 this.apexY = top;
             } else {
-                this.posY = ny;
+                this.pos.y = ny;
                 this.onGround = 0;
             }
         } else {
-            if (this.collidesAt(world, this.posX, ny, this.posZ)) {
+            if (this.collidesAt(world, this.pos.x, ny, this.pos.z)) {
                 this.velY = 0.0;
                 this.onGround = 0;
             } else {
-                this.posY = ny;
-                if (this.posY > this.apexY) {
-                    this.apexY = this.posY;
+                this.pos.y = ny;
+                if (this.pos.y > this.apexY) {
+                    this.apexY = this.pos.y;
                 }
                 this.onGround = 0;
             }

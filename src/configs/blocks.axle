@@ -1,73 +1,88 @@
-// configs::blocks — block id table. Each block has an id used by the voxel
-// field, the mesher, the renderer (via world::blocks::tileFor / color) and the
-// generator. Add a block: an id here, an atlas tile in bake_atlas.py (+ its
-// tl* index in configs::atlas), and a mapping in world::blocks.
+// configs::blocks — the block enum. Each variant is a block id used by the
+// voxel field, the mesher, the renderer (via world::blocks::tileFor / colorOf)
+// and the generator. The backing i32 discriminants (0.. in declaration order)
+// are the on-field ids; nothing relies on a specific number, only on identity.
+//
+// Add a block: a variant here, an atlas tile in bake_atlas.py (+ its tl* index
+// in configs::atlas), a tile mapping in world::blocks::tileFor, a fallback
+// colour in colorOf, and a placement in a biome / the generator.
 
-const bAir : i32 = 0;
-const bGrass : i32 = 1;
-const bDirt : i32 = 2;
-const bStone : i32 = 3;
-const bSand : i32 = 4;
-const bSnow : i32 = 5;
-const bWater : i32 = 6;
-const bWood : i32 = 7;       // oak log
-const bLeaves : i32 = 8;     // oak leaves
-const bGravel : i32 = 9;
-// Soils
-const bCoarseDirt : i32 = 10;
-const bPodzol : i32 = 11;
-const bMycelium : i32 = 12;
-const bRedSand : i32 = 13;
-const bClay : i32 = 14;
-const bIce : i32 = 15;
-const bPackedIce : i32 = 16;
-// Stones
-const bCobble : i32 = 17;
-const bMossyCobble : i32 = 18;
-const bGranite : i32 = 19;
-const bDiorite : i32 = 20;
-const bAndesite : i32 = 21;
-const bStoneBricks : i32 = 22;
-const bBricks : i32 = 23;
-const bSandstone : i32 = 24;
-const bRedSandstone : i32 = 25;
-const bTerracotta : i32 = 26;
-const bTerracottaOrange : i32 = 27;
-const bTerracottaWhite : i32 = 28;
-// Woods (log + leaves per species; oak is bWood/bLeaves above)
-const bWoodBirch : i32 = 29;
-const bLeavesBirch : i32 = 30;
-const bWoodSpruce : i32 = 31;
-const bLeavesSpruce : i32 = 32;
-const bWoodAcacia : i32 = 33;
-const bLeavesAcacia : i32 = 34;
-const bWoodJungle : i32 = 35;
-const bLeavesJungle : i32 = 36;
-const bWoodDarkOak : i32 = 37;
-const bLeavesDarkOak : i32 = 38;
-const bPlanks : i32 = 39;
-// Decoration
-const bCactus : i32 = 40;
-const bPumpkin : i32 = 41;
-const bMelon : i32 = 42;
-const bGlowstone : i32 = 43;
-// Ores
-const bCoalOre : i32 = 44;
-const bIronOre : i32 = 45;
-const bGoldOre : i32 = 46;
-const bDiamondOre : i32 = 47;
-const bRedstoneOre : i32 = 48;
-const bEmeraldOre : i32 = 49;
-const bLapisOre : i32 = 50;
-// Tinted grass variants (their own surface block per biome)
-const bGrassSavanna : i32 = 51;
-const bGrassJungle : i32 = 52;
-const bGrassSwamp : i32 = 53;
-const bGrassTaiga : i32 = 54;
-// Expansion: bamboo, cherry, giant mushrooms
-const bBamboo : i32 = 55;
-const bCherryLog : i32 = 56;
-const bCherryLeaves : i32 = 57;
-const bMushroomStem : i32 = 58;
-const bRedMushroom : i32 = 59;
-const bBrownMushroom : i32 = 60;
+enum Block : i32 {
+    Air,
+    Grass,
+    Dirt,
+    Stone,
+    Sand,
+    Snow,
+    Water,
+    Wood,          // oak log
+    Leaves,        // oak leaves
+    Gravel,
+    // Soils
+    CoarseDirt,
+    Podzol,
+    Mycelium,
+    RedSand,
+    Clay,
+    Ice,
+    PackedIce,
+    // Stones
+    Cobble,
+    MossyCobble,
+    Granite,
+    Diorite,
+    Andesite,
+    StoneBricks,
+    Bricks,
+    Sandstone,
+    RedSandstone,
+    Terracotta,
+    TerracottaOrange,
+    TerracottaWhite,
+    // Woods (log + leaves per species; oak is Wood/Leaves above)
+    WoodBirch,
+    LeavesBirch,
+    WoodSpruce,
+    LeavesSpruce,
+    WoodAcacia,
+    LeavesAcacia,
+    WoodJungle,
+    LeavesJungle,
+    WoodDarkOak,
+    LeavesDarkOak,
+    Planks,
+    // Decoration
+    Cactus,
+    Pumpkin,
+    Melon,
+    Glowstone,
+    // Ores
+    CoalOre,
+    IronOre,
+    GoldOre,
+    DiamondOre,
+    RedstoneOre,
+    EmeraldOre,
+    LapisOre,
+    // Tinted grass variants (their own surface block per biome)
+    GrassSavanna,
+    GrassJungle,
+    GrassSwamp,
+    GrassTaiga,
+    // Expansion: bamboo, cherry, giant mushrooms
+    Bamboo,
+    CherryLog,
+    CherryLeaves,
+    MushroomStem,
+    RedMushroom,
+    BrownMushroom,
+    // Flowing water levels 1..7 (1 = thinnest, 7 = nearly full); the source is
+    // Water. Higher level = taller water column in the mesher.
+    FlowWater1,
+    FlowWater2,
+    FlowWater3,
+    FlowWater4,
+    FlowWater5,
+    FlowWater6,
+    FlowWater7,
+}
