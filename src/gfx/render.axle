@@ -322,6 +322,13 @@ class Renderer {
         if (!isWater(id)) {
             return 0.0 - 1.0;
         }
+        // Falling / submerged water (water continues directly above) fills the
+        // whole cell — only a free top surface (air above) tapers by level. This
+        // keeps a waterfall a solid column instead of leaving gaps under each
+        // layer.
+        if (isWater(man.worldGet(wx, y + 1, wz))) {
+            return 1.0;
+        }
         let lvl : i32 = fluidLevel(id);
         if (lvl >= 8) {
             return 1.0;
