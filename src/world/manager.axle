@@ -33,8 +33,7 @@ class ChunkManager {
     fx : i32[],
     fy : i32[],
     fz : i32[],
-    fdir : FaceDir[],
-    ftile : i32[],
+    ftile : i32[],   // packs (dir << 8) | tile — see addFace
     hmap : i32[],
     ctop : i32[],
     vox : Block[],
@@ -58,7 +57,6 @@ class ChunkManager {
         this.fx = malloc<i32>(faceCap);
         this.fy = malloc<i32>(faceCap);
         this.fz = malloc<i32>(faceCap);
-        this.fdir = malloc<FaceDir>(faceCap);
         this.ftile = malloc<i32>(faceCap);
         this.hmap = malloc<i32>(slots * hSide * hSide);
         this.ctop = malloc<i32>(slots * s * s);
@@ -726,8 +724,11 @@ class ChunkManager {
         this.fx[i] = wx;
         this.fy[i] = wy;
         this.fz[i] = wz;
-        this.fdir[i] = dir;
-        this.ftile[i] = tile;
+        // Pack the face direction (0..5) and atlas tile (< 256) into one slot
+        // rather than keeping a parallel FaceDir array — saves a full i32 per
+        // face across every chunk. renderFace unpacks dir = ftile / 256,
+        // tile = ftile % 256.
+        this.ftile[i] = (dir as i32) * 256 + tile;
         this.fcount[slot] = fc + 1;
     }
 

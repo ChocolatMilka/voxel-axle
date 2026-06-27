@@ -165,6 +165,10 @@ fn main() : void {
     let wasMenuClick : bool = false;
     let sprintLatch : bool = false;
     let paused : bool = false;
+    // Last menu hover drawn while paused; -2 forces a redraw (on pause entry
+    // and resize). While paused the world is frozen, so the loop only renders
+    // when this changes — otherwise it idles, keeping the CPU near zero.
+    let lastHover : i32 = 0 - 2;
     let running : bool = true;
     while (running) {
         while (SDL_PollEvent(asPtr(ev)) != 0) {
@@ -215,6 +219,7 @@ fn main() : void {
                 SDL_DestroyTexture(tex);
                 tex = sdlCreateStreamTexture(ren, w, h);
                 renderer.setViewWidth(w);
+                lastHover = 0 - 2;   // framebuffer changed — force a redraw
             }
         }
 
@@ -226,6 +231,7 @@ fn main() : void {
             paused = !paused;
             if (paused) {
                 SDL_SetRelativeMouseMode(0);
+                lastHover = 0 - 2;   // force the menu to draw on entry
             } else {
                 SDL_SetRelativeMouseMode(1);
                 SDL_GetRelativeMouseState(asPtr(mrel), asPtr(mrel + 4));
@@ -415,24 +421,33 @@ fn main() : void {
             wasMenuClick = click;
         }
 
-        // ── Render: the world always (frozen while paused), then the HUD
-        // + crosshair, or the pause overlay. ──
-        renderer.render(man, player, pixels, zbuf, w, h);
-        renderer.renderMobs(mobs, player, pixels, zbuf, w, h);
-        if (!paused) {
-            if (picker.hit == 1) {
-                renderer.drawSelection(player, pixels, zbuf, w, h, picker.bx, picker.by, picker.bz);
-            }
-            drawHud(pixels, w, h, renderer.atlasBase(), player.hp, player.maxHp, player.hotbar, player.selected);
-            renderer.crosshair(pixels, w, h);
-        } else {
-            drawPauseMenu(pixels, w, h, hover);
+        // ── Render. Running: redraw every frame. Paused: the world is frozen
+        // and mobs don't move, so re-render only when the menu hover changes —
+        // otherwise skip the whole render + present and let the loop idle, so
+        // sitting in the pause menu costs almost no CPU. ──
+        let drawFrame : bool = true;
+        if (paused) {
+            drawFrame = hover != lastHover;
+            lastHover = hover;
         }
+        if (drawFrame) {
+            renderer.render(man, player, pixels, zbuf, w, h);
+            renderer.renderMobs(mobs, player, pixels, zbuf, w, h);
+            if (!paused) {
+                if (picker.hit == 1) {
+                    renderer.drawSelection(player, pixels, zbuf, w, h, picker.bx, picker.by, picker.bz);
+                }
+                drawHud(pixels, w, h, renderer.atlasBase(), player.hp, player.maxHp, player.hotbar, player.selected);
+                renderer.crosshair(pixels, w, h);
+            } else {
+                drawPauseMenu(pixels, w, h, hover);
+            }
 
-        SDL_UpdateTexture(tex, nullPtr(), asPtr(pixels), w * 4);
-        SDL_RenderClear(ren);
-        SDL_RenderCopy(ren, tex, nullPtr(), nullPtr());
-        SDL_RenderPresent(ren);
+            SDL_UpdateTexture(tex, nullPtr(), asPtr(pixels), w * 4);
+            SDL_RenderClear(ren);
+            SDL_RenderCopy(ren, tex, nullPtr(), nullPtr());
+            SDL_RenderPresent(ren);
+        }
         // Feed the audio mixer once per frame (drives all queued sound), with
         // the listener at the player so positional sounds attenuate live.
         sfx.setListener(player.pos.x, player.pos.y, player.pos.z);

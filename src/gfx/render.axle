@@ -18,6 +18,25 @@ use crate::entities::mob::Mob;
 use crate::config;
 use crate::config::{ FaceDir };
 
+/**
+ * Reconstruct a FaceDir from its packed discriminant (0..5). The mesher packs
+ * the direction into each face's `ftile` slot (see ChunkManager.addFace) to
+ * avoid a parallel direction array; this turns it back into the enum so the
+ * renderer matches on it by name.
+ * @param d  the direction discriminant, 0..5
+ * @return the matching FaceDir
+ */
+fn faceDirFrom(d : i32) : FaceDir {
+    return match d {
+        0 => FaceDir::PosX,
+        1 => FaceDir::NegX,
+        2 => FaceDir::Top,
+        3 => FaceDir::Bottom,
+        4 => FaceDir::PosZ,
+        _ => FaceDir::NegZ,
+    };
+}
+
 class Renderer {
     coff : i32[],
     uvu : i32[],
@@ -301,7 +320,9 @@ class Renderer {
         let x : i32 = man.fx[idx];
         let y : i32 = man.fy[idx];
         let z : i32 = man.fz[idx];
-        let dir : FaceDir = man.fdir[idx];
+        // Unpack the direction and atlas tile from the packed ftile slot.
+        let packed : i32 = man.ftile[idx];
+        let dir : FaceDir = faceDirFrom(packed / 256);
         let nx : f64 = 0.0;
         let ny : f64 = 0.0;
         let nz : f64 = 0.0;
@@ -357,7 +378,7 @@ class Renderer {
             return;
         }
         let bright : f64 = this.shadeN(nx, ny, nz);
-        let tile : i32 = man.ftile[idx];
+        let tile : i32 = packed % 256;
         // Pick the mip level from the face distance (texels per screen
         // pixel ≈ tilePx · d / focal): mip rises one step each time that
         // doubles, so far faces read a pre-averaged level (no shimmer).
