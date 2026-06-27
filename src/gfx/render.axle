@@ -15,7 +15,7 @@ use crate::entities::player::Player;
 use crate::world::manager::ChunkManager;
 use crate::entities::mobs::MobManager;
 use crate::entities::mob::Mob;
-use crate::world::blocks::{ fluidLevel, isWater };
+use crate::world::blocks::{ fluidLevel, isWater, isSource };
 use crate::config;
 use crate::config::{ FaceDir, Block };
 
@@ -308,38 +308,40 @@ class Renderer {
     }
 
     /**
-     * Height (0..1) of one water column at (wx, y, wz): the source / full
-     * columns are 1, flowing levels are level/8, and non-water returns -1 so
-     * the corner averager can skip it.
+     * Classify one column at a corner for the surface averager:
+     *   2.0  → a source, or water with water directly above (a column) — stays
+     *          full so lakes are flat and waterfalls solid;
+     *   0..1 → a free flowing surface, height = level/8;
+     *   -1.0 → air — counts as height 0, so a flowing edge / drop ramps down;
+     *   -2.0 → solid — ignored.
      * @param man  the chunk manager
      * @param wx   world x
      * @param y    world y (the face's layer)
      * @param wz   world z
-     * @return the column's water height fraction, or -1 if not water
+     * @return the classification value described above
      */
-    fn waterColH(man : ChunkManager, wx : i32, y : i32, wz : i32) : f64 {
+    fn cornerSample(man : ChunkManager, wx : i32, y : i32, wz : i32) : f64 {
         let id : Block = man.worldGet(wx, y, wz);
-        if (!isWater(id)) {
+        if (id == Block::Air) {
             return 0.0 - 1.0;
         }
-        // Falling / submerged water (water continues directly above) fills the
-        // whole cell — only a free top surface (air above) tapers by level. This
-        // keeps a waterfall a solid column instead of leaving gaps under each
-        // layer.
-        if (isWater(man.worldGet(wx, y + 1, wz))) {
-            return 1.0;
+        if (!isWater(id)) {
+            return 0.0 - 2.0;
+        }
+        if (isSource(id) || isWater(man.worldGet(wx, y + 1, wz))) {
+            return 2.0;
         }
         let lvl : i32 = fluidLevel(id);
-        if (lvl >= 8) {
-            return 1.0;
-        }
         return (lvl as f64) / 8.0;
     }
 
     /**
-     * Sloped-surface height at a top corner shared by up to four water columns
-     * — the average of the water ones, so the surface ramps continuously
-     * between levels (Minecraft-style) instead of stepping.
+     * Sloped-surface height at a top corner shared by up to four water columns,
+     * Minecraft-style. A source or falling column keeps the corner full (lakes
+     * stay flat, waterfalls stay solid). Otherwise it averages the flowing
+     * surfaces AND counts adjacent air as 0, so a free water edge — and the lip
+     * of a drop — ramps down in a rounded slope instead of a hard step, keeping
+     * the surface connected to the fall with no void.
      * @param man  the chunk manager
      * @param cx   corner world x (a block boundary)
      * @param y    world y (the face's layer)
@@ -347,26 +349,37 @@ class Renderer {
      * @return the corner height fraction (0..1)
      */
     fn waterCornerY(man : ChunkManager, cx : i32, y : i32, cz : i32) : f64 {
+        let s0 : f64 = this.cornerSample(man, cx - 1, y, cz - 1);
+        let s1 : f64 = this.cornerSample(man, cx, y, cz - 1);
+        let s2 : f64 = this.cornerSample(man, cx - 1, y, cz);
+        let s3 : f64 = this.cornerSample(man, cx, y, cz);
+        if (s0 > 1.5 || s1 > 1.5 || s2 > 1.5 || s3 > 1.5) {
+            return 1.0;   // a source / column corner stays full height
+        }
         let sum : f64 = 0.0;
         let cnt : i32 = 0;
-        let h0 : f64 = this.waterColH(man, cx - 1, y, cz - 1);
-        if (h0 >= 0.0) {
-            sum = sum + h0;
+        if (s0 >= 0.0) {
+            sum = sum + s0;
+            cnt = cnt + 1;
+        } else if (s0 > 0.0 - 1.5) {
             cnt = cnt + 1;
         }
-        let h1 : f64 = this.waterColH(man, cx, y, cz - 1);
-        if (h1 >= 0.0) {
-            sum = sum + h1;
+        if (s1 >= 0.0) {
+            sum = sum + s1;
+            cnt = cnt + 1;
+        } else if (s1 > 0.0 - 1.5) {
             cnt = cnt + 1;
         }
-        let h2 : f64 = this.waterColH(man, cx - 1, y, cz);
-        if (h2 >= 0.0) {
-            sum = sum + h2;
+        if (s2 >= 0.0) {
+            sum = sum + s2;
+            cnt = cnt + 1;
+        } else if (s2 > 0.0 - 1.5) {
             cnt = cnt + 1;
         }
-        let h3 : f64 = this.waterColH(man, cx, y, cz);
-        if (h3 >= 0.0) {
-            sum = sum + h3;
+        if (s3 >= 0.0) {
+            sum = sum + s3;
+            cnt = cnt + 1;
+        } else if (s3 > 0.0 - 1.5) {
             cnt = cnt + 1;
         }
         if (cnt == 0) {
