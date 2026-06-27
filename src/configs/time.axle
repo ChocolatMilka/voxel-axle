@@ -11,6 +11,11 @@ const dayStart : f64 = 0.30;         // start mid-morning
 const nightLevel : f64 = 0.13;       // daylight floor at night (moonlight)
 const sunTilt : f64 = 0.35;          // sun's north/south lean (so it's not dead overhead)
 
+// ── Directional sun shadows ─────────────────────────────────
+const sunShadowReach : f64 = 30.0;   // how far (blocks) a shadow ray probes toward the sun
+const sunChunksPerTick : i32 = 8;    // chunks whose sun-shadow map is refreshed per frame
+                                     // (round-robin → whole view refreshes in ~span²/this frames)
+
 // Sky colours interpolated across the day.
 const daySkyR : i32 = 150;
 const daySkyG : i32 = 198;

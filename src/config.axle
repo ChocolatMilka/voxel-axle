@@ -43,7 +43,7 @@ use crate::configs::health::{
 
 use crate::configs::render::{
     renderDist, skyR, skyG, skyB, fogStart, fogEnd,
-    lightX, lightY, lightZ, ambient,
+    lightX, lightY, lightZ, ambient, shadowKeep,
 };
 
 use crate::configs::blocks::{ Block };
@@ -120,6 +120,7 @@ use crate::configs::light::{
 
 use crate::configs::time::{
     dayLengthTicks, dayStart, nightLevel, sunTilt,
+    sunShadowReach, sunChunksPerTick,
     daySkyR, daySkyG, daySkyB, nightSkyR, nightSkyG, nightSkyB,
     duskSkyR, duskSkyG, duskSkyB,
 };

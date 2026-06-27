@@ -447,6 +447,9 @@ fn main() : void {
             // Day clock: advances with the fixed-step tick, wrapped to [0, 1).
             let dayTime : f64 = config::dayStart + (sched.tick as f64) / (config::dayLengthTicks as f64);
             dayTime = dayTime - (Math::floorToInt(dayTime) as f64);
+            // Directional cast shadows: refresh a few chunks' sun-visibility per
+            // frame (round-robin) so shadows track the moving sun, optimised.
+            man.stepSunShadows(dayTime, config::sunChunksPerTick);
             renderer.render(man, player, pixels, zbuf, w, h, underwater, phase, dayTime);
             renderer.renderMobs(mobs, player, pixels, zbuf, w, h);
             renderer.renderTorches(man, player, pixels, zbuf, w, h);

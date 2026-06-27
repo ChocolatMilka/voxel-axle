@@ -580,6 +580,34 @@ class Renderer {
         let lbyte : i32 = readU8(man.flight, idx as i64);
         let skyL : i32 = (lbyte >> 4) & 0xF;
         let blkL : i32 = lbyte & 0xF;
+        // Directional sun shadow: a sky-lit face whose air cell is in the sun's
+        // cast shadow loses its direct-sun term and falls back to flat ambient.
+        // Only sky-lit faces (skyL > 0) — caves/roofed faces get no sun anyway.
+        if (skyL > 0) {
+            let sbx : i32 = x;
+            let sby : i32 = y;
+            let sbz : i32 = z;
+            if (nx > 0.5) {
+                sbx = x + 1;
+            } else if (nx < 0.0 - 0.5) {
+                sbx = x - 1;
+            }
+            if (ny > 0.5) {
+                sby = y + 1;
+            } else if (ny < 0.0 - 0.5) {
+                sby = y - 1;
+            }
+            if (nz > 0.5) {
+                sbz = z + 1;
+            } else if (nz < 0.0 - 0.5) {
+                sbz = z - 1;
+            }
+            if (man.sunlitGet(sbx, sby, sbz) == 0) {
+                // In shadow: drop toward ambient but keep config::shadowKeep of
+                // the direct-sun term, so cast shadows aren't flat ambient.
+                bright = config::ambient + config::shadowKeep * (bright - config::ambient);
+            }
+        }
         // Exponential brightness curve (lcurve). Sky light is dimmed by the
         // daylight factor (so night darkens with no re-mesh); torch/block light
         // is not. Take the brighter of the two.

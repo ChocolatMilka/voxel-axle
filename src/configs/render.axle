@@ -15,4 +15,7 @@ const fogEnd : f64 = 90.0;
 const lightX : f64 = 0.35;
 const lightY : f64 = 0.86;
 const lightZ : f64 = 0.37;
-const ambient : f64 = 0.50;
+const ambient : f64 = 0.32;  // lower = darker shadow side / cast shadows (more contrast)
+// Fraction of the direct-sun term a cast-shadowed face keeps (0 = flat ambient /
+// fully aggressive, 1 = no shadow). Higher = softer / less aggressive shadows.
+const shadowKeep : f64 = 0.20;

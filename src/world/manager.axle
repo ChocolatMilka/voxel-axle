@@ -42,6 +42,12 @@ class ChunkManager {
     light : i64,     // per-voxel block light 0..15 (byte array, voxIdx layout)
     skylight : i64,  // per-voxel sky light 0..15 (open-to-sky exposure)
     flight : i64,    // per-face baked light: byte packs (sky << 4) | block
+    sunlit : i64,    // per-voxel sun visibility: 1 = the sun reaches this air
+                     // cell, 0 = it's in cast shadow. Refreshed by raycasting
+                     // toward the sun (stepSunShadows); read at render to darken
+                     // shadowed sky-lit faces. Direction-dependent, so it sweeps
+                     // as the sun moves.
+    sunCursor : i32, // round-robin slot index for the throttled shadow refresh
     ldirty : i32[],  // per-slot "light changed → re-mesh" flag
     lqx : i32[],     // block-light flood stack (add)
     lqy : i32[],
@@ -82,6 +88,8 @@ class ChunkManager {
         this.tcount = malloc<i32>(slots);
         this.light = allocBytes((slots as i64) * (hSide as i64) * (hSide as i64) * (config::worldHeight as i64));
         this.skylight = allocBytes((slots as i64) * (hSide as i64) * (hSide as i64) * (config::worldHeight as i64));
+        this.sunlit = allocBytes((slots as i64) * (hSide as i64) * (hSide as i64) * (config::worldHeight as i64));
+        this.sunCursor = 0;
         this.flight = allocBytes(faceCap as i64);
         this.ldirty = malloc<i32>(slots);
         let lcap : i32 = config::lightQueueCap;
@@ -1383,7 +1391,154 @@ class ChunkManager {
         while (i < n) {
             writeU8(this.light, base + (i as i64), 0);
             writeU8(this.skylight, base + (i as i64), 0);
+            writeU8(this.sunlit, base + (i as i64), 1);  // lit until the shadow pass refines it
             i = i + 1;
+        }
+    }
+
+    // ── Directional sun shadows ─────────────────────────────────
+
+    /**
+     * Sun visibility at a world voxel: 1 if the sun reaches it, 0 if it's in
+     * cast shadow. Out-of-range / unloaded cells read lit (1) so they never
+     * darken a face wrongly.
+     * @param wx  world x
+     * @param wy  world y
+     * @param wz  world z
+     * @return 1 sunlit, 0 shadowed
+     */
+    fn sunlitGet(wx : i32, wy : i32, wz : i32) : i32 {
+        if (wy < 0 || wy >= config::worldHeight) {
+            return 1;
+        }
+        let s : i32 = config::chunkSize;
+        let cx : i32 = this.floorDiv(wx, s);
+        let cz : i32 = this.floorDiv(wz, s);
+        let slot : i32 = this.slotFor(cx, cz);
+        if (this.loaded[slot] == 0 || this.cxs[slot] != cx || this.czs[slot] != cz) {
+            return 1;
+        }
+        return readU8(this.sunlit, this.voxIdx(slot, wx - cx * s, wy, wz - cz * s) as i64);
+    }
+
+    /**
+     * March a ray from an air cell toward the sun. Returns 1 if it escapes above
+     * all terrain (`ceil`) or runs the full reach unobstructed (sunlit), 0 if an
+     * opaque voxel blocks it (shadowed). Climbing past `ceil` — the tallest
+     * loaded terrain — means nothing can block it, so over flat ground rays stop
+     * almost immediately (the key optimisation).
+     * @param wx    origin air cell x
+     * @param wy    origin air cell y
+     * @param wz    origin air cell z
+     * @param sx    sun direction x (unit)
+     * @param sy    sun direction y (unit)
+     * @param sz    sun direction z (unit)
+     * @param ceil  tallest terrain Y over loaded chunks
+     * @return 1 sunlit, 0 shadowed
+     */
+    fn sunRayClear(wx : i32, wy : i32, wz : i32, sx : f64, sy : f64, sz : f64, ceil : i32) : i32 {
+        let ox : f64 = (wx as f64) + 0.5;
+        let oy : f64 = (wy as f64) + 0.5;
+        let oz : f64 = (wz as f64) + 0.5;
+        let t : f64 = 0.5;
+        while (t < config::sunShadowReach) {
+            let cy : i32 = Math::floorToInt(oy + sy * t) as i32;
+            if (cy > ceil) {
+                return 1;
+            }
+            if (cy >= 0 && cy < config::worldHeight) {
+                let cx : i32 = Math::floorToInt(ox + sx * t) as i32;
+                let cz : i32 = Math::floorToInt(oz + sz * t) as i32;
+                if (isOpaque(this.worldGet(cx, cy, cz))) {
+                    return 0;
+                }
+            }
+            t = t + 0.6;
+        }
+        return 1;
+    }
+
+    /**
+     * Recompute sun visibility for one chunk: every sky-lit air cell in the
+     * active band gets a ray cast toward the sun.
+     * @param slot  the slot index
+     * @param cx    the chunk x coordinate
+     * @param cz    the chunk z coordinate
+     * @param sx    sun direction x (unit)
+     * @param sy    sun direction y (unit)
+     * @param sz    sun direction z (unit)
+     * @param ceil  tallest terrain Y over loaded chunks
+     */
+    fn computeChunkSun(slot : i32, cx : i32, cz : i32, sx : f64, sy : f64, sz : f64, ceil : i32) : void {
+        let s : i32 = config::chunkSize;
+        let top : i32 = this.maxFY[slot] + 1;
+        if (top > config::worldHeight - 1) {
+            top = config::worldHeight - 1;
+        }
+        let lz : i32 = 0;
+        while (lz < s) {
+            let lx : i32 = 0;
+            while (lx < s) {
+                let y : i32 = 0;
+                while (y <= top) {
+                    let off : i64 = this.voxIdx(slot, lx, y, lz) as i64;
+                    if (this.getVox(slot, lx, y, lz) == Block::Air && readU8(this.skylight, off) > 0) {
+                        writeU8(this.sunlit, off, this.sunRayClear(cx * s + lx, y, cz * s + lz, sx, sy, sz, ceil));
+                    }
+                    y = y + 1;
+                }
+                lx = lx + 1;
+            }
+            lz = lz + 1;
+        }
+    }
+
+    /**
+     * Throttled directional-shadow refresh: recompute the sun visibility of up
+     * to `budget` loaded chunks per call (round-robin), so the whole view
+     * refreshes over a handful of frames and the shadows track the moving sun
+     * with no per-frame full recompute. Skipped at night (the sun is below the
+     * horizon, so the directional term is 0 and shadows aren't visible anyway).
+     * @param dayTime  time of day (0..1) — drives the sun direction
+     * @param budget   max chunks to refresh this call
+     */
+    fn stepSunShadows(dayTime : f64, budget : i32) : void {
+        let ang : f64 = (dayTime - 0.25) * 6.2831853;
+        let sy : f64 = Math::sin(ang);
+        if (sy <= 0.02) {
+            return;
+        }
+        let sx : f64 = Math::cos(ang);
+        let sz : f64 = config::sunTilt;
+        let len : f64 = Math::sqrt(sx * sx + sy * sy + sz * sz);
+        if (len < 0.0001) {
+            len = 0.0001;
+        }
+        sx = sx / len;
+        sy = sy / len;
+        sz = sz / len;
+        let slots : i32 = config::span * config::span;
+        let ceil : i32 = 0;
+        let j : i32 = 0;
+        while (j < slots) {
+            if (this.loaded[j] == 1 && this.maxFY[j] > ceil) {
+                ceil = this.maxFY[j];
+            }
+            j = j + 1;
+        }
+        let done : i32 = 0;
+        let guard : i32 = 0;
+        while (done < budget && guard < slots) {
+            let slot : i32 = this.sunCursor;
+            this.sunCursor = this.sunCursor + 1;
+            if (this.sunCursor >= slots) {
+                this.sunCursor = 0;
+            }
+            guard = guard + 1;
+            if (this.loaded[slot] == 1) {
+                this.computeChunkSun(slot, this.cxs[slot], this.czs[slot], sx, sy, sz, ceil);
+                done = done + 1;
+            }
         }
     }
 
