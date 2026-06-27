@@ -110,7 +110,7 @@ use crate::configs::atlas::{
 use crate::configs::water::{
     waterDeepR, waterDeepG, waterDeepB,
     waterFogR, waterFogG, waterFogB, waterFogFar, waterFogMax,
-    causticFreq, causticAmp, bubbleCount, bubbleSpeed,
+    causticFreq, causticAmp, waterEdgeHeight, bubbleCount, bubbleSpeed,
     waterRippleSpeed, waterFlowSpeed,
 };
 

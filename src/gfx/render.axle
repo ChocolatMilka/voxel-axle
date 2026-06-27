@@ -356,30 +356,37 @@ class Renderer {
         if (s0 > 1.5 || s1 > 1.5 || s2 > 1.5 || s3 > 1.5) {
             return 1.0;   // a source / column corner stays full height
         }
+        // Air contributes config::waterEdgeHeight (not a hard 0), so a flowing
+        // edge keeps a bit of body and only eases down — a gentle lip rather
+        // than a steep "skateboard ramp" right at the border.
         let sum : f64 = 0.0;
         let cnt : i32 = 0;
         if (s0 >= 0.0) {
             sum = sum + s0;
             cnt = cnt + 1;
         } else if (s0 > 0.0 - 1.5) {
+            sum = sum + config::waterEdgeHeight;
             cnt = cnt + 1;
         }
         if (s1 >= 0.0) {
             sum = sum + s1;
             cnt = cnt + 1;
         } else if (s1 > 0.0 - 1.5) {
+            sum = sum + config::waterEdgeHeight;
             cnt = cnt + 1;
         }
         if (s2 >= 0.0) {
             sum = sum + s2;
             cnt = cnt + 1;
         } else if (s2 > 0.0 - 1.5) {
+            sum = sum + config::waterEdgeHeight;
             cnt = cnt + 1;
         }
         if (s3 >= 0.0) {
             sum = sum + s3;
             cnt = cnt + 1;
         } else if (s3 > 0.0 - 1.5) {
+            sum = sum + config::waterEdgeHeight;
             cnt = cnt + 1;
         }
         if (cnt == 0) {
@@ -663,21 +670,30 @@ class Renderer {
             y = y + 1;
         }
 
-        // Rising bubbles: bright motes drifting upward, looped by the phase so
-        // each climbs the screen and restarts at the bottom.
+        // Rising bubbles: bright motes drifting upward. Each gets its own
+        // column, rise speed, phase and size from a per-index hash, so they
+        // don't climb in lockstep (no visible grid) and the columns wobble with
+        // height instead of forming straight streaks.
         let nb : i32 = config::bubbleCount;
-        let travel : i32 = Math::floorToInt(phase * config::bubbleSpeed) as i32;
         let bcol : i32 = 200 * 65536 + 228 * 256 + 244;
         let bi : i32 = 0;
         while (bi < nb) {
             let hx : i32 = (bi * 1664525 + 1013904223) & 0x7FFFFFFF;
-            let hy : i32 = ((bi + 1) * 22695477 + 1) & 0x7FFFFFFF;
-            let sway : i32 = Math::floorToInt(Math::sin(phase * 0.6 + (bi as f64)) * 2.0) as i32;
-            let bx : i32 = (hx % w) + sway;
-            let yy : i32 = h - 1 - (((hy + travel) & 0x7FFFFFFF) % h);
+            let hp : i32 = ((bi + 1) * 22695477 + 13) & 0x7FFFFFFF;
+            let hs : i32 = ((bi + 7) * 40503 + 101) & 0x7FFFFFFF;
+            // Per-bubble rise speed (0.5..1.5x) breaks the synchronised motion.
+            let sp : f64 = 0.5 + ((hs % 1000) as f64) * 0.001;
+            let trav : i32 = Math::floorToInt(phase * config::bubbleSpeed * sp) as i32;
+            let yy : i32 = h - 1 - (((hp + trav) & 0x7FFFFFFF) % h);
+            // Column wobbles with height + its own phase → wavy, not a streak.
+            let wob : f64 = Math::sin(phase * 0.4 + (bi as f64) * 1.7 + (yy as f64) * 0.07) * 3.0;
+            let bx : i32 = (hx % w) + Math::floorToInt(wob) as i32;
             this.plotBubble(pixels, w, h, bx, yy, bcol);
-            this.plotBubble(pixels, w, h, bx + 1, yy, bcol);
-            this.plotBubble(pixels, w, h, bx, yy - 1, bcol);
+            // Vary size: about half are a 2-px mote, the rest a single pixel.
+            if ((hs & 1) == 0) {
+                this.plotBubble(pixels, w, h, bx + 1, yy, bcol);
+                this.plotBubble(pixels, w, h, bx, yy - 1, bcol);
+            }
             bi = bi + 1;
         }
     }
