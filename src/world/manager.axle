@@ -18,7 +18,7 @@
 
 use crate::world::noise::{terrainHeight, temperature, humidity, treeHash, hashI};
 use crate::world::biomes::registry::{biomeAt, Biomes};
-use crate::world::blocks::{tileFor, isSolid, isCollidable, isWater};
+use crate::world::blocks::{tileFor, isSolid, isCollidable, isWater, isTransparent};
 use crate::config;
 use crate::config::{ Block };
 use crate::config::{ BiomeId };
@@ -780,25 +780,29 @@ class ChunkManager {
                                 this.addFace(slot, wx, ly, wz, FaceDir::NegZ, tileFor(id, FaceDir::NegZ));
                             }
                         } else {
+                            // A solid block shows a face wherever its neighbour
+                            // is TRANSPARENT — air or water — so submerged
+                            // terrain (lakebed, walls) is visible through the
+                            // water instead of vanishing.
                             if (isCollidable(id)) {
                                 coll = ly + 1;
                             }
-                            if (this.getVox(slot, lx + 1, ly, lz) == air) {
+                            if (isTransparent(this.getVox(slot, lx + 1, ly, lz))) {
                                 this.addFace(slot, wx, ly, wz, FaceDir::PosX, tileFor(id, FaceDir::PosX));
                             }
-                            if (this.getVox(slot, lx - 1, ly, lz) == air) {
+                            if (isTransparent(this.getVox(slot, lx - 1, ly, lz))) {
                                 this.addFace(slot, wx, ly, wz, FaceDir::NegX, tileFor(id, FaceDir::NegX));
                             }
-                            if (this.getVox(slot, lx, ly + 1, lz) == air) {
+                            if (isTransparent(this.getVox(slot, lx, ly + 1, lz))) {
                                 this.addFace(slot, wx, ly, wz, FaceDir::Top, tileFor(id, FaceDir::Top));
                             }
-                            if (this.getVox(slot, lx, ly - 1, lz) == air) {
+                            if (isTransparent(this.getVox(slot, lx, ly - 1, lz))) {
                                 this.addFace(slot, wx, ly, wz, FaceDir::Bottom, tileFor(id, FaceDir::Bottom));
                             }
-                            if (this.getVox(slot, lx, ly, lz + 1) == air) {
+                            if (isTransparent(this.getVox(slot, lx, ly, lz + 1))) {
                                 this.addFace(slot, wx, ly, wz, FaceDir::PosZ, tileFor(id, FaceDir::PosZ));
                             }
-                            if (this.getVox(slot, lx, ly, lz - 1) == air) {
+                            if (isTransparent(this.getVox(slot, lx, ly, lz - 1))) {
                                 this.addFace(slot, wx, ly, wz, FaceDir::NegZ, tileFor(id, FaceDir::NegZ));
                             }
                         }

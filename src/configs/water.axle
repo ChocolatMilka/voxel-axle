@@ -30,4 +30,4 @@ const bubbleSpeed : f64 = 18.0;
 
 // Phase speed (time rate) and how fast flowing water scrolls its texture.
 const waterRippleSpeed : f64 = 0.05;
-const waterFlowSpeed : f64 = 0.12;
+const waterFlowSpeed : f64 = 0.16;

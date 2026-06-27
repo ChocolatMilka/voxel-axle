@@ -25,7 +25,7 @@ fn isAir(id : Block) : bool {
  * @return whether the block is transparent
  */
 fn isTransparent(id : Block) : bool {
-    return id == Block::Air;
+    return id == Block::Air || isWater(id);
 }
 
 /**

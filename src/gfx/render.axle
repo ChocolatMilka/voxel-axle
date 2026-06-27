@@ -463,7 +463,7 @@ class Renderer {
                 getF64(this.csx, 0), getF64(this.csy, 0), getF64(this.ciz, 0), getF64(this.cbu, 0), getF64(this.cbv, 0),
                 getF64(this.csx, t), getF64(this.csy, t), getF64(this.ciz, t), getF64(this.cbu, t), getF64(this.cbv, t),
                 getF64(this.csx, t + 1), getF64(this.csy, t + 1), getF64(this.ciz, t + 1), getF64(this.cbu, t + 1), getF64(this.cbv, t + 1),
-                this.mips, tile, lvlBase, lvlSz, sharp, bright, bright, bright);
+                this.mips, tile, lvlBase, lvlSz, sharp, bright, bright, bright, isWaterFace);
             t = t + 1;
         }
     }
@@ -707,10 +707,10 @@ class Renderer {
 
             rasterTriTex(pixels, zbuf, w, h,
                 sx0, sy0, iz0, 0.0, 1.0, sx1, sy1, iz1, 1.0, 1.0, sx2, sy2, iz2, 1.0, 0.0,
-                this.mips, tile, 0, config::tilePx, 4.0, tr, tg, tb);
+                this.mips, tile, 0, config::tilePx, 4.0, tr, tg, tb, false);
             rasterTriTex(pixels, zbuf, w, h,
                 sx0, sy0, iz0, 0.0, 1.0, sx2, sy2, iz2, 1.0, 0.0, sx3, sy3, iz3, 0.0, 0.0,
-                this.mips, tile, 0, config::tilePx, 4.0, tr, tg, tb);
+                this.mips, tile, 0, config::tilePx, 4.0, tr, tg, tb, false);
         } else {
             let col : i32 = scaleRgb(tintIf(hurt, color), bright);
             rasterTri(pixels, zbuf, w, h, sx0, sy0, iz0, sx1, sy1, iz1, sx2, sy2, iz2, col);

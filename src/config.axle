@@ -28,7 +28,7 @@ use crate::configs::physics::{
     gravity, mobGravity, terminalVel, jumpVel,
     walkSpeed, sprintSpeed, swimSpeed,
     waterGravityScale, waterSinkMax,
-    swimUpAccel, swimUpMax, swimDownSpeed,
+    swimUpAccel, swimUpMax, swimDownSpeed, waterPush,
     flySpeed, flySprintSpeed, flyVertSpeed,
     eyeHeight, stepHeight, stepSmoothDecay,
     playerRadius, playerHeight, mobRadius,

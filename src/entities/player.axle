@@ -8,7 +8,7 @@
 
 use crate::entities::entity::Entity;
 use crate::world::manager::ChunkManager;
-use crate::world::blocks::{ isWater };
+use crate::world::blocks::{ isWater, fluidLevel };
 use crate::config;
 use crate::config::{ Block };
 use crate::mathx::{ clampF64 };
@@ -27,6 +27,7 @@ class Player extends Entity {
     sinceHurt : i32,
     regenTick : i32,
     creative : i32,   // 0 = survival, 1 = creative (fly)
+    headInWater : bool,   // eye voxel is water → underwater visuals / drowning
     hotbar : Block[],   // block id held in each inventory slot
     selected : i32,   // active hotbar slot (0-based)
 
@@ -57,6 +58,7 @@ class Player extends Entity {
         this.sinceHurt = 0;
         this.regenTick = config::regenEveryFrames;
         this.creative = 0;
+        this.headInWater = false;
         this.hotbar = malloc<Block>(config::hotbarSize);
         this.hotbar[0] = Block::Grass;
         this.hotbar[1] = Block::Dirt;
@@ -136,7 +138,7 @@ class Player extends Entity {
      * @return true when the eye height is under the sea level
      */
     fn isUnderwater() : bool {
-        return (this.pos.y + config::eyeHeight) < (config::seaLevel as f64);
+        return this.headInWater;
     }
 
     /**
@@ -177,7 +179,14 @@ class Player extends Entity {
 
         let inWater : bool = this.bodyInWater(world);
         this.inWater = inWater;
-        let submerged : bool = this.isUnderwater();   // eye-based: drown + visuals
+        // Submerged = the eye's own voxel is water, at any altitude (not the
+        // absolute sea level) — this is what drives the underwater visuals and
+        // drowning, so a pool you dug on a hill counts too.
+        let ex : i32 = Math::floorToInt(this.pos.x) as i32;
+        let ey : i32 = Math::floorToInt(this.pos.y + config::eyeHeight) as i32;
+        let ez : i32 = Math::floorToInt(this.pos.z) as i32;
+        let submerged : bool = isWater(world.worldGet(ex, ey, ez));
+        this.headInWater = submerged;
 
         let speed : f64 = config::walkSpeed;
         if (inWater) {
@@ -192,9 +201,19 @@ class Player extends Entity {
         dz = dz * speed;
 
         if (inWater) {
-            // Additive up/down swim thrust; buoyancy (Entity.fall) floats an
-            // idle swimmer to the surface, so holding Space surfaces quickly
-            // and you never get stuck under the water.
+            // Current: flowing water carries you along its level gradient
+            // (high → low), so a stream pushes you down-current.
+            let fbx : i32 = Math::floorToInt(this.pos.x) as i32;
+            let fby : i32 = Math::floorToInt(this.pos.y + 0.2) as i32;
+            let fbz : i32 = Math::floorToInt(this.pos.z) as i32;
+            let lpx : i32 = fluidLevel(world.worldGet(fbx + 1, fby, fbz));
+            let lnx : i32 = fluidLevel(world.worldGet(fbx - 1, fby, fbz));
+            let lpz : i32 = fluidLevel(world.worldGet(fbx, fby, fbz + 1));
+            let lnz : i32 = fluidLevel(world.worldGet(fbx, fby, fbz - 1));
+            dx = dx + ((lnx - lpx) as f64) * config::waterPush;
+            dz = dz + ((lnz - lpz) as f64) * config::waterPush;
+            // Additive up/down swim thrust (gentle; buoyancy is gone, so you
+            // sink slowly and rise only while Space is held).
             if (up) {
                 this.velY = this.velY + config::swimUpAccel;
             }
