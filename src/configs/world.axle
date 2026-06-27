@@ -39,3 +39,4 @@ const maintainTicks : i32 = 10;  // mob cull + spawn scan every 10 ticks (~6 Hz)
 const simTicks : i32 = 8;       // step the sim every 8 ticks (~7.5 Hz)
 const simBudget : i32 = 256;    // max cells processed per step (one generation)
 const simQueueCap : i32 = 16384; // max pending cells (drop-on-full)
+const flowSearch : i32 = 5;     // how far water looks for a downhill drop to flow toward

@@ -16,7 +16,7 @@ use crate::configs::screen::{
 use crate::configs::world::{
     chunkSize, viewRadius, span, maxFacesPerChunk,
     seaLevel, maxHeight, worldHeight, tickHz, maintainTicks,
-    simTicks, simBudget, simQueueCap,
+    simTicks, simBudget, simQueueCap, flowSearch,
 };
 
 use crate::configs::noise::{

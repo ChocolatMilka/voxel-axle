@@ -12,7 +12,7 @@
 // falling to the world height — so every disturbance terminates.
 
 use crate::world::manager::ChunkManager;
-use crate::world::blocks::{ isWater, falls, fluidLevel, fluidOfLevel, isSource };
+use crate::world::blocks::{ isWater, isSolid, falls, fluidLevel, fluidOfLevel, isSource };
 use crate::config;
 use crate::config::{ Block };
 
@@ -167,29 +167,110 @@ class BlockSim {
         let lvl : i32 = fluidLevel(cur);
         let below : Block = man.worldGet(wx, wy - 1, wz);
         if (below == Block::Air) {
-            // Fall straight down as a full flowing column.
+            // Gravity first: fall straight down as a full column. While it can
+            // drop it does NOT spread sideways — so a waterfall stays a clean
+            // vertical stream.
             man.setVoxel(wx, wy - 1, wz, Block::FlowWater7);
             this.enqueue(wx, wy - 1, wz);
             this.enqueue4(wx, wy - 1, wz);
-        } else {
-            // Resting on something solid (or water): spread outward, losing a
-            // level each block, until level 1 can spread no further.
+        } else if (isSolid(below)) {
+            // Only water RESTING on solid ground spreads (so the middle of a
+            // waterfall, which sits on water, never pools out). It flows toward
+            // the nearest drop, losing a level per block.
             if (lvl >= 2) {
-                let nl : i32 = lvl - 1;
-                this.spreadInto(man, wx + 1, wy, wz, nl);
-                this.spreadInto(man, wx - 1, wy, wz, nl);
-                this.spreadInto(man, wx, wy, wz + 1, nl);
-                this.spreadInto(man, wx, wy, wz - 1, nl);
+                this.spreadOut(man, wx, wy, wz, lvl - 1);
             }
         }
-        // Flowing water with no feed (no higher neighbour, no water above)
-        // dries up; the source never does. This cascades a cut-off back to air.
+        // (below is water → part of a column/pool: neither falls nor spreads.)
+        // Flowing water with no feed (no higher neighbour, no water above) dries
+        // up; the source never does. This cascades a cut-off back to air.
         if (!isSource(cur)) {
             if (!this.fed(man, wx, wy, wz, lvl)) {
                 man.setVoxel(wx, wy, wz, Block::Air);
                 this.enqueue6(wx, wy, wz);
             }
         }
+    }
+
+    /**
+     * Spread a resting water cell to its horizontal neighbours at level `nl`,
+     * Minecraft-style: if any direction leads to a drop within `flowSearch`
+     * blocks, flow ONLY toward the nearest such drop(s); otherwise spread
+     * evenly. This makes water seek holes and form streams instead of flat
+     * sheets.
+     * @param man  the chunk manager
+     * @param wx   world x
+     * @param wy   world y
+     * @param wz   world z
+     * @param nl   the flow level to place into neighbours
+     */
+    fn spreadOut(man : ChunkManager, wx : i32, wy : i32, wz : i32, nl : i32) : void {
+        let dE : i32 = this.dropDist(man, wx, wy, wz, 1, 0);
+        let dW : i32 = this.dropDist(man, wx, wy, wz, 0 - 1, 0);
+        let dS : i32 = this.dropDist(man, wx, wy, wz, 0, 1);
+        let dN : i32 = this.dropDist(man, wx, wy, wz, 0, 0 - 1);
+        let best : i32 = dE;
+        if (dW < best) {
+            best = dW;
+        }
+        if (dS < best) {
+            best = dS;
+        }
+        if (dN < best) {
+            best = dN;
+        }
+        if (best <= config::flowSearch) {
+            // Flow only toward the nearest drop(s).
+            if (dE == best) {
+                this.spreadInto(man, wx + 1, wy, wz, nl);
+            }
+            if (dW == best) {
+                this.spreadInto(man, wx - 1, wy, wz, nl);
+            }
+            if (dS == best) {
+                this.spreadInto(man, wx, wy, wz + 1, nl);
+            }
+            if (dN == best) {
+                this.spreadInto(man, wx, wy, wz - 1, nl);
+            }
+        } else {
+            // No drop within reach: pool out evenly.
+            this.spreadInto(man, wx + 1, wy, wz, nl);
+            this.spreadInto(man, wx - 1, wy, wz, nl);
+            this.spreadInto(man, wx, wy, wz + 1, nl);
+            this.spreadInto(man, wx, wy, wz - 1, nl);
+        }
+    }
+
+    /**
+     * Distance (in blocks) until water flowing in (dirx, dirz) reaches a drop —
+     * a cell with air below — walking across air/water on this level, up to
+     * `flowSearch`. Returns flowSearch+1 if a solid wall blocks the way or no
+     * drop is found.
+     * @param man   the chunk manager
+     * @param wx    world x
+     * @param wy    world y
+     * @param wz    world z
+     * @param dirx  step in x (-1/0/1)
+     * @param dirz  step in z (-1/0/1)
+     * @return the drop distance, or flowSearch+1 if none / blocked
+     */
+    fn dropDist(man : ChunkManager, wx : i32, wy : i32, wz : i32, dirx : i32, dirz : i32) : i32 {
+        let maxD : i32 = config::flowSearch;
+        let d : i32 = 1;
+        while (d <= maxD) {
+            let nx : i32 = wx + dirx * d;
+            let nz : i32 = wz + dirz * d;
+            let here : Block = man.worldGet(nx, wy, nz);
+            if (here != Block::Air && !isWater(here)) {
+                return maxD + 1;   // a solid wall blocks this direction
+            }
+            if (man.worldGet(nx, wy - 1, nz) == Block::Air) {
+                return d;          // a drop opens up here
+            }
+            d = d + 1;
+        }
+        return maxD + 1;
     }
 
     /**
