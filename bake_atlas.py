@@ -5,11 +5,11 @@ this order in `src/world/tiles.axle` (keep them in sync!) and `config.atlasTiles
 must equal the total tile count printed at the end.
 
 Block textures are pulled from the HD resource pack and COPIED into the repo
-(`textures/block/`) on first use, so the project stays self-contained. MC's
+(`assets/textures/block/`) on first use, so the project stays self-contained. MC's
 grass/leaves are greyscale and tinted per-biome at runtime; we have no runtime
 tint, so the tint is baked here (luminance-recolour toward a target colour).
 Mob tiles reuse the crops from the old bake_mobs.py, read from the repo's
-`textures/entity/` (the repaired creeper charge.png lives there).
+`assets/textures/entity/` (the repaired creeper charge.png lives there).
 
 Run:  python bake_atlas.py
 """
@@ -20,8 +20,8 @@ import shutil
 ROOT = Path(__file__).resolve().parent
 PACK = Path(r"C:\Users\users\AppData\Roaming\.minecraft\resourcepacks"
             r"\Default HD 128x Demo 1.8.2.4\assets\minecraft\textures\block")
-BLOCK_OUT = ROOT / "textures" / "block"
-TEX = ROOT / "textures" / "entity"
+BLOCK_OUT = ROOT / "assets" / "textures" / "block"
+TEX = ROOT / "assets" / "textures" / "entity"
 TILE = 64
 
 # ── Per-biome / per-species tint colours (greyscale source → this hue) ──
@@ -43,7 +43,7 @@ _copied = set()
 
 
 def src(name: str) -> Path:
-    """Copy `<name>.png` from the pack into textures/block/ (once) and return
+    """Copy `<name>.png` from the pack into assets/textures/block/ (once) and return
     the repo path. Falls back to an already-present repo copy if the pack
     lacks it."""
     out = BLOCK_OUT / f"{name}.png"

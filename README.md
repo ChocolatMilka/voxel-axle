@@ -212,7 +212,7 @@ embedded in the source, so textures can be re-baked without rebuilding.
 the tile per face, and `raster.rasterTriTex` samples it.
 
 **Mobs** are skinned from the Minecraft entity textures under
-`textures/entity/` (chicken, sheep, cow). `bake_mobs.py` crops a
+`assets/textures/entity/` (chicken, sheep, cow). `bake_mobs.py` crops a
 representative 64×64 tile per body part, appends them to `atlas.raw`, and
 regenerates the embedded hex; `config::useMobTextures` is on, so
 `render.drawQuad` samples those tiles (flat colour is the fallback when

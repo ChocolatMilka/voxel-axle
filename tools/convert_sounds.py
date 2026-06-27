@@ -2,7 +2,7 @@
 """Convert a curated subset of the Enhanced Audio OGG pack into the uniform
 WAV format the game's audio engine expects (44.1 kHz, mono, signed 16-bit PCM).
 
-Output goes under the project's ``sounds/`` tree. Keep the selection focused so
+Output goes under the project's ``assets/sounds/`` tree. Keep the selection focused so
 the game ships only the clips it actually plays — see the MAP table below.
 """
 import os
@@ -10,7 +10,7 @@ import numpy as np
 import soundfile as sf
 
 SRC = r"C:\Users\users\Downloads\Enhanced Audio r7\assets\minecraft\sounds"
-DST = r"C:\Users\users\RustroverProjects\voxel-axle\sounds"
+DST = r"C:\Users\users\RustroverProjects\voxel-axle\assets\sounds"
 RATE = 44100
 
 # dst-relative folder  ->  list of source ogg paths (relative to SRC), in order.

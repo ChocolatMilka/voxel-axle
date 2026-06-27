@@ -9,7 +9,7 @@
 // `pump()` must be called once per frame to feed the device. Footsteps and digs
 // are grouped by material into one bank each (random variant per call); ice with
 // no footfall clip and any other gap fall back to stone. Clips live under
-// `sounds/` (next to the binary or one dir up — the prefix is resolved once).
+// `assets/sounds/` (next to the binary or one dir up — the prefix is resolved once).
 // Missing files are silent.
 
 use sdl_platform::{Mixer, SoundBank};
@@ -75,9 +75,9 @@ class AudioManager {
     /** Open the mixer, resolve the sounds/ prefix and load every bank. */
     constructor() {
         this.mixer = new Mixer();
-        this.base = "sounds/";
-        if (!fileExists("sounds/step/grass/1.wav")) {
-            this.base = "../sounds/";
+        this.base = "assets/sounds/";
+        if (!fileExists("assets/sounds/step/grass/1.wav")) {
+            this.base = "../assets/sounds/";
         }
 
         // Per-material footstep + dig banks (variants auto-discovered 1..8).
