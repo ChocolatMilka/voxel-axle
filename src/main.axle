@@ -40,6 +40,7 @@ use crate::entities::mobs::MobManager;
 use crate::game::start::{Spawn, openYaw};
 use crate::game::ray::{Picker, cellInPlayer};
 use crate::game::sfx::AudioManager;
+use crate::game::tick::TickManager;
 use crate::gfx::render::Renderer;
 use crate::gfx::hud::drawHud;
 use crate::gfx::menu::{drawPauseMenu, menuHit};
@@ -138,8 +139,16 @@ fn main() : void {
         Console::println("warning: atlas.raw not found next to the binary — textures will be blank");
     }
     renderer.setAtlas(atlas);
+    // The mip chain's level 0 is a full copy of the atlas, so the standalone
+    // atlas buffer is now redundant; free it and read tile texels from the
+    // renderer (mip level 0) wherever they're still needed (the HUD hotbar).
+    cfree(asPtr(atlas));
 
     let clock : GameClock = new GameClock();
+    // Isochronous scheduler: physics runs every tick, while chunk streaming
+    // (on chunk-border cross) and the mob cull/spawn scan run on a coarser
+    // uniform cadence to cut wasted CPU. See game::tick.
+    let sched : TickManager = new TickManager();
     let picker : Picker = new Picker();
     // All game audio: footsteps / digs by material, mob voices, the player's
     // hurts and splashes, and the creeper's fuse / blast — every positional
@@ -268,16 +277,56 @@ fn main() : void {
                 slot = slot + 1;
             }
 
+            // Movement intent — constant across this frame's fixed steps.
+            let movingNow : bool = fwd != 0.0 || strafe != 0.0;
+
             // Fixed-timestep simulation: as many fixed steps as the real
-            // elapsed time demands (frame-rate independent).
+            // elapsed time demands (frame-rate independent). Physics, mob AI
+            // and the per-step audio timers all advance HERE, on the tick —
+            // so footstep and ambience cadence are isochronous (tied to ticks,
+            // never to the displayed frame rate).
             let nsteps : i32 = clock.steps();
             prevHp = player.hp;
             let stp : i32 = 0;
             while (stp < nsteps) {
+                sched.advance();
                 player.update(man, fwd, strafe, sprint, up, down);
                 mobs.update(man, player, sfx);
                 if (attackCd > 0) {
                     attackCd = attackCd - 1;
+                }
+
+                // Footstep timer: keyed to the block underfoot, paced by walk
+                // / sprint, decremented once per tick.
+                if (player.creative == 0 && player.onGround == 1 && movingNow && !player.isUnderwater()) {
+                    footTimer = footTimer - 1;
+                    if (footTimer <= 0) {
+                        let fbx : i32 = Math::floorToInt(player.pos.x) as i32;
+                        let fby : i32 = (Math::floorToInt(player.pos.y) as i32) - 1;
+                        let fbz : i32 = Math::floorToInt(player.pos.z) as i32;
+                        let under : Block = man.worldGet(fbx, fby, fbz);
+                        if (under != Block::Air && under != Block::Water) {
+                            sfx.footstep(under, mobs.rand());
+                        }
+                        if (sprint) {
+                            footTimer = config::footSprintFrames;
+                        } else {
+                            footTimer = config::footWalkFrames;
+                        }
+                    }
+                } else {
+                    footTimer = 0;
+                }
+
+                // Underwater ambience timer, decremented once per tick.
+                if (player.isUnderwater()) {
+                    ambientTimer = ambientTimer - 1;
+                    if (ambientTimer <= 0) {
+                        sfx.ambientUnderwater(mobs.rand());
+                        ambientTimer = config::ambientMin + Math::floorToInt(mobs.rand() * (config::ambientRand as f64)) as i32;
+                    }
+                } else {
+                    ambientTimer = 0;
                 }
                 stp = stp + 1;
             }
@@ -286,45 +335,24 @@ fn main() : void {
             }
             player.refresh();
 
-            man.ensureLoaded(chunkOf(player.pos.x), chunkOf(player.pos.z));
-
-            // Footsteps: keyed to the block underfoot, paced by walk / sprint.
-            let movingNow : bool = fwd != 0.0 || strafe != 0.0;
-            if (player.creative == 0 && player.onGround == 1 && movingNow && !player.isUnderwater()) {
-                footTimer = footTimer - 1;
-                if (footTimer <= 0) {
-                    let fbx : i32 = Math::floorToInt(player.pos.x) as i32;
-                    let fby : i32 = (Math::floorToInt(player.pos.y) as i32) - 1;
-                    let fbz : i32 = Math::floorToInt(player.pos.z) as i32;
-                    let under : Block = man.worldGet(fbx, fby, fbz);
-                    if (under != Block::Air && under != Block::Water) {
-                        sfx.footstep(under, mobs.rand());
-                    }
-                    if (sprint) {
-                        footTimer = config::footSprintFrames;
-                    } else {
-                        footTimer = config::footWalkFrames;
-                    }
-                }
-            } else {
-                footTimer = 0;
+            // Stream the world only when the player crosses a chunk border,
+            // and run the mob cull / spawn scan on the maintenance cadence —
+            // both far cheaper than the former unconditional every-frame work.
+            let pcx : i32 = chunkOf(player.pos.x);
+            let pcz : i32 = chunkOf(player.pos.z);
+            if (sched.dueStream(pcx, pcz)) {
+                man.ensureLoaded(pcx, pcz);
+            }
+            if (sched.dueMaintain()) {
+                mobs.maintain(man, player);
             }
 
-            // Water: a splash on entry, a soft ambience while submerged.
+            // Water: a splash on entry (the submerged ambience is ticked above).
             let nowUW : bool = player.isUnderwater();
             if (nowUW && !wasUnderwater) {
                 sfx.splash(mobs.rand());
             }
             wasUnderwater = nowUW;
-            if (nowUW) {
-                ambientTimer = ambientTimer - 1;
-                if (ambientTimer <= 0) {
-                    sfx.ambientUnderwater(mobs.rand());
-                    ambientTimer = config::ambientMin + Math::floorToInt(mobs.rand() * (config::ambientRand as f64)) as i32;
-                }
-            } else {
-                ambientTimer = 0;
-            }
 
             // Aim once; left-click breaks / attacks, right-click places.
             picker.cast(man, player);
@@ -395,7 +423,7 @@ fn main() : void {
             if (picker.hit == 1) {
                 renderer.drawSelection(player, pixels, zbuf, w, h, picker.bx, picker.by, picker.bz);
             }
-            drawHud(pixels, w, h, atlas, player.hp, player.maxHp, player.hotbar, player.selected);
+            drawHud(pixels, w, h, renderer.atlasBase(), player.hp, player.maxHp, player.hotbar, player.selected);
             renderer.crosshair(pixels, w, h);
         } else {
             drawPauseMenu(pixels, w, h, hover);

@@ -15,7 +15,7 @@ use crate::configs::screen::{
 
 use crate::configs::world::{
     chunkSize, viewRadius, span, maxFacesPerChunk,
-    seaLevel, maxHeight, worldHeight, tickHz,
+    seaLevel, maxHeight, worldHeight, tickHz, maintainTicks,
 };
 
 use crate::configs::noise::{
@@ -40,7 +40,7 @@ use crate::configs::health::{
 
 use crate::configs::render::{
     renderDist, skyR, skyG, skyB, fogStart, fogEnd,
-    lightX, lightY, lightZ, ambient, edgeShade,
+    lightX, lightY, lightZ, ambient,
 };
 
 use crate::configs::blocks::{ Block };

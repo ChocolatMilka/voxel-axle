@@ -26,7 +26,6 @@ class Renderer {
     csy : i64,
     ciz : i64,
     cvis : i32[],
-    atlas : i64,
     cax : i64,
     cay : i64,
     caz : i64,
@@ -59,7 +58,6 @@ class Renderer {
         this.csy = allocBytes(8 * 8);
         this.ciz = allocBytes(8 * 8);
         this.cvis = malloc<i32>(4);
-        this.atlas = 0;
         // Camera-space input (ca*) and clipped output (cb*) buffers: x, y,
         // z (depth) and the u, v texture coordinates per vertex.
         this.cax = allocBytes(8 * 8);
@@ -84,11 +82,21 @@ class Renderer {
      * @param base  base address of the loaded atlas texels
      */
     fn setAtlas(base : i64) : void {
-        this.atlas = base;
         if (this.mips == 0) {
             this.mips = allocBytes((mipChainTexels() as i64) * 4);
         }
         buildMipChain(base, this.mips);
+    }
+
+    /**
+     * Base pointer to the full-resolution atlas texels (mip level 0). The mip
+     * chain's level 0 is a byte-for-byte copy of the loaded atlas, so callers
+     * that need raw tile texels (e.g. the HUD hotbar icons) read it here
+     * instead of keeping the original atlas buffer alive.
+     * @return base address of the level-0 atlas texels
+     */
+    fn atlasBase() : i64 {
+        return this.mips;
     }
 
     /**

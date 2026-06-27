@@ -66,22 +66,6 @@ fn clearFrame(pixels : i64, zbuf : i64, w : i32, h : i32, bg : i32) : void {
 }
 
 /**
- * Sample a square atlas tile (vertical strip) at (fu, fv) in [0,1).
- * @param atlas  the texture atlas.
- * @param tile   the atlas tile index.
- * @param fu     horizontal coordinate in [0,1).
- * @param fv     vertical coordinate in [0,1).
- * @return the sampled texel colour.
- */
-fn sampleAtlas(atlas : i64, tile : i32, fu : f64, fv : f64) : i32 {
-    let t : i32 = config::tilePx;
-    let tx : i32 = clampI32(Math::floorToInt(fu * (t as f64)) as i32, 0, t - 1);
-    let ty : i32 = clampI32(Math::floorToInt(fv * (t as f64)) as i32, 0, t - 1);
-    let idx : i32 = (tile * t + ty) * t + tx;
-    return readI32(atlas, (idx as i64) * 4);
-}
-
-/**
  * Extract one 8-bit channel of an ARGB colour.
  * @param c      the packed colour.
  * @param shift  the channel's bit shift (16 = red, 8 = green, 0 = blue).
@@ -284,6 +268,9 @@ fn rasterTriTex(pixels : i64, zbuf : i64, w : i32, h : i32,
     let tf : f64 = lvlSz as f64;
     let tmax : i32 = lvlSz - 1;
     let tbase : i32 = tile * lvlSz;
+    // Sharp-bilinear edge half-width: a function of `sharp` only, so it is
+    // constant for the whole triangle — hoist it out of the per-pixel loop.
+    let rrs : f64 = 0.5 - 0.5 / sharp;
 
     let py : i32 = miny;
     while (py <= maxy) {
@@ -312,7 +299,6 @@ fn rasterTriTex(pixels : i64, zbuf : i64, w : i32, h : i32,
                         // pixels per texel (≥1); larger = crisper edge.
                         let fu0 : f64 = u * tf;
                         let fv0 : f64 = v * tf;
-                        let rrs : f64 = 0.5 - 0.5 / sharp;
                         let flx : f64 = Math::floorToInt(fu0) as f64;
                         let cdx0 : f64 = fu0 - flx - 0.5;
                         let ccx0 : f64 = cdx0;

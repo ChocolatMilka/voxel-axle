@@ -76,60 +76,6 @@ fn dimScreen(base : i64, fbW : i32, fbH : i32, bright : f64) : void {
 }
 
 /**
- * Draw a 1px line (integer Bresenham), clipped to the framebuffer.
- * @param base   framebuffer base pointer.
- * @param fbW    framebuffer width.
- * @param fbH    framebuffer height.
- * @param x0     start x.
- * @param y0     start y.
- * @param x1     end x.
- * @param y1     end y.
- * @param color  line colour.
- */
-fn drawLine(base : i64, fbW : i32, fbH : i32, x0 : i32, y0 : i32, x1 : i32, y1 : i32, color : i32) : void {
-    let dx : i32 = x1 - x0;
-    if (dx < 0) {
-        dx = 0 - dx;
-    }
-    let dy : i32 = y1 - y0;
-    if (dy < 0) {
-        dy = 0 - dy;
-    }
-    dy = 0 - dy;
-    let sx : i32 = 0 - 1;
-    if (x0 < x1) {
-        sx = 1;
-    }
-    let sy : i32 = 0 - 1;
-    if (y0 < y1) {
-        sy = 1;
-    }
-    let err : i32 = dx + dy;
-    let x : i32 = x0;
-    let y : i32 = y0;
-    let guard : i32 = 0;
-    while (guard < 100000) {
-        if (x >= 0 && x < fbW && y >= 0 && y < fbH) {
-            putPixel(base, y * fbW + x, color);
-        }
-        if (x == x1 && y == y1) {
-            guard = 100000;
-        } else {
-            let e2 : i32 = 2 * err;
-            if (e2 >= dy) {
-                err = err + dy;
-                x = x + sx;
-            }
-            if (e2 <= dx) {
-                err = err + dx;
-                y = y + sy;
-            }
-            guard = guard + 1;
-        }
-    }
-}
-
-/**
  * Fill an axis-aligned rectangle of the framebuffer (HUD drawing).
  * @param base   framebuffer base pointer.
  * @param fbW    framebuffer width.

@@ -244,9 +244,12 @@ class MobManager {
     }
 
     /**
-     * Step AI, cull distant/dead mobs, and top the population back up.
+     * Step every mob's AI for one tick (wander / graze / flee, creeper chase,
+     * idle voices). Runs every physics tick so movement stays smooth and
+     * frame-rate independent. Population upkeep (cull + respawn) is separate —
+     * see `maintain`, which the scheduler runs on a coarser cadence.
      * @param world   the chunk manager the mobs live in
-     * @param player  the player driving spawn/cull ranges and creeper AI
+     * @param player  the player driving creeper AI and the voice listener
      * @param sfx     the audio manager for mob voices / creeper sounds
      */
     fn update(world : ChunkManager, player : Player, sfx : AudioManager) : void {
@@ -279,11 +282,25 @@ class MobManager {
             this.creepers[i].step(world, player, sfx);
             i = i + 1;
         }
+    }
 
-        // Cull each array (swap-with-last compaction).
+    /**
+     * Cull distant / finished mobs and top the population back up. Cheap but
+     * not urgent: the scheduler calls this every `config::maintainTicks`
+     * ticks rather than every tick — spawning is random and out of view, so
+     * a few times per second is indistinguishable from per-tick while cutting
+     * the spawn-ring probing ~`maintainTicks`×.
+     * @param world   the chunk manager that provides column heights
+     * @param player  the player whose position bounds spawn / cull ranges
+     */
+    fn maintain(world : ChunkManager, player : Player) : void {
+        // Cull each array (swap-with-last compaction). The evicted mob's heap
+        // object is freed before its slot is overwritten — otherwise every
+        // despawn / death would leak one Mob for the whole session.
         let j : i32 = 0;
         while (j < this.chN) {
             if (this.cull(this.chickens[j] as Mob, player)) {
+                free(this.chickens[j]);
                 this.chN = this.chN - 1;
                 this.chickens[j] = this.chickens[this.chN];
             } else {
@@ -293,6 +310,7 @@ class MobManager {
         j = 0;
         while (j < this.shN) {
             if (this.cull(this.sheep[j] as Mob, player)) {
+                free(this.sheep[j]);
                 this.shN = this.shN - 1;
                 this.sheep[j] = this.sheep[this.shN];
             } else {
@@ -302,6 +320,7 @@ class MobManager {
         j = 0;
         while (j < this.coN) {
             if (this.cull(this.cows[j] as Mob, player)) {
+                free(this.cows[j]);
                 this.coN = this.coN - 1;
                 this.cows[j] = this.cows[this.coN];
             } else {
@@ -311,6 +330,7 @@ class MobManager {
         j = 0;
         while (j < this.pgN) {
             if (this.cull(this.pigs[j] as Mob, player)) {
+                free(this.pigs[j]);
                 this.pgN = this.pgN - 1;
                 this.pigs[j] = this.pigs[this.pgN];
             } else {
@@ -320,6 +340,7 @@ class MobManager {
         j = 0;
         while (j < this.crN) {
             if (this.cull(this.creepers[j] as Mob, player)) {
+                free(this.creepers[j]);
                 this.crN = this.crN - 1;
                 this.creepers[j] = this.creepers[this.crN];
             } else {

@@ -1,0 +1,73 @@
+// tick — the isochronous scheduler. A pure index-based clock over the fixed
+// simulation step: `advance()` is called exactly once per physics tick (so the
+// counter tracks simulated time, never wall-clock or frame count), and the
+// `due*` predicates decide which heavy, low-urgency systems run THIS tick.
+//
+// Why: the loop advances physics every fixed tick, but chunk streaming and the
+// mob spawn/despawn scan don't need 60 Hz — running them on a coarser, uniform
+// cadence cuts the wasted CPU (the spawn scan alone was ~960 column probes a
+// second) without changing the simulation, because every decision is a pure
+// function of the deterministic tick index. Streaming additionally fires the
+// instant the player crosses a chunk border, so the world is never stale.
+//
+// Kept in the game layer (like `clock.axle`) since the cadences are tunables.
+
+use crate::config;
+
+class TickManager {
+    tick : i32,          // monotonic fixed-step counter (advance() once per step)
+    maintainEvery : i32, // mob cull + spawn-scan cadence, in ticks
+    lastMaintain : i32,  // tick the maintenance pass last fired on
+    lastCX : i32,        // last player chunk X seen by dueStream
+    lastCZ : i32,        // last player chunk Z seen by dueStream
+    hasLast : i32,       // 0/1 — whether lastC{X,Z} are valid yet
+
+    /** Start at tick 0 with the cadences pulled from config. */
+    constructor() {
+        this.tick = 0;
+        this.maintainEvery = config::maintainTicks;
+        // Bias so the first dueMaintain fires immediately (prompt first spawn).
+        this.lastMaintain = 0 - config::maintainTicks;
+        this.lastCX = 0;
+        this.lastCZ = 0;
+        this.hasLast = 0;
+    }
+
+    /** Advance one fixed simulation step. Call once per physics step. */
+    fn advance() : void {
+        this.tick = this.tick + 1;
+    }
+
+    /**
+     * True once per `maintainEvery` ticks. Edge-latched on the tick index, so
+     * calling it several times on the same tick (an early frame that ran no
+     * steps) fires at most once, and a frame that ran several steps still
+     * fires exactly once for the interval it crossed. Deterministic.
+     * @return whether the maintenance pass is due this frame
+     */
+    fn dueMaintain() : bool {
+        if (this.tick - this.lastMaintain >= this.maintainEvery) {
+            this.lastMaintain = this.tick;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * True only when the player has crossed into a new chunk (or on the very
+     * first query) — the one condition under which the loaded ring must be
+     * restreamed. Latches the new chunk so the next call sees it.
+     * @param cx  the player's current chunk X
+     * @param cz  the player's current chunk Z
+     * @return whether streaming must run this tick
+     */
+    fn dueStream(cx : i32, cz : i32) : bool {
+        if (this.hasLast == 1 && cx == this.lastCX && cz == this.lastCZ) {
+            return false;
+        }
+        this.lastCX = cx;
+        this.lastCZ = cz;
+        this.hasLast = 1;
+        return true;
+    }
+}

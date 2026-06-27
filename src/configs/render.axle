@@ -16,4 +16,3 @@ const lightX : f64 = 0.35;
 const lightY : f64 = 0.86;
 const lightZ : f64 = 0.37;
 const ambient : f64 = 0.50;
-const edgeShade : f64 = 0.74;

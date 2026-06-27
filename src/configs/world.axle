@@ -20,3 +20,11 @@ const worldHeight : i32 = 128;
 // and capping it stops the CPU spinning at hundreds of fps when v-sync is
 // unavailable or disabled. 60 matches a typical display.
 const tickHz : i32 = 60;
+
+// ── Scheduler cadences (see game::tick::TickManager) ────────
+// Heavy, low-urgency systems run on a coarser uniform cadence than physics.
+// The mob cull + spawn-ring scan (formerly every tick) only needs to top the
+// population up a few times a second; it is invisible because spawning is
+// random and out of view. World streaming is event-driven (chunk-border
+// cross), not periodic, so it has no constant here.
+const maintainTicks : i32 = 10;  // mob cull + spawn scan every 10 ticks (~6 Hz)
