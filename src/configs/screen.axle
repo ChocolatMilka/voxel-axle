@@ -11,5 +11,5 @@ const renderW : i32 = 640;
 const renderH : i32 = 400;
 const halfW : f64 = 320.0;
 const halfH : f64 = 200.0;
-const focal : f64 = 373.0;
+const focal : f64 = 330.0;   // wider FOV (~62° vert) — less "zoomed" than 373
 const nearPlane : f64 = 0.12;
