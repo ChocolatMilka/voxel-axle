@@ -27,7 +27,7 @@ const causticAmp : f64 = 16.0;
 // Flowing-water edge height: what an air neighbour contributes to a surface
 // corner. Higher = the edge keeps more body and the slope is gentler / starts
 // later (less of a steep ramp at the border); 0 = dives straight to the drop.
-const waterEdgeHeight : f64 = 0.55;
+const waterEdgeHeight : f64 = 0.3;
 
 // Rising bubbles: how many motes and how fast they rise (px/phase).
 const bubbleCount : i32 = 70;
