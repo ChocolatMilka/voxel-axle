@@ -35,6 +35,7 @@ use crate::input::{
     SC_W, SC_A, SC_S, SC_D, SC_SPACE, SC_LCTRL, SC_LSHIFT, SC_F3, SC_F4, SC_ESC, SC_1,
 };
 use crate::world::manager::ChunkManager;
+use crate::world::blocksim::BlockSim;
 use crate::entities::player::Player;
 use crate::entities::mobs::MobManager;
 use crate::game::start::{Spawn, openYaw};
@@ -149,6 +150,9 @@ fn main() : void {
     // (on chunk-border cross) and the mob cull/spawn scan run on a coarser
     // uniform cadence to cut wasted CPU. See game::tick.
     let sched : TickManager = new TickManager();
+    // Block-update sim: falling sand/gravel + edit-driven water flow. Stepped
+    // on the sim cadence; only what the player disturbs is enqueued.
+    let blocksim : BlockSim = new BlockSim();
     let picker : Picker = new Picker();
     // All game audio: footsteps / digs by material, mob voices, the player's
     // hurts and splashes, and the creeper's fuse / blast — every positional
@@ -352,6 +356,9 @@ fn main() : void {
             if (sched.dueMaintain()) {
                 mobs.maintain(man, player);
             }
+            if (sched.dueSim()) {
+                blocksim.step(man);
+            }
 
             // Water: a splash on entry (the submerged ambience is ticked above).
             let nowUW : bool = player.isUnderwater();
@@ -368,6 +375,7 @@ fn main() : void {
                     let broken : Block = man.worldGet(picker.bx, picker.by, picker.bz);
                     man.breakAt(picker.bx, picker.by, picker.bz);
                     sfx.blockEdit(broken, picker.bx, picker.by, picker.bz, mobs.rand());
+                    blocksim.enqueue6(picker.bx, picker.by, picker.bz);
                 }
                 attackCd = config::editCooldown;
             }
@@ -377,6 +385,7 @@ fn main() : void {
                     let held : Block = player.heldBlock();
                     man.placeAt(picker.px, picker.py, picker.pz, held);
                     sfx.blockEdit(held, picker.px, picker.py, picker.pz, mobs.rand());
+                    blocksim.enqueue6(picker.px, picker.py, picker.pz);
                 }
             }
             wasRight = rightDown;
@@ -431,8 +440,14 @@ fn main() : void {
             lastHover = hover;
         }
         if (drawFrame) {
-            renderer.render(man, player, pixels, zbuf, w, h);
+            let underwater : bool = player.isUnderwater();
+            let phase : f64 = (sched.tick as f64) * config::waterRippleSpeed;
+            renderer.render(man, player, pixels, zbuf, w, h, underwater, phase);
             renderer.renderMobs(mobs, player, pixels, zbuf, w, h);
+            // Living-water post-pass (depth fog + moving caustics) under the HUD.
+            if (underwater) {
+                renderer.underwaterOverlay(pixels, zbuf, w, h, phase);
+            }
             if (!paused) {
                 if (picker.hit == 1) {
                     renderer.drawSelection(player, pixels, zbuf, w, h, picker.bx, picker.by, picker.bz);

@@ -16,6 +16,7 @@ use crate::configs::screen::{
 use crate::configs::world::{
     chunkSize, viewRadius, span, maxFacesPerChunk,
     seaLevel, maxHeight, worldHeight, tickHz, maintainTicks,
+    simTicks, simBudget, simQueueCap,
 };
 
 use crate::configs::noise::{
@@ -26,6 +27,8 @@ use crate::configs::noise::{
 use crate::configs::physics::{
     gravity, mobGravity, terminalVel, jumpVel,
     walkSpeed, sprintSpeed, swimSpeed,
+    waterGravityScale, waterSinkMax,
+    swimUpAccel, swimUpMax, swimDownSpeed,
     flySpeed, flySprintSpeed, flyVertSpeed,
     eyeHeight, stepHeight, stepSmoothDecay,
     playerRadius, playerHeight, mobRadius,
@@ -102,6 +105,13 @@ use crate::configs::atlas::{
     tlChickenBody, tlChickenHead, tlSheepWool, tlSheepHead,
     tlCowBody, tlCowHead, tlCreeperSkin, tlCreeperFace, tlChargeSkin, tlChargeFace,
     tlPigBody, tlPigHead,
+};
+
+use crate::configs::water::{
+    waterDeepR, waterDeepG, waterDeepB,
+    waterFogR, waterFogG, waterFogB, waterFogFar, waterFogMax,
+    causticFreq, causticAmp, bubbleCount, bubbleSpeed,
+    waterRippleSpeed, waterFlowSpeed,
 };
 
 use crate::configs::audio::{ AudioMaterial };

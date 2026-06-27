@@ -8,6 +8,7 @@
 
 use crate::entities::entity::Entity;
 use crate::world::manager::ChunkManager;
+use crate::world::blocks::{ isWater };
 use crate::config;
 use crate::config::{ Block };
 use crate::mathx::{ clampF64 };
@@ -43,6 +44,7 @@ class Player extends Entity {
         this.grav = config::gravity;
         this.apexY = y;
         this.stepUp = 0.0;
+        this.inWater = false;
         this.yaw = 0.0;
         this.pitch = 0.0 - 0.18;
         this.siny = 0.0;
@@ -138,6 +140,22 @@ class Player extends Entity {
     }
 
     /**
+     * Is the body in water (the voxel at the feet or torso is water)? Drives
+     * buoyancy and the swim controls — distinct from `isUnderwater` (eye-based,
+     * for drowning and the underwater visuals), so you tread water at the
+     * surface and start swimming as soon as you wade in.
+     * @param world  the chunk manager queried for the body's voxels
+     * @return whether the body is in water
+     */
+    fn bodyInWater(world : ChunkManager) : bool {
+        let bx : i32 = Math::floorToInt(this.pos.x) as i32;
+        let bz : i32 = Math::floorToInt(this.pos.z) as i32;
+        let fy : i32 = Math::floorToInt(this.pos.y + 0.1) as i32;
+        let my : i32 = Math::floorToInt(this.pos.y + this.height * 0.5) as i32;
+        return isWater(world.worldGet(bx, fy, bz)) || isWater(world.worldGet(bx, my, bz));
+    }
+
+    /**
      * Full per-frame update. `fwd`/`strafe` are in [-1,1]; `up`/`down`
      * drive vertical flight in creative. Survival applies gravity + the
      * survival effects (fall / drown / regen); creative flies freely with
@@ -157,9 +175,12 @@ class Player extends Entity {
             return;
         }
 
-        let water : bool = this.isUnderwater();
+        let inWater : bool = this.bodyInWater(world);
+        this.inWater = inWater;
+        let submerged : bool = this.isUnderwater();   // eye-based: drown + visuals
+
         let speed : f64 = config::walkSpeed;
-        if (water) {
+        if (inWater) {
             speed = config::swimSpeed;
         } else if (sprint) {
             speed = config::sprintSpeed;
@@ -170,17 +191,22 @@ class Player extends Entity {
         dx = dx * speed;
         dz = dz * speed;
 
-        if (water) {
-            this.velY = this.velY * 0.5;
+        if (inWater) {
+            // Additive up/down swim thrust; buoyancy (Entity.fall) floats an
+            // idle swimmer to the surface, so holding Space surfaces quickly
+            // and you never get stuck under the water.
             if (up) {
-                this.velY = 0.11;
+                this.velY = this.velY + config::swimUpAccel;
+            }
+            if (down) {
+                this.velY = this.velY - config::swimDownSpeed;
             }
         } else if (up && this.onGround == 1) {
             this.velY = config::jumpVel;
         }
 
         this.tick(world, dx, dz);
-        this.survive(water);
+        this.survive(submerged);
         this.refresh();
     }
 

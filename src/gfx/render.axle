@@ -8,13 +8,14 @@
 // `useMobTextures` is on). The mob pass shares the world's z-buffer, so
 // terrain correctly occludes animals behind it.
 
-use sdl_platform::{allocBytes, getF64, setF64, putPixel, rgb};
+use sdl_platform::{allocBytes, getF64, setF64, putPixel, readI32, rgb};
 use crate::gfx::color::{scaleRgb, tintIf};
 use crate::gfx::raster::{rasterTriTex, rasterTri, clearFrame, buildMipChain, mipChainTexels, mipLevelOffset, mipLevelSize};
 use crate::entities::player::Player;
 use crate::world::manager::ChunkManager;
 use crate::entities::mobs::MobManager;
 use crate::entities::mob::Mob;
+use crate::world::blocks::{ fluidLevel };
 use crate::config;
 use crate::config::{ FaceDir };
 
@@ -316,13 +317,14 @@ class Renderer {
      * @param w       framebuffer width
      * @param h       framebuffer height
      */
-    fn renderFace(man : ChunkManager, idx : i32, p : Player, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
+    fn renderFace(man : ChunkManager, idx : i32, p : Player, pixels : i64, zbuf : i64, w : i32, h : i32, phase : f64) : void {
         let x : i32 = man.fx[idx];
         let y : i32 = man.fy[idx];
         let z : i32 = man.fz[idx];
         // Unpack the direction and atlas tile from the packed ftile slot.
         let packed : i32 = man.ftile[idx];
         let dir : FaceDir = faceDirFrom(packed / 256);
+        let isWaterFace : bool = (packed % 256) == config::tlWater;
         let nx : f64 = 0.0;
         let ny : f64 = 0.0;
         let nz : f64 = 0.0;
@@ -353,11 +355,42 @@ class Renderer {
         let vx : f64 = p.eye.x - fcx;
         let vy : f64 = p.eye.y - fcy;
         let vz : f64 = p.eye.z - fcz;
-        if (vx * nx + vy * ny + vz * nz <= 0.0) {
+        // Water surfaces draw double-sided so the rippling surface is visible
+        // from below; all other faces back-face cull.
+        let facing : f64 = vx * nx + vy * ny + vz * nz;
+        if (!isWaterFace && facing <= 0.0) {
             return;
         }
         if (vx * vx + vz * vz > config::renderDist * config::renderDist) {
             return;
+        }
+
+        // Water surface shaping + flow animation. Flowing water (level < 8) is
+        // shorter the lower its level, so the column tapers away from its
+        // source — variable height by proximity. A still lake has no level
+        // gradient, so it stays full height and doesn't scroll; flowing water
+        // scrolls its texture toward the direction it flows (high → low level).
+        let wh : f64 = 1.0;
+        let flowU : f64 = 0.0;
+        let flowV : f64 = 0.0;
+        if (isWaterFace) {
+            let lvl : i32 = fluidLevel(man.worldGet(x, y, z));
+            if (lvl <= 0) {
+                lvl = 8;
+            }
+            if (lvl < 8) {
+                wh = (lvl as f64) / 8.0;
+                if (wh < 0.16) {
+                    wh = 0.16;
+                }
+            }
+            let lpx : i32 = fluidLevel(man.worldGet(x + 1, y, z));
+            let lnx : i32 = fluidLevel(man.worldGet(x - 1, y, z));
+            let lpz : i32 = fluidLevel(man.worldGet(x, y, z + 1));
+            let lnz : i32 = fluidLevel(man.worldGet(x, y, z - 1));
+            let tscroll : f64 = phase * config::waterFlowSpeed;
+            flowU = ((lnx - lpx) as f64) * tscroll;
+            flowV = ((lnz - lpz) as f64) * tscroll;
         }
 
         // Load the 4 corners into camera space + their tile UVs.
@@ -366,9 +399,14 @@ class Renderer {
         let k : i32 = 0;
         while (k < 4) {
             let b : i32 = (di * 4 + k) * 3;
-            this.toCam(p, (x + this.coff[b]) as f64, (y + this.coff[b + 1]) as f64, (z + this.coff[b + 2]) as f64, k);
-            setF64(this.cau, k, this.uvu[q + k] as f64);
-            setF64(this.cav, k, this.uvv[q + k] as f64);
+            let oyv : f64 = this.coff[b + 1] as f64;
+            let cornerY : f64 = (y as f64) + oyv;
+            if (isWaterFace && oyv > 0.5) {
+                cornerY = (y as f64) + wh;   // drop the top so the level shows
+            }
+            this.toCam(p, (x + this.coff[b]) as f64, cornerY, (z + this.coff[b + 2]) as f64, k);
+            setF64(this.cau, k, (this.uvu[q + k] as f64) + flowU);
+            setF64(this.cav, k, (this.uvv[q + k] as f64) + flowV);
             k = k + 1;
         }
 
@@ -378,6 +416,9 @@ class Renderer {
             return;
         }
         let bright : f64 = this.shadeN(nx, ny, nz);
+        if (isWaterFace && facing <= 0.0) {
+            bright = bright * 0.62;   // underside / far face of water, dimmer
+        }
         let tile : i32 = packed % 256;
         // Pick the mip level from the face distance (texels per screen
         // pixel ≈ tilePx · d / focal): mip rises one step each time that
@@ -464,8 +505,13 @@ class Renderer {
      * @param w       framebuffer width
      * @param h       framebuffer height
      */
-    fn render(man : ChunkManager, p : Player, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
-        clearFrame(pixels, zbuf, w, h, rgb(150, 198, 240));
+    fn render(man : ChunkManager, p : Player, pixels : i64, zbuf : i64, w : i32, h : i32, underwater : bool, phase : f64) : void {
+        // Underwater the cleared "void" becomes deep water instead of sky.
+        let bg : i32 = rgb(config::skyR, config::skyG, config::skyB);
+        if (underwater) {
+            bg = rgb(config::waterDeepR, config::waterDeepG, config::waterDeepB);
+        }
+        clearFrame(pixels, zbuf, w, h, bg);
         let slots : i32 = config::span * config::span;
         let slot : i32 = 0;
         while (slot < slots) {
@@ -474,12 +520,113 @@ class Renderer {
                 let n : i32 = man.fcount[slot];
                 let fi : i32 = 0;
                 while (fi < n) {
-                    this.renderFace(man, base + fi, p, pixels, zbuf, w, h);
+                    this.renderFace(man, base + fi, p, pixels, zbuf, w, h, phase);
                     fi = fi + 1;
                 }
             }
             slot = slot + 1;
         }
+    }
+
+    /**
+     * Procedural underwater post-pass: fog every pixel toward the water colour
+     * by its real depth (read from the z-buffer) and add a moving caustic light
+     * pattern, so being submerged feels like a living volume rather than a flat
+     * tint. Call after the world + mobs are drawn, while the eye is underwater.
+     * @param pixels  framebuffer pixel buffer
+     * @param zbuf    depth buffer (inverse depth per pixel; 0 where cleared)
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     * @param phase   time phase that animates the caustics
+     */
+    fn underwaterOverlay(pixels : i64, zbuf : i64, w : i32, h : i32, phase : f64) : void {
+        let fr : f64 = config::waterFogR as f64;
+        let fg : f64 = config::waterFogG as f64;
+        let fb : f64 = config::waterFogB as f64;
+        let y : i32 = 0;
+        while (y < h) {
+            let row : i32 = y * w;
+            // Vertical half of the caustic pattern — constant across the row.
+            let cy : f64 = Math::sin((y as f64) * config::causticFreq - phase * 1.3);
+            let x : i32 = 0;
+            while (x < w) {
+                let idx : i32 = row + x;
+                // Depth fog from the z-buffer: izp = 1/depth (0 = cleared bg).
+                let izp : f64 = getF64(zbuf, idx);
+                let depth : f64 = config::waterFogFar;
+                if (izp > 0.0) {
+                    depth = 1.0 / izp;
+                }
+                let fog : f64 = depth / config::waterFogFar;
+                if (fog > 1.0) {
+                    fog = 1.0;
+                }
+                fog = fog * config::waterFogMax;
+                let caustic : f64 = (Math::sin((x as f64) * config::causticFreq + phase) + cy) * config::causticAmp;
+                let keep : f64 = 1.0 - fog;
+                let c : i32 = readI32(pixels, (idx as i64) * 4);
+                let r : i32 = Math::floorToInt((((c >> 16) & 0xFF) as f64) * keep + fr * fog + caustic) as i32;
+                let g : i32 = Math::floorToInt((((c >> 8) & 0xFF) as f64) * keep + fg * fog + caustic) as i32;
+                let b : i32 = Math::floorToInt(((c & 0xFF) as f64) * keep + fb * fog + caustic) as i32;
+                if (r < 0) {
+                    r = 0;
+                } else if (r > 255) {
+                    r = 255;
+                }
+                if (g < 0) {
+                    g = 0;
+                } else if (g > 255) {
+                    g = 255;
+                }
+                if (b < 0) {
+                    b = 0;
+                } else if (b > 255) {
+                    b = 255;
+                }
+                putPixel(pixels, idx, (r & 0xFF) * 65536 + (g & 0xFF) * 256 + (b & 0xFF));
+                x = x + 1;
+            }
+            y = y + 1;
+        }
+
+        // Rising bubbles: bright motes drifting upward, looped by the phase so
+        // each climbs the screen and restarts at the bottom.
+        let nb : i32 = config::bubbleCount;
+        let travel : i32 = Math::floorToInt(phase * config::bubbleSpeed) as i32;
+        let bcol : i32 = 200 * 65536 + 228 * 256 + 244;
+        let bi : i32 = 0;
+        while (bi < nb) {
+            let hx : i32 = (bi * 1664525 + 1013904223) & 0x7FFFFFFF;
+            let hy : i32 = ((bi + 1) * 22695477 + 1) & 0x7FFFFFFF;
+            let sway : i32 = Math::floorToInt(Math::sin(phase * 0.6 + (bi as f64)) * 2.0) as i32;
+            let bx : i32 = (hx % w) + sway;
+            let yy : i32 = h - 1 - (((hy + travel) & 0x7FFFFFFF) % h);
+            this.plotBubble(pixels, w, h, bx, yy, bcol);
+            this.plotBubble(pixels, w, h, bx + 1, yy, bcol);
+            this.plotBubble(pixels, w, h, bx, yy - 1, bcol);
+            bi = bi + 1;
+        }
+    }
+
+    /**
+     * Lighten one in-bounds pixel toward `col` (one cell of a bubble mote).
+     * @param pixels  framebuffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     * @param x       pixel x
+     * @param y       pixel y
+     * @param col     bubble colour
+     */
+    fn plotBubble(pixels : i64, w : i32, h : i32, x : i32, y : i32, col : i32) : void {
+        if (x < 0 || x >= w || y < 0 || y >= h) {
+            return;
+        }
+        let idx : i32 = y * w + x;
+        let c : i32 = readI32(pixels, (idx as i64) * 4);
+        let r : i32 = (((c >> 16) & 0xFF) + ((col >> 16) & 0xFF)) / 2;
+        let g : i32 = (((c >> 8) & 0xFF) + ((col >> 8) & 0xFF)) / 2;
+        let b : i32 = ((c & 0xFF) + (col & 0xFF)) / 2;
+        putPixel(pixels, idx, (r & 0xFF) * 65536 + (g & 0xFF) * 256 + (b & 0xFF));
     }
 
     /**

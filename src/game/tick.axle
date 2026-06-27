@@ -18,6 +18,8 @@ class TickManager {
     tick : i32,          // monotonic fixed-step counter (advance() once per step)
     maintainEvery : i32, // mob cull + spawn-scan cadence, in ticks
     lastMaintain : i32,  // tick the maintenance pass last fired on
+    simEvery : i32,      // block-update sim cadence, in ticks
+    lastSim : i32,       // tick the sim last stepped on
     lastCX : i32,        // last player chunk X seen by dueStream
     lastCZ : i32,        // last player chunk Z seen by dueStream
     hasLast : i32,       // 0/1 — whether lastC{X,Z} are valid yet
@@ -28,6 +30,8 @@ class TickManager {
         this.maintainEvery = config::maintainTicks;
         // Bias so the first dueMaintain fires immediately (prompt first spawn).
         this.lastMaintain = 0 - config::maintainTicks;
+        this.simEvery = config::simTicks;
+        this.lastSim = 0;
         this.lastCX = 0;
         this.lastCZ = 0;
         this.hasLast = 0;
@@ -48,6 +52,20 @@ class TickManager {
     fn dueMaintain() : bool {
         if (this.tick - this.lastMaintain >= this.maintainEvery) {
             this.lastMaintain = this.tick;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * True once per `simEvery` ticks, edge-latched on the tick index (so it
+     * fires at most once per interval regardless of how often it's polled).
+     * Drives the block-update sim.
+     * @return whether the block-update sim is due this frame
+     */
+    fn dueSim() : bool {
+        if (this.tick - this.lastSim >= this.simEvery) {
+            this.lastSim = this.tick;
             return true;
         }
         return false;

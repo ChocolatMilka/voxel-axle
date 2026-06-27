@@ -12,7 +12,18 @@ const terminalVel : f64 = 0.9;      // max fall speed, blocks/frame
 const jumpVel : f64 = 0.145;        // initial jump speed → ~1.25-block apex
 const walkSpeed : f64 = 0.0775;
 const sprintSpeed : f64 = 0.155;    // 2× walk (Ctrl)
-const swimSpeed : f64 = 0.060;
+const swimSpeed : f64 = 0.080;      // horizontal swim, ~walk pace (was sluggish)
+
+// ── Water / swimming ────────────────────────────────────────
+// In water gravity is heavily damped so you sink SLOWLY (you do drift down when
+// idle), and you rise only while Space is held. Shift dives faster. Sink and
+// rise speeds are capped so motion eases. Tuned so a held Space surfaces you
+// comfortably and you can step out onto a bank.
+const waterGravityScale : f64 = 0.22;  // gravity is much weaker underwater
+const waterSinkMax : f64 = 0.028;      // gentle sink speed when not swimming up
+const swimUpAccel : f64 = 0.030;       // Space: additive upward thrust per tick
+const swimUpMax : f64 = 0.14;          // cap on upward swim speed
+const swimDownSpeed : f64 = 0.030;     // Shift: dive thrust per tick
 const flySpeed : f64 = 0.26;        // creative horizontal fly
 const flySprintSpeed : f64 = 0.52;  // creative fly + Ctrl
 const flyVertSpeed : f64 = 0.30;    // creative up/down

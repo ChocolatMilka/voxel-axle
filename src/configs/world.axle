@@ -28,3 +28,14 @@ const tickHz : i32 = 60;
 // random and out of view. World streaming is event-driven (chunk-border
 // cross), not periodic, so it has no constant here.
 const maintainTicks : i32 = 10;  // mob cull + spawn scan every 10 ticks (~6 Hz)
+
+// ── Block-update sim (world::blocksim) ──────────────────────
+// Falling blocks + edit-driven water flow are stepped on this cadence, with a
+// per-step cell budget so a big disturbance spreads over a few frames instead
+// of spiking. The queue caps total pending cells (drop-on-full keeps it
+// stable). Idle cost is zero when nothing is active.
+// One ring of water spread / one block of a fall advances per step, so this
+// cadence sets how fast fluids flow — slower = calmer, more Minecraft-like.
+const simTicks : i32 = 8;       // step the sim every 8 ticks (~7.5 Hz)
+const simBudget : i32 = 256;    // max cells processed per step (one generation)
+const simQueueCap : i32 = 16384; // max pending cells (drop-on-full)

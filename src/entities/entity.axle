@@ -28,6 +28,7 @@ class Entity {
     grav : f64,          // downward acceleration per tick (× gravityScale)
     apexY : f64,         // highest Y since leaving the ground (for fall distance)
     stepUp : f64,        // pending visual step-up offset (camera eases it to 0)
+    inWater : bool,      // body is in water this step → buoyant physics + step-out
 
     /** Construct an entity at (x, y, z) with the given max (and current) HP. */
     constructor(x : f64, y : f64, z : f64, maxHp : i32) {
@@ -43,6 +44,7 @@ class Entity {
         this.grav = config::gravity;
         this.apexY = y;
         this.stepUp = 0.0;
+        this.inWater = false;
     }
 
     /**
@@ -170,7 +172,7 @@ class Entity {
             this.pos.x = nx;
             return;
         }
-        if (this.onGround == 1) {
+        if (this.onGround == 1 || this.inWater) {
             let stepY : f64 = this.pos.y + config::stepHeight;
             if (!this.collidesAt(world, nx, stepY, this.pos.z)) {
                 let top : f64 = this.supportTop(world, nx, this.pos.z,
@@ -200,7 +202,7 @@ class Entity {
             this.pos.z = nz;
             return;
         }
-        if (this.onGround == 1) {
+        if (this.onGround == 1 || this.inWater) {
             let stepY : f64 = this.pos.y + config::stepHeight;
             if (!this.collidesAt(world, this.pos.x, stepY, nz)) {
                 let top : f64 = this.supportTop(world, this.pos.x, nz,
@@ -224,10 +226,25 @@ class Entity {
      */
     fn fall(world : ChunkManager) : void {
         this.impact = 0.0;
-        this.velY = this.velY - this.grav * this.gravityScale;
-        let term : f64 = 0.0 - config::terminalVel;
-        if (this.velY < term) {
-            this.velY = term;
+        if (this.inWater) {
+            // Water drags hard: you sink slowly under heavily damped gravity
+            // (no auto-float), and rise only while Space is held (Player.update
+            // adds the upward thrust). Sink and rise speeds are capped so the
+            // body eases rather than plummeting or rocketing out.
+            this.velY = this.velY - this.grav * this.gravityScale * config::waterGravityScale;
+            let sink : f64 = 0.0 - config::waterSinkMax;
+            if (this.velY < sink) {
+                this.velY = sink;
+            }
+            if (this.velY > config::swimUpMax) {
+                this.velY = config::swimUpMax;
+            }
+        } else {
+            this.velY = this.velY - this.grav * this.gravityScale;
+            let term : f64 = 0.0 - config::terminalVel;
+            if (this.velY < term) {
+                this.velY = term;
+            }
         }
         let ny : f64 = this.pos.y + this.velY;
         if (this.velY <= 0.0) {

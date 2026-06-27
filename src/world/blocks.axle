@@ -29,13 +29,90 @@ fn isTransparent(id : Block) : bool {
 }
 
 /**
+ * True for any water — the still source and the flowing levels. Used by
+ * physics (swim / buoyancy) and the renderer (water shading / ripple).
+ * @param id  the block
+ * @return whether the block is water
+ */
+fn isWater(id : Block) : bool {
+    return match id {
+        Block::Water | Block::FlowWater1 | Block::FlowWater2 | Block::FlowWater3
+            | Block::FlowWater4 | Block::FlowWater5 | Block::FlowWater6
+            | Block::FlowWater7 => true,
+        _ => false,
+    };
+}
+
+/**
  * A "real" block the look-ray can target and that occludes more than
- * air: everything except air and water. Water is see-through for aiming.
+ * air: everything except air and water (still or flowing). Water is
+ * see-through for aiming and you swim through it.
  * @param id  the block
  * @return whether the block is solid
  */
 fn isSolid(id : Block) : bool {
-    return id != Block::Air && id != Block::Water;
+    return id != Block::Air && !isWater(id);
+}
+
+/**
+ * A block subject to gravity in the block-update sim — it falls when the
+ * cell below is air or water (sand and gravel, like Minecraft).
+ * @param id  the block
+ * @return whether the block falls
+ */
+fn falls(id : Block) : bool {
+    return match id {
+        Block::Sand | Block::RedSand | Block::Gravel => true,
+        _ => false,
+    };
+}
+
+/**
+ * The water "amount" of a cell: 8 for the still source, 7..1 for the flowing
+ * levels, 0 for non-water. Higher feeds lower in the flow sim.
+ * @param id  the block
+ * @return the fluid level (0 = not water)
+ */
+fn fluidLevel(id : Block) : i32 {
+    return match id {
+        Block::Water => 8,
+        Block::FlowWater7 => 7,
+        Block::FlowWater6 => 6,
+        Block::FlowWater5 => 5,
+        Block::FlowWater4 => 4,
+        Block::FlowWater3 => 3,
+        Block::FlowWater2 => 2,
+        Block::FlowWater1 => 1,
+        _ => 0,
+    };
+}
+
+/**
+ * The flowing-water block of level `n` (clamped to 1..7). The still source
+ * (`Block::Water`) is only created by the generator / player, never by flow.
+ * @param n  the desired level
+ * @return the matching FlowWater block
+ */
+fn fluidOfLevel(n : i32) : Block {
+    return match n {
+        7 => Block::FlowWater7,
+        6 => Block::FlowWater6,
+        5 => Block::FlowWater5,
+        4 => Block::FlowWater4,
+        3 => Block::FlowWater3,
+        2 => Block::FlowWater2,
+        _ => Block::FlowWater1,
+    };
+}
+
+/**
+ * Is this the still water source (vs a flowing level)? The source never dries
+ * up; flowing water recedes when its feed is removed.
+ * @param id  the block
+ * @return whether the block is the water source
+ */
+fn isSource(id : Block) : bool {
+    return id == Block::Water;
 }
 
 /**
@@ -219,7 +296,9 @@ fn tileFor(id : Block, dir : FaceDir) : i32 {
             _ => config::tlMelonSide,
         },
         Block::Glowstone => config::tlGlowstone,
-        Block::Water => config::tlWater,
+        Block::Water | Block::FlowWater1 | Block::FlowWater2 | Block::FlowWater3
+            | Block::FlowWater4 | Block::FlowWater5 | Block::FlowWater6
+            | Block::FlowWater7 => config::tlWater,
 
         // ── Ores ──
         Block::CoalOre => config::tlCoalOre,

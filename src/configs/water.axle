@@ -1,0 +1,33 @@
+// configs::water — the procedural "living water" look (no texture assets).
+//
+// Submerged, the renderer paints a deep teal background and runs a per-pixel
+// underwater pass that fogs the scene toward `waterFog*` by real depth (read
+// from the z-buffer) and adds a moving caustic light pattern — animated, not a
+// flat filter. The water surface itself is drawn double-sided and its UVs are
+// wobbled by `waterRipple*` so it shimmers and scrolls, alive from above and
+// below.
+
+// Clear colour while the eye is underwater (the "void" becomes deep water).
+const waterDeepR : i32 = 12;
+const waterDeepG : i32 = 58;
+const waterDeepB : i32 = 92;
+
+// Depth-fog target colour and how fast it saturates (blocks of depth). A near
+// fog range makes submersion read as a dense blue volume immediately.
+const waterFogR : i32 = 20;
+const waterFogG : i32 = 80;
+const waterFogB : i32 = 120;
+const waterFogFar : f64 = 18.0;   // depth at which fog reaches its max
+const waterFogMax : f64 = 0.96;   // max fog opacity (keep a little detail near)
+
+// Moving caustic light pattern: spatial frequency and brightness amplitude.
+const causticFreq : f64 = 0.05;
+const causticAmp : f64 = 16.0;
+
+// Rising bubbles: how many motes and how fast they rise (px/phase).
+const bubbleCount : i32 = 70;
+const bubbleSpeed : f64 = 18.0;
+
+// Phase speed (time rate) and how fast flowing water scrolls its texture.
+const waterRippleSpeed : f64 = 0.05;
+const waterFlowSpeed : f64 = 0.12;
