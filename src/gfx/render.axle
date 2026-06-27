@@ -15,9 +15,9 @@ use crate::entities::player::Player;
 use crate::world::manager::ChunkManager;
 use crate::entities::mobs::MobManager;
 use crate::entities::mob::Mob;
-use crate::world::blocks::{ fluidLevel };
+use crate::world::blocks::{ fluidLevel, isWater };
 use crate::config;
-use crate::config::{ FaceDir };
+use crate::config::{ FaceDir, Block };
 
 /**
  * Reconstruct a FaceDir from its packed discriminant (0..5). The mesher packs
@@ -308,6 +308,67 @@ class Renderer {
     }
 
     /**
+     * Height (0..1) of one water column at (wx, y, wz): the source / full
+     * columns are 1, flowing levels are level/8, and non-water returns -1 so
+     * the corner averager can skip it.
+     * @param man  the chunk manager
+     * @param wx   world x
+     * @param y    world y (the face's layer)
+     * @param wz   world z
+     * @return the column's water height fraction, or -1 if not water
+     */
+    fn waterColH(man : ChunkManager, wx : i32, y : i32, wz : i32) : f64 {
+        let id : Block = man.worldGet(wx, y, wz);
+        if (!isWater(id)) {
+            return 0.0 - 1.0;
+        }
+        let lvl : i32 = fluidLevel(id);
+        if (lvl >= 8) {
+            return 1.0;
+        }
+        return (lvl as f64) / 8.0;
+    }
+
+    /**
+     * Sloped-surface height at a top corner shared by up to four water columns
+     * — the average of the water ones, so the surface ramps continuously
+     * between levels (Minecraft-style) instead of stepping.
+     * @param man  the chunk manager
+     * @param cx   corner world x (a block boundary)
+     * @param y    world y (the face's layer)
+     * @param cz   corner world z (a block boundary)
+     * @return the corner height fraction (0..1)
+     */
+    fn waterCornerY(man : ChunkManager, cx : i32, y : i32, cz : i32) : f64 {
+        let sum : f64 = 0.0;
+        let cnt : i32 = 0;
+        let h0 : f64 = this.waterColH(man, cx - 1, y, cz - 1);
+        if (h0 >= 0.0) {
+            sum = sum + h0;
+            cnt = cnt + 1;
+        }
+        let h1 : f64 = this.waterColH(man, cx, y, cz - 1);
+        if (h1 >= 0.0) {
+            sum = sum + h1;
+            cnt = cnt + 1;
+        }
+        let h2 : f64 = this.waterColH(man, cx - 1, y, cz);
+        if (h2 >= 0.0) {
+            sum = sum + h2;
+            cnt = cnt + 1;
+        }
+        let h3 : f64 = this.waterColH(man, cx, y, cz);
+        if (h3 >= 0.0) {
+            sum = sum + h3;
+            cnt = cnt + 1;
+        }
+        if (cnt == 0) {
+            return 1.0;
+        }
+        return sum / (cnt as f64);
+    }
+
+    /**
      * Project, cull, shade and rasterize one baked world face.
      * @param man     chunk manager holding the baked face arrays
      * @param idx     index of the face to draw
@@ -365,46 +426,39 @@ class Renderer {
             return;
         }
 
-        // Water surface shaping + flow animation. Flowing water (level < 8) is
-        // shorter the lower its level, so the column tapers away from its
-        // source — variable height by proximity. A still lake has no level
-        // gradient, so it stays full height and doesn't scroll; flowing water
-        // scrolls its texture toward the direction it flows (high → low level).
-        let wh : f64 = 1.0;
+        // Flow animation: flowing water scrolls its texture along the flow
+        // direction (toward lower level). Still lakes have no gradient, so they
+        // don't scroll.
         let flowU : f64 = 0.0;
         let flowV : f64 = 0.0;
         if (isWaterFace) {
-            let lvl : i32 = fluidLevel(man.worldGet(x, y, z));
-            if (lvl <= 0) {
-                lvl = 8;
-            }
-            if (lvl < 8) {
-                wh = (lvl as f64) / 8.0;
-                if (wh < 0.16) {
-                    wh = 0.16;
-                }
-            }
             let lpx : i32 = fluidLevel(man.worldGet(x + 1, y, z));
             let lnx : i32 = fluidLevel(man.worldGet(x - 1, y, z));
             let lpz : i32 = fluidLevel(man.worldGet(x, y, z + 1));
             let lnz : i32 = fluidLevel(man.worldGet(x, y, z - 1));
             let tscroll : f64 = phase * config::waterFlowSpeed;
-            flowU = ((lnx - lpx) as f64) * tscroll;
-            flowV = ((lnz - lpz) as f64) * tscroll;
+            flowU = ((lpx - lnx) as f64) * tscroll;
+            flowV = ((lpz - lnz) as f64) * tscroll;
         }
 
-        // Load the 4 corners into camera space + their tile UVs.
+        // Load the 4 corners into camera space + their tile UVs. A water face's
+        // top corners are dropped to a Minecraft-style sloped surface: each
+        // corner takes the average height of the water columns meeting at it, so
+        // adjacent levels join in a continuous ramp with no vertical "façade"
+        // gaps between layers.
         let di : i32 = dir as i32;
         let q : i32 = di * 4;
         let k : i32 = 0;
         while (k < 4) {
             let b : i32 = (di * 4 + k) * 3;
-            let oyv : f64 = this.coff[b + 1] as f64;
-            let cornerY : f64 = (y as f64) + oyv;
-            if (isWaterFace && oyv > 0.5) {
-                cornerY = (y as f64) + wh;   // drop the top so the level shows
+            let oxv : i32 = this.coff[b];
+            let oyv : i32 = this.coff[b + 1];
+            let ozv : i32 = this.coff[b + 2];
+            let cornerY : f64 = (y as f64) + (oyv as f64);
+            if (isWaterFace && oyv > 0) {
+                cornerY = (y as f64) + this.waterCornerY(man, x + oxv, y, z + ozv);
             }
-            this.toCam(p, (x + this.coff[b]) as f64, cornerY, (z + this.coff[b + 2]) as f64, k);
+            this.toCam(p, (x + oxv) as f64, cornerY, (z + ozv) as f64, k);
             setF64(this.cau, k, (this.uvu[q + k] as f64) + flowU);
             setF64(this.cav, k, (this.uvv[q + k] as f64) + flowV);
             k = k + 1;

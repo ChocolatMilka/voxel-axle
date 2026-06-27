@@ -8,7 +8,7 @@
 
 use crate::entities::entity::Entity;
 use crate::world::manager::ChunkManager;
-use crate::world::blocks::{ isWater, fluidLevel };
+use crate::world::blocks::{ isWater };
 use crate::config;
 use crate::config::{ Block };
 use crate::mathx::{ clampF64 };
@@ -142,22 +142,6 @@ class Player extends Entity {
     }
 
     /**
-     * Is the body in water (the voxel at the feet or torso is water)? Drives
-     * buoyancy and the swim controls — distinct from `isUnderwater` (eye-based,
-     * for drowning and the underwater visuals), so you tread water at the
-     * surface and start swimming as soon as you wade in.
-     * @param world  the chunk manager queried for the body's voxels
-     * @return whether the body is in water
-     */
-    fn bodyInWater(world : ChunkManager) : bool {
-        let bx : i32 = Math::floorToInt(this.pos.x) as i32;
-        let bz : i32 = Math::floorToInt(this.pos.z) as i32;
-        let fy : i32 = Math::floorToInt(this.pos.y + 0.1) as i32;
-        let my : i32 = Math::floorToInt(this.pos.y + this.height * 0.5) as i32;
-        return isWater(world.worldGet(bx, fy, bz)) || isWater(world.worldGet(bx, my, bz));
-    }
-
-    /**
      * Full per-frame update. `fwd`/`strafe` are in [-1,1]; `up`/`down`
      * drive vertical flight in creative. Survival applies gravity + the
      * survival effects (fall / drown / regen); creative flies freely with
@@ -201,19 +185,9 @@ class Player extends Entity {
         dz = dz * speed;
 
         if (inWater) {
-            // Current: flowing water carries you along its level gradient
-            // (high → low), so a stream pushes you down-current.
-            let fbx : i32 = Math::floorToInt(this.pos.x) as i32;
-            let fby : i32 = Math::floorToInt(this.pos.y + 0.2) as i32;
-            let fbz : i32 = Math::floorToInt(this.pos.z) as i32;
-            let lpx : i32 = fluidLevel(world.worldGet(fbx + 1, fby, fbz));
-            let lnx : i32 = fluidLevel(world.worldGet(fbx - 1, fby, fbz));
-            let lpz : i32 = fluidLevel(world.worldGet(fbx, fby, fbz + 1));
-            let lnz : i32 = fluidLevel(world.worldGet(fbx, fby, fbz - 1));
-            dx = dx + ((lnx - lpx) as f64) * config::waterPush;
-            dz = dz + ((lnz - lpz) as f64) * config::waterPush;
-            // Additive up/down swim thrust (gentle; buoyancy is gone, so you
-            // sink slowly and rise only while Space is held).
+            // Additive up/down swim thrust (gentle; you sink slowly and rise
+            // only while Space is held). The horizontal current that carries
+            // every entity is applied in Entity.tick.
             if (up) {
                 this.velY = this.velY + config::swimUpAccel;
             }

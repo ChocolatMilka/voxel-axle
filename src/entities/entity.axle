@@ -12,6 +12,7 @@
 // which is exact enough for heightmap terrain with solid trees.
 
 use crate::world::manager::ChunkManager;
+use crate::world::blocks::{ isWater, fluidLevel };
 use crate::config;
 use crate::vec3::{ Vec3, vec3 };
 
@@ -275,9 +276,26 @@ class Entity {
     }
 
     /**
-     * One physics step: horizontal intent (dx, dz) then vertical. The
-     * visual step-up offset decays each tick so an auto-stepped ledge
-     * eases the camera up smoothly instead of snapping.
+     * Is the body in water (feet or torso voxel is water)? Shared by every
+     * entity so water (buoyancy, current, step-out) affects mobs as well as
+     * the player.
+     * @param world  the chunk manager queried for the body's voxels
+     * @return whether the body is in water
+     */
+    fn bodyInWater(world : ChunkManager) : bool {
+        let bx : i32 = Math::floorToInt(this.pos.x) as i32;
+        let bz : i32 = Math::floorToInt(this.pos.z) as i32;
+        let fy : i32 = Math::floorToInt(this.pos.y + 0.1) as i32;
+        let my : i32 = Math::floorToInt(this.pos.y + this.height * 0.5) as i32;
+        return isWater(world.worldGet(bx, fy, bz)) || isWater(world.worldGet(bx, my, bz));
+    }
+
+    /**
+     * One physics step: refresh the in-water state (so buoyant gravity +
+     * step-out apply), add any water current to the horizontal intent, then
+     * move horizontally and vertically. The visual step-up offset decays each
+     * tick so an auto-stepped ledge eases up smoothly. Runs for EVERY entity,
+     * so water moves mobs and the player alike.
      * @param world  chunk manager queried for solid voxels
      * @param dx     signed X displacement intent for this step
      * @param dz     signed Z displacement intent for this step
@@ -287,8 +305,32 @@ class Entity {
         if (this.stepUp < 0.02) {
             this.stepUp = 0.0;
         }
-        this.moveX(world, dx);
-        this.moveZ(world, dz);
+        this.inWater = this.bodyInWater(world);
+        let mx : f64 = dx;
+        let mz : f64 = dz;
+        if (this.inWater) {
+            // Current: flowing water carries the body along its level gradient
+            // (high → low). Clamped and gentle so it nudges rather than ejects.
+            let fbx : i32 = Math::floorToInt(this.pos.x) as i32;
+            let fby : i32 = Math::floorToInt(this.pos.y + 0.2) as i32;
+            let fbz : i32 = Math::floorToInt(this.pos.z) as i32;
+            let gx : i32 = fluidLevel(world.worldGet(fbx - 1, fby, fbz)) - fluidLevel(world.worldGet(fbx + 1, fby, fbz));
+            let gz : i32 = fluidLevel(world.worldGet(fbx, fby, fbz - 1)) - fluidLevel(world.worldGet(fbx, fby, fbz + 1));
+            if (gx > 2) {
+                gx = 2;
+            } else if (gx < 0 - 2) {
+                gx = 0 - 2;
+            }
+            if (gz > 2) {
+                gz = 2;
+            } else if (gz < 0 - 2) {
+                gz = 0 - 2;
+            }
+            mx = mx + (gx as f64) * config::waterPush;
+            mz = mz + (gz as f64) * config::waterPush;
+        }
+        this.moveX(world, mx);
+        this.moveZ(world, mz);
         this.fall(world);
     }
 }
