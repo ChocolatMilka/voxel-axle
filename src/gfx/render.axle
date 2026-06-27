@@ -703,6 +703,115 @@ class Renderer {
         this.skyColB = Math::floorToInt(b) as i32;
     }
 
+    /**
+     * Draw a celestial disc centred at screen (cxp, cyp). Procedural and FULLY
+     * OPAQUE: partial-coverage alpha blending reads the framebuffer back, which
+     * over the bright day sky produces a rasteriser striping artifact (red/green
+     * hatching) — so every drawn texel is solid, never blended. The sun (kind 0)
+     * is a warm white-to-gold radial disc; the moon (kind 1) a pale disc with two
+     * faint maria. Hard edge — Minecraft's sun and moon are hard-edged too.
+     * @param pixels  framebuffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     * @param cxp     disc centre x in screen pixels
+     * @param cyp     disc centre y in screen pixels
+     * @param radius  disc radius in pixels
+     * @param kind    0 = sun, 1 = moon
+     */
+    fn drawDisc(pixels : i64, w : i32, h : i32, cxp : f64, cyp : f64, radius : f64, kind : i32) : void {
+        let x0 : i32 = Math::floorToInt(cxp - radius) as i32;
+        let x1 : i32 = Math::floorToInt(cxp + radius) as i32;
+        let y0 : i32 = Math::floorToInt(cyp - radius) as i32;
+        let y1 : i32 = Math::floorToInt(cyp + radius) as i32;
+        let py : i32 = y0;
+        while (py <= y1) {
+            if (py >= 0 && py < h) {
+                let px : i32 = x0;
+                while (px <= x1) {
+                    if (px >= 0 && px < w) {
+                        let dx : f64 = (px as f64) + 0.5 - cxp;
+                        let dy : f64 = (py as f64) + 0.5 - cyp;
+                        let nd : f64 = Math::sqrt(dx * dx + dy * dy) / radius;
+                        if (nd <= 1.0) {
+                            let cr : i32 = 255;
+                            let cg : i32 = 255;
+                            let cb : i32 = 255;
+                            if (kind == 0) {
+                                // Sun: white-hot centre fading to gold at the rim.
+                                cg = Math::floorToInt(253.0 - 42.0 * nd) as i32;
+                                cb = Math::floorToInt(218.0 - 150.0 * nd) as i32;
+                            } else {
+                                // Moon: pale disc with two faint dark maria.
+                                cr = 226;
+                                cg = 231;
+                                cb = 240;
+                                let m1 : f64 = Math::sqrt((dx + radius * 0.30) * (dx + radius * 0.30) + (dy + radius * 0.32) * (dy + radius * 0.32));
+                                let m2 : f64 = Math::sqrt((dx - radius * 0.36) * (dx - radius * 0.36) + (dy - radius * 0.10) * (dy - radius * 0.10));
+                                if (m1 < radius * 0.26 || m2 < radius * 0.20) {
+                                    cr = 198;
+                                    cg = 206;
+                                    cb = 220;
+                                }
+                            }
+                            putPixel(pixels, py * w + px, rgb(cr, cg, cb));
+                        }
+                    }
+                    px = px + 1;
+                }
+            }
+            py = py + 1;
+        }
+    }
+
+    /**
+     * Project a sky direction (a unit vector, infinitely far) through the camera
+     * and draw a disc there. Mirrors projectPoint's yaw/pitch transform so the
+     * body tracks the world. Skipped when the direction is behind the camera.
+     * @param p       player (camera orientation)
+     * @param pixels  framebuffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     * @param dx      sky direction x
+     * @param dy      sky direction y
+     * @param dz      sky direction z
+     * @param radius  disc radius in pixels
+     * @param kind    0 = sun, 1 = moon
+     */
+    fn drawSky(p : Player, pixels : i64, w : i32, h : i32, dx : f64, dy : f64, dz : f64, radius : f64, kind : i32) : void {
+        let rx : f64 = dx * p.cosy + dz * p.siny;
+        let rz : f64 = (0.0 - dx) * p.siny + dz * p.cosy;
+        let ry : f64 = dy;
+        let ry2 : f64 = ry * p.cosp - rz * p.sinp;
+        let rz2 : f64 = ry * p.sinp + rz * p.cosp;
+        if (rz2 < 0.05) {
+            return;
+        }
+        let sx : f64 = this.hw + config::focal * rx / rz2;
+        let sy : f64 = config::halfH - config::focal * ry2 / rz2;
+        this.drawDisc(pixels, w, h, sx, sy, radius, kind);
+    }
+
+    /**
+     * Draw the sun (in the sun direction) and the moon (opposite) onto the
+     * cleared sky, behind the world. A body is drawn while it is on/above the
+     * horizon (terrain naturally occludes the part that dips below). Sizes are a
+     * fraction of the frame height so they scale with the window.
+     * @param p       player (camera orientation)
+     * @param pixels  framebuffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     */
+    fn drawCelestial(p : Player, pixels : i64, w : i32, h : i32) : void {
+        let sunR : f64 = (h as f64) * 0.085;
+        let moonR : f64 = (h as f64) * 0.072;
+        if (this.sunY > 0.0 - 0.04) {
+            this.drawSky(p, pixels, w, h, this.sunX, this.sunY, this.sunZ, sunR, 0);
+        }
+        if ((0.0 - this.sunY) > 0.0 - 0.04) {
+            this.drawSky(p, pixels, w, h, 0.0 - this.sunX, 0.0 - this.sunY, 0.0 - this.sunZ, moonR, 1);
+        }
+    }
+
     fn render(man : ChunkManager, p : Player, pixels : i64, zbuf : i64, w : i32, h : i32, underwater : bool, phase : f64, dayTime : f64) : void {
         // Refresh the sun direction, daylight factor and sky/fog colour.
         this.updateDayState(dayTime);
@@ -712,6 +821,10 @@ class Renderer {
             bg = rgb(config::waterDeepR, config::waterDeepG, config::waterDeepB);
         }
         clearFrame(pixels, zbuf, w, h, bg);
+        // Sun + moon ride on the sky, behind everything (only above water).
+        if (!underwater) {
+            this.drawCelestial(p, pixels, w, h);
+        }
         let slots : i32 = config::span * config::span;
         let slot : i32 = 0;
         while (slot < slots) {
