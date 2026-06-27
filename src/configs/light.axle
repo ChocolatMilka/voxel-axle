@@ -1,0 +1,16 @@
+// configs::light — the block-light engine (torches) tunables.
+//
+// Torches flood a 0..15 light level outward (blocked by opaque blocks); the
+// mesher bakes the per-face level and the renderer adds a warm boost to the
+// face brightness for each unit of light. Sky-light and day/night come later.
+
+const lightQueueCap : i32 = 65536;   // flood-fill stack capacity (cells)
+
+// Face brightness vs. baked light level (0..15) follows an EXPONENTIAL falloff
+// (Minecraft-style): each level down multiplies brightness by lightFalloff, so
+// light dies fast with distance — and since the flood loses one level per block
+// travelled, a longer/zig-zag path goes much darker. lightMin is the darkness
+// floor; torchWarm tints block-lit faces warm against cool sky light.
+const lightMin : f64 = 0.05;
+const lightFalloff : f64 = 0.80;
+const torchWarm : f64 = 0.16;

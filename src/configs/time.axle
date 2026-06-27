@@ -1,0 +1,23 @@
+// configs::time — the day/night cycle.
+//
+// dayTime runs 0..1 over a full day (0 = midnight, 0.25 = sunrise, 0.5 = noon,
+// 0.75 = sunset). A daylight factor scales SKY light at render time (so night
+// darkens without re-meshing — block/torch light is unaffected), the sun
+// direction drives the directional face shading, and the sky/fog colour
+// interpolates night → dusk → day.
+
+const dayLengthTicks : i32 = 14400;  // a full day in fixed ticks (~4 min @ 60 Hz)
+const dayStart : f64 = 0.30;         // start mid-morning
+const nightLevel : f64 = 0.13;       // daylight floor at night (moonlight)
+const sunTilt : f64 = 0.35;          // sun's north/south lean (so it's not dead overhead)
+
+// Sky colours interpolated across the day.
+const daySkyR : i32 = 150;
+const daySkyG : i32 = 198;
+const daySkyB : i32 = 240;
+const nightSkyR : i32 = 12;
+const nightSkyG : i32 = 16;
+const nightSkyB : i32 = 40;
+const duskSkyR : i32 = 235;
+const duskSkyG : i32 = 128;
+const duskSkyB : i32 = 70;

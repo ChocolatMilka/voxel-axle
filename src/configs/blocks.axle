@@ -85,4 +85,6 @@ enum Block : i32 {
     FlowWater5,
     FlowWater6,
     FlowWater7,
+    // Decoration / light sources
+    Torch,
 }

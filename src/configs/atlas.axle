@@ -8,7 +8,7 @@
 
 const tilePx : i32 = 64;
 const blockTiles : i32 = 81;
-const atlasTiles : i32 = 93;
+const atlasTiles : i32 = 94;
 const useMobTextures : bool = true;
 // Mip chain depth (64 → 32 → … → 1 = 7 levels). Distant faces sample a
 // coarser, pre-averaged level so textures don't shimmer when moving.
@@ -112,3 +112,6 @@ const tlChargeSkin : i32 = 89;
 const tlChargeFace : i32 = 90;
 const tlPigBody : i32 = 91;
 const tlPigHead : i32 = 92;
+
+// ── Decoration tiles ────────────────────────────────────────
+const tlTorch : i32 = 93;

@@ -13,6 +13,7 @@ use crate::entities::pig::Pig;
 use crate::entities::creeper::Creeper;
 use crate::entities::player::Player;
 use crate::world::manager::ChunkManager;
+use crate::world::blocksim::BlockSim;
 use crate::world::noise::hash2;
 use crate::game::sfx::AudioManager;
 use crate::config;
@@ -252,7 +253,7 @@ class MobManager {
      * @param player  the player driving creeper AI and the voice listener
      * @param sfx     the audio manager for mob voices / creeper sounds
      */
-    fn update(world : ChunkManager, player : Player, sfx : AudioManager) : void {
+    fn update(world : ChunkManager, player : Player, sfx : AudioManager, sim : BlockSim) : void {
         let i : i32 = 0;
         while (i < this.chN) {
             this.chickens[i].wander(world, this.rand());
@@ -279,7 +280,7 @@ class MobManager {
         }
         i = 0;
         while (i < this.crN) {
-            this.creepers[i].step(world, player, sfx);
+            this.creepers[i].step(world, player, sfx, sim);
             i = i + 1;
         }
     }

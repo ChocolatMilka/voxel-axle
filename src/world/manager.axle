@@ -16,9 +16,10 @@
 // top, the highest collidable voxel per column) still drives entity
 // physics — both interfaces are unchanged, so nothing downstream moved.
 
+use sdl_platform::{allocBytes, readU8, writeU8};
 use crate::world::noise::{terrainHeight, temperature, humidity, treeHash, hashI};
 use crate::world::biomes::registry::{biomeAt, Biomes};
-use crate::world::blocks::{tileFor, isSolid, isCollidable, isWater, isTransparent};
+use crate::world::blocks::{tileFor, isSolid, isCollidable, isWater, isTransparent, isOpaque, lightEmission};
 use crate::config;
 use crate::config::{ Block };
 use crate::config::{ BiomeId };
@@ -34,6 +35,23 @@ class ChunkManager {
     fy : i32[],
     fz : i32[],
     ftile : i32[],   // packs (dir << 8) | tile — see addFace
+    tx : i32[],      // torch world x per slot (drawn as thin posts, not cubes)
+    ty : i32[],      // torch world y
+    tz : i32[],      // torch world z
+    tcount : i32[],  // torch count per slot
+    light : i64,     // per-voxel block light 0..15 (byte array, voxIdx layout)
+    skylight : i64,  // per-voxel sky light 0..15 (open-to-sky exposure)
+    flight : i64,    // per-face baked light: byte packs (sky << 4) | block
+    ldirty : i32[],  // per-slot "light changed → re-mesh" flag
+    lqx : i32[],     // block-light flood stack (add)
+    lqy : i32[],
+    lqz : i32[],
+    lqn : i32,
+    rqx : i32[],     // block-light removal stack
+    rqy : i32[],
+    rqz : i32[],
+    rql : i32[],     // removed cell's old level
+    rqn : i32,
     hmap : i32[],
     ctop : i32[],
     vox : Block[],
@@ -58,6 +76,24 @@ class ChunkManager {
         this.fy = malloc<i32>(faceCap);
         this.fz = malloc<i32>(faceCap);
         this.ftile = malloc<i32>(faceCap);
+        this.tx = malloc<i32>(slots * config::maxTorchesPerChunk);
+        this.ty = malloc<i32>(slots * config::maxTorchesPerChunk);
+        this.tz = malloc<i32>(slots * config::maxTorchesPerChunk);
+        this.tcount = malloc<i32>(slots);
+        this.light = allocBytes((slots as i64) * (hSide as i64) * (hSide as i64) * (config::worldHeight as i64));
+        this.skylight = allocBytes((slots as i64) * (hSide as i64) * (hSide as i64) * (config::worldHeight as i64));
+        this.flight = allocBytes(faceCap as i64);
+        this.ldirty = malloc<i32>(slots);
+        let lcap : i32 = config::lightQueueCap;
+        this.lqx = malloc<i32>(lcap);
+        this.lqy = malloc<i32>(lcap);
+        this.lqz = malloc<i32>(lcap);
+        this.lqn = 0;
+        this.rqx = malloc<i32>(lcap);
+        this.rqy = malloc<i32>(lcap);
+        this.rqz = malloc<i32>(lcap);
+        this.rql = malloc<i32>(lcap);
+        this.rqn = 0;
         this.hmap = malloc<i32>(slots * hSide * hSide);
         this.ctop = malloc<i32>(slots * s * s);
         this.vox = malloc<Block>(slots * hSide * hSide * config::worldHeight);
@@ -297,6 +333,11 @@ class ChunkManager {
      */
     fn ensureLoaded(camCX : i32, camCZ : i32) : void {
         let r : i32 = config::viewRadius;
+        // Pass 1: generate + seed every missing chunk WITHOUT meshing. Meshing a
+        // chunk bakes each border face's light from the neighbour voxel across
+        // the seam; if that neighbour chunk isn't loaded yet it reads 0, baking
+        // a hard black face. Generating the whole batch first means every
+        // neighbour exists before anything is meshed.
         let dz : i32 = 0 - r;
         while (dz <= r) {
             let dx : i32 = 0 - r;
@@ -310,6 +351,19 @@ class ChunkManager {
                 dx = dx + 1;
             }
             dz = dz + 1;
+        }
+        // Pass 2: mesh every chunk flagged dirty in pass 1 (the new chunks and
+        // their already-loaded neighbours, whose border faces must re-bake now
+        // that the new chunk is present). All neighbours now exist → no black
+        // seams, no waiting for an edit to refresh.
+        this.flushLightMesh();
+    }
+
+    /** Flag a chunk for (re)mesh if it's currently loaded at (cx, cz). */
+    fn markDirtyAt(cx : i32, cz : i32) : void {
+        let slot : i32 = this.slotFor(cx, cz);
+        if (this.loaded[slot] == 1 && this.cxs[slot] == cx && this.czs[slot] == cz) {
+            this.ldirty[slot] = 1;
         }
     }
 
@@ -325,7 +379,17 @@ class ChunkManager {
         this.loaded[slot] = 1;
         this.genHeightmap(slot, cx, cz);
         this.genVoxels(slot, cx, cz);
-        this.buildMesh(slot, cx, cz);
+        this.clearLight(slot);
+        this.seedSky(slot, cx, cz);
+        // Don't mesh here — ensureLoaded meshes in a second pass once every
+        // neighbour is generated, so border faces bake real neighbour light
+        // instead of 0 (black seams). Flag this chunk and its 4 horizontal
+        // neighbours so their shared faces re-bake against the new chunk.
+        this.ldirty[slot] = 1;
+        this.markDirtyAt(cx + 1, cz);
+        this.markDirtyAt(cx - 1, cz);
+        this.markDirtyAt(cx, cz + 1);
+        this.markDirtyAt(cx, cz - 1);
     }
 
     /**
@@ -725,11 +789,53 @@ class ChunkManager {
         this.fy[i] = wy;
         this.fz[i] = wz;
         // Pack the face direction (0..5) and atlas tile (< 256) into one slot
-        // rather than keeping a parallel FaceDir array — saves a full i32 per
-        // face across every chunk. renderFace unpacks dir = ftile / 256,
-        // tile = ftile % 256.
-        this.ftile[i] = (dir as i32) * 256 + tile;
+        // rather than keeping a parallel FaceDir array. renderFace unpacks
+        // dir = ftile / 256, tile = ftile % 256.
+        let di : i32 = dir as i32;
+        this.ftile[i] = di * 256 + tile;
+        // Bake the block light of the air cell this face looks into, so the
+        // renderer can shade the face by it (smooth-light comes later).
+        let ox : i32 = 0;
+        let oy : i32 = 0;
+        let oz : i32 = 0;
+        if (di == 0) {
+            ox = 1;
+        } else if (di == 1) {
+            ox = 0 - 1;
+        } else if (di == 2) {
+            oy = 1;
+        } else if (di == 3) {
+            oy = 0 - 1;
+        } else if (di == 4) {
+            oz = 1;
+        } else {
+            oz = 0 - 1;
+        }
+        let nbx : i32 = wx + ox;
+        let nby : i32 = wy + oy;
+        let nbz : i32 = wz + oz;
+        writeU8(this.flight, i as i64, this.skGetW(nbx, nby, nbz) * 16 + this.blGetW(nbx, nby, nbz));
         this.fcount[slot] = fc + 1;
+    }
+
+    /**
+     * Record a torch at world (wx, wy, wz) in this slot's torch list (dropped
+     * if at capacity). The renderer draws these as thin posts.
+     * @param slot  the slot index
+     * @param wx    torch world x
+     * @param wy    torch world y
+     * @param wz    torch world z
+     */
+    fn addTorch(slot : i32, wx : i32, wy : i32, wz : i32) : void {
+        let tc : i32 = this.tcount[slot];
+        if (tc >= config::maxTorchesPerChunk) {
+            return;
+        }
+        let i : i32 = slot * config::maxTorchesPerChunk + tc;
+        this.tx[i] = wx;
+        this.ty[i] = wy;
+        this.tz[i] = wz;
+        this.tcount[slot] = tc + 1;
     }
 
     /**
@@ -745,6 +851,7 @@ class ChunkManager {
      */
     fn buildMesh(slot : i32, cx : i32, cz : i32) : void {
         this.fcount[slot] = 0;
+        this.tcount[slot] = 0;
         let s : i32 = config::chunkSize;
         let top : i32 = this.maxFY[slot];
         let air : Block = Block::Air;
@@ -759,7 +866,11 @@ class ChunkManager {
                 while (ly <= top) {
                     let id : Block = this.getVox(slot, lx, ly, lz);
                     if (id != air) {
-                        if (isWater(id)) {
+                        if (id == Block::Torch) {
+                            // Torches emit no cube faces; a thin post is drawn
+                            // separately (renderTorches). Just record the spot.
+                            this.addTorch(slot, wx, ly, wz);
+                        } else if (isWater(id)) {
                             // Water: top surface, plus side walls only where it
                             // borders air (shores, dug pits) — so a body of
                             // water looks contained and you see its surface and
@@ -857,6 +968,422 @@ class ChunkManager {
                 dcx = dcx + 1;
             }
             dcz = dcz + 1;
+        }
+    }
+
+    // ── Block light (torches) — a flood-fill engine, walls block light ──
+
+    /**
+     * Block-light level (0..15) at a world voxel; 0 if unloaded / out of range.
+     */
+    fn blGetW(wx : i32, wy : i32, wz : i32) : i32 {
+        if (wy < 0 || wy >= config::worldHeight) {
+            return 0;
+        }
+        let s : i32 = config::chunkSize;
+        let cx : i32 = this.floorDiv(wx, s);
+        let cz : i32 = this.floorDiv(wz, s);
+        let slot : i32 = this.slotFor(cx, cz);
+        if (this.loaded[slot] == 0 || this.cxs[slot] != cx || this.czs[slot] != cz) {
+            return 0;
+        }
+        return readU8(this.light, this.voxIdx(slot, wx - cx * s, wy, wz - cz * s) as i64);
+    }
+
+    /** Set block light at a world voxel (owner chunk) and flag it for re-mesh. */
+    fn blSetW(wx : i32, wy : i32, wz : i32, v : i32) : void {
+        if (wy < 0 || wy >= config::worldHeight) {
+            return;
+        }
+        let s : i32 = config::chunkSize;
+        let cx : i32 = this.floorDiv(wx, s);
+        let cz : i32 = this.floorDiv(wz, s);
+        let slot : i32 = this.slotFor(cx, cz);
+        if (this.loaded[slot] == 0 || this.cxs[slot] != cx || this.czs[slot] != cz) {
+            return;
+        }
+        let off : i64 = this.voxIdx(slot, wx - cx * s, wy, wz - cz * s) as i64;
+        if (readU8(this.light, off) != v) {
+            writeU8(this.light, off, v);
+            this.ldirty[slot] = 1;
+        }
+    }
+
+    /** Sky-light level (0..15) at a world voxel; 0 if unloaded / out of range. */
+    fn skGetW(wx : i32, wy : i32, wz : i32) : i32 {
+        if (wy < 0 || wy >= config::worldHeight) {
+            return 0;
+        }
+        let s : i32 = config::chunkSize;
+        let cx : i32 = this.floorDiv(wx, s);
+        let cz : i32 = this.floorDiv(wz, s);
+        let slot : i32 = this.slotFor(cx, cz);
+        if (this.loaded[slot] == 0 || this.cxs[slot] != cx || this.czs[slot] != cz) {
+            return 0;
+        }
+        return readU8(this.skylight, this.voxIdx(slot, wx - cx * s, wy, wz - cz * s) as i64);
+    }
+
+    /** Set sky light at a world voxel (owner chunk) and flag it for re-mesh. */
+    fn skSetW(wx : i32, wy : i32, wz : i32, v : i32) : void {
+        if (wy < 0 || wy >= config::worldHeight) {
+            return;
+        }
+        let s : i32 = config::chunkSize;
+        let cx : i32 = this.floorDiv(wx, s);
+        let cz : i32 = this.floorDiv(wz, s);
+        let slot : i32 = this.slotFor(cx, cz);
+        if (this.loaded[slot] == 0 || this.cxs[slot] != cx || this.czs[slot] != cz) {
+            return;
+        }
+        let off : i64 = this.voxIdx(slot, wx - cx * s, wy, wz - cz * s) as i64;
+        if (readU8(this.skylight, off) != v) {
+            writeU8(this.skylight, off, v);
+            this.ldirty[slot] = 1;
+        }
+    }
+
+    /**
+     * Recompute a column's sky light: 15 from the top down to the first opaque
+     * block, 0 below it — so open ground is sky-lit and anything roofed over /
+     * underground is dark (and needs torches).
+     * @param wx  world x
+     * @param wz  world z
+     */
+    fn skyColumn(wx : i32, wz : i32) : void {
+        let s : i32 = config::chunkSize;
+        let cx : i32 = this.floorDiv(wx, s);
+        let cz : i32 = this.floorDiv(wz, s);
+        let slot : i32 = this.slotFor(cx, cz);
+        if (this.loaded[slot] == 0 || this.cxs[slot] != cx || this.czs[slot] != cz) {
+            return;
+        }
+        let lx : i32 = wx - cx * s;
+        let lz : i32 = wz - cz * s;
+        let lit : i32 = 15;
+        let y : i32 = config::worldHeight - 1;
+        while (y >= 0) {
+            if (lit > 0 && isOpaque(this.getVox(slot, lx, y, lz))) {
+                lit = 0;
+            }
+            let off : i64 = this.voxIdx(slot, lx, y, lz) as i64;
+            if (readU8(this.skylight, off) != lit) {
+                writeU8(this.skylight, off, lit);
+                this.ldirty[slot] = 1;
+            }
+            y = y - 1;
+        }
+    }
+
+    /** Seed sky light for every column of a freshly generated chunk. */
+    fn seedSky(slot : i32, cx : i32, cz : i32) : void {
+        let s : i32 = config::chunkSize;
+        let lz : i32 = 0;
+        while (lz < s) {
+            let lx : i32 = 0;
+            while (lx < s) {
+                this.skyColumn(cx * s + lx, cz * s + lz);
+                lx = lx + 1;
+            }
+            lz = lz + 1;
+        }
+        // Sideways gradient at generation: flood sky from the fully lit cells in
+        // the active band, so roofed / overhung spots (under a canopy, a cliff,
+        // a cave mouth) fade in like an edit would — no hard black patch.
+        this.lqn = 0;
+        let top : i32 = this.maxFY[slot] + 1;
+        if (top > config::worldHeight - 1) {
+            top = config::worldHeight - 1;
+        }
+        let bz : i32 = 0;
+        while (bz < s) {
+            let bx : i32 = 0;
+            while (bx < s) {
+                let by : i32 = 0;
+                while (by <= top) {
+                    if (readU8(this.skylight, this.voxIdx(slot, bx, by, bz) as i64) == 15) {
+                        this.lpush(cx * s + bx, by, cz * s + bz);
+                    }
+                    by = by + 1;
+                }
+                bx = bx + 1;
+            }
+            bz = bz + 1;
+        }
+        this.skFloodAdd();
+    }
+
+    /** Spread sky light into a neighbour (−1 per block) when brighter there. */
+    fn skTrySpread(nx : i32, ny : i32, nz : i32, lv : i32) : void {
+        if (isOpaque(this.worldGet(nx, ny, nz))) {
+            return;
+        }
+        if (this.skGetW(nx, ny, nz) < lv - 1) {
+            this.skSetW(nx, ny, nz, lv - 1);
+            this.lpush(nx, ny, nz);
+        }
+    }
+
+    /**
+     * Flood the (shared) add-stack as SKY light — spreads sideways/under
+     * overhangs losing one level per block, so a cave entrance fades from
+     * daylight to dark instead of cutting hard. (Vertical shafts stay full via
+     * skyColumn; this fills the horizontal falloff.)
+     */
+    fn skFloodAdd() : void {
+        while (this.lqn > 0) {
+            this.lqn = this.lqn - 1;
+            let x : i32 = this.lqx[this.lqn];
+            let y : i32 = this.lqy[this.lqn];
+            let z : i32 = this.lqz[this.lqn];
+            let lv : i32 = this.skGetW(x, y, z);
+            if (lv > 1) {
+                this.skTrySpread(x + 1, y, z, lv);
+                this.skTrySpread(x - 1, y, z, lv);
+                this.skTrySpread(x, y + 1, z, lv);
+                this.skTrySpread(x, y - 1, z, lv);
+                this.skTrySpread(x, y, z + 1, lv);
+                this.skTrySpread(x, y, z - 1, lv);
+            }
+        }
+    }
+
+    /** One sky-removal neighbour step: darken dimmer cells, re-add from brighter. */
+    fn skTryRemove(nx : i32, ny : i32, nz : i32, lvl : i32) : void {
+        let nl : i32 = this.skGetW(nx, ny, nz);
+        if (nl != 0) {
+            if (nl < lvl) {
+                this.skSetW(nx, ny, nz, 0);
+                this.rpush(nx, ny, nz, nl);
+            } else {
+                this.lpush(nx, ny, nz);
+            }
+        }
+    }
+
+    /** Flood the removal stack as SKY light, feeding the add-stack from sources. */
+    fn skFloodRemove() : void {
+        while (this.rqn > 0) {
+            this.rqn = this.rqn - 1;
+            let x : i32 = this.rqx[this.rqn];
+            let y : i32 = this.rqy[this.rqn];
+            let z : i32 = this.rqz[this.rqn];
+            let lvl : i32 = this.rql[this.rqn];
+            this.skTryRemove(x + 1, y, z, lvl);
+            this.skTryRemove(x - 1, y, z, lvl);
+            this.skTryRemove(x, y + 1, z, lvl);
+            this.skTryRemove(x, y - 1, z, lvl);
+            this.skTryRemove(x, y, z + 1, lvl);
+            this.skTryRemove(x, y, z - 1, lvl);
+        }
+    }
+
+    /** Push a cell onto the light add-stack (dropped if full). */
+    fn lpush(wx : i32, wy : i32, wz : i32) : void {
+        if (this.lqn >= config::lightQueueCap) {
+            return;
+        }
+        this.lqx[this.lqn] = wx;
+        this.lqy[this.lqn] = wy;
+        this.lqz[this.lqn] = wz;
+        this.lqn = this.lqn + 1;
+    }
+
+    /** Push a cell + its old level onto the light removal-stack. */
+    fn rpush(wx : i32, wy : i32, wz : i32, lvl : i32) : void {
+        if (this.rqn >= config::lightQueueCap) {
+            return;
+        }
+        this.rqx[this.rqn] = wx;
+        this.rqy[this.rqn] = wy;
+        this.rqz[this.rqn] = wz;
+        this.rql[this.rqn] = lvl;
+        this.rqn = this.rqn + 1;
+    }
+
+    /** Spread light into a neighbour when it would be brighter there. */
+    fn tryAdd(nx : i32, ny : i32, nz : i32, lv : i32) : void {
+        if (isOpaque(this.worldGet(nx, ny, nz))) {
+            return;
+        }
+        if (this.blGetW(nx, ny, nz) < lv - 1) {
+            this.blSetW(nx, ny, nz, lv - 1);
+            this.lpush(nx, ny, nz);
+        }
+    }
+
+    /** Flood the light add-stack to completion (bounded by the stack cap). */
+    fn floodAdd() : void {
+        while (this.lqn > 0) {
+            this.lqn = this.lqn - 1;
+            let x : i32 = this.lqx[this.lqn];
+            let y : i32 = this.lqy[this.lqn];
+            let z : i32 = this.lqz[this.lqn];
+            let lv : i32 = this.blGetW(x, y, z);
+            if (lv > 1) {
+                this.tryAdd(x + 1, y, z, lv);
+                this.tryAdd(x - 1, y, z, lv);
+                this.tryAdd(x, y + 1, z, lv);
+                this.tryAdd(x, y - 1, z, lv);
+                this.tryAdd(x, y, z + 1, lv);
+                this.tryAdd(x, y, z - 1, lv);
+            }
+        }
+    }
+
+    /** One removal neighbour step: darken dimmer cells, re-add from brighter. */
+    fn tryRemove(nx : i32, ny : i32, nz : i32, lvl : i32) : void {
+        let nl : i32 = this.blGetW(nx, ny, nz);
+        if (nl != 0) {
+            if (nl < lvl) {
+                this.blSetW(nx, ny, nz, 0);
+                this.rpush(nx, ny, nz, nl);
+            } else {
+                this.lpush(nx, ny, nz);
+            }
+        }
+    }
+
+    /** Flood the removal stack, feeding the add-stack from brighter neighbours. */
+    fn floodRemove() : void {
+        while (this.rqn > 0) {
+            this.rqn = this.rqn - 1;
+            let x : i32 = this.rqx[this.rqn];
+            let y : i32 = this.rqy[this.rqn];
+            let z : i32 = this.rqz[this.rqn];
+            let lvl : i32 = this.rql[this.rqn];
+            this.tryRemove(x + 1, y, z, lvl);
+            this.tryRemove(x - 1, y, z, lvl);
+            this.tryRemove(x, y + 1, z, lvl);
+            this.tryRemove(x, y - 1, z, lvl);
+            this.tryRemove(x, y, z + 1, lvl);
+            this.tryRemove(x, y, z - 1, lvl);
+        }
+    }
+
+    /** Re-mesh every slot whose light changed, then clear the flags. */
+    fn flushLightMesh() : void {
+        let slots : i32 = config::span * config::span;
+        let i : i32 = 0;
+        while (i < slots) {
+            if (this.ldirty[i] == 1) {
+                this.ldirty[i] = 0;
+                if (this.loaded[i] == 1) {
+                    this.buildMesh(i, this.cxs[i], this.czs[i]);
+                }
+            }
+            i = i + 1;
+        }
+    }
+
+    /**
+     * Recompute block light after ANY edit at a world voxel — the general,
+     * correct update. It clears the light that ran through the cell (so a newly
+     * placed opaque block casts a real shadow and a walled-in torch goes dark),
+     * re-seeds the cell if its block now emits light, then re-floods from the
+     * cell's neighbours (so light flows into a freshly opened space). Touched
+     * chunks are re-meshed.
+     * @param wx  world x
+     * @param wy  world y
+     * @param wz  world z
+     */
+    fn lightUpdate(wx : i32, wy : i32, wz : i32) : void {
+        this.lqn = 0;
+        this.rqn = 0;
+        // 1. Remove the light currently at the cell and everything it fed.
+        let cur : i32 = this.blGetW(wx, wy, wz);
+        this.blSetW(wx, wy, wz, 0);
+        this.rpush(wx, wy, wz, cur + 1);
+        this.floodRemove();
+        // 2. If the block now there emits light, re-seed it.
+        let emit : i32 = lightEmission(this.worldGet(wx, wy, wz));
+        if (emit > 0) {
+            this.blSetW(wx, wy, wz, emit);
+            this.lpush(wx, wy, wz);
+        }
+        // 3. Let light from the 6 neighbours flow into / around the cell.
+        this.lpush(wx + 1, wy, wz);
+        this.lpush(wx - 1, wy, wz);
+        this.lpush(wx, wy + 1, wz);
+        this.lpush(wx, wy - 1, wz);
+        this.lpush(wx, wy, wz + 1);
+        this.lpush(wx, wy, wz - 1);
+        this.floodAdd();
+        // 4. Sky light: reconcile the edited column's vertical exposure — seed a
+        // REMOVAL where a cell darkened (a hole got sealed) and an ADD where it
+        // brightened (a hole opened) — then flood both, so sky light recedes as
+        // well as fills, and the sideways gradient updates either way.
+        this.lqn = 0;
+        this.rqn = 0;
+        let scx : i32 = this.floorDiv(wx, config::chunkSize);
+        let scz : i32 = this.floorDiv(wz, config::chunkSize);
+        let sslot : i32 = this.slotFor(scx, scz);
+        if (this.loaded[sslot] == 1 && this.cxs[sslot] == scx && this.czs[sslot] == scz) {
+            let slx : i32 = wx - scx * config::chunkSize;
+            let slz : i32 = wz - scz * config::chunkSize;
+            let lit : i32 = 15;
+            let cy : i32 = config::worldHeight - 1;
+            while (cy >= 0) {
+                if (lit > 0 && isOpaque(this.getVox(sslot, slx, cy, slz))) {
+                    lit = 0;
+                }
+                let coff : i64 = this.voxIdx(sslot, slx, cy, slz) as i64;
+                let oldv : i32 = readU8(this.skylight, coff);
+                if (oldv > lit) {
+                    writeU8(this.skylight, coff, lit);
+                    this.ldirty[sslot] = 1;
+                    this.rpush(wx, cy, wz, oldv);
+                } else if (lit > oldv) {
+                    writeU8(this.skylight, coff, lit);
+                    this.ldirty[sslot] = 1;
+                    this.lpush(wx, cy, wz);
+                }
+                cy = cy - 1;
+            }
+        }
+        this.skFloodRemove();
+        // Also seed the add from the edited cell + its 6 neighbours, so the
+        // sideways sky gradient flows into a newly opened space even when the
+        // edit doesn't change the column (e.g. digging a horizontal tunnel off
+        // a lit shaft) — the column reconcile alone would miss that.
+        this.lpush(wx, wy, wz);
+        this.lpush(wx + 1, wy, wz);
+        this.lpush(wx - 1, wy, wz);
+        this.lpush(wx, wy + 1, wz);
+        this.lpush(wx, wy - 1, wz);
+        this.lpush(wx, wy, wz + 1);
+        this.lpush(wx, wy, wz - 1);
+        this.skFloodAdd();
+        // A face is baked from the light of the AIR cell it looks into. When the
+        // edited cell sits on a chunk border, the face that looks into it belongs
+        // to the NEIGHBOUR chunk, whose light values didn't change — so
+        // flushLightMesh alone would leave it baked with the stale (pre-edit)
+        // light. Re-flag the edited chunk plus any border neighbour so their
+        // shared faces re-bake with the final light (fixes black/desynced faces
+        // when digging on a seam).
+        let ecs : i32 = config::chunkSize;
+        let ecx : i32 = this.floorDiv(wx, ecs);
+        let ecz : i32 = this.floorDiv(wz, ecs);
+        let elx : i32 = wx - ecx * ecs;
+        let elz : i32 = wz - ecz * ecs;
+        this.markDirtyAt(ecx, ecz);
+        if (elx == 0) { this.markDirtyAt(ecx - 1, ecz); }
+        if (elx == ecs - 1) { this.markDirtyAt(ecx + 1, ecz); }
+        if (elz == 0) { this.markDirtyAt(ecx, ecz - 1); }
+        if (elz == ecs - 1) { this.markDirtyAt(ecx, ecz + 1); }
+        this.flushLightMesh();
+    }
+
+    /** Zero a slot's block-light region (a freshly generated chunk is dark). */
+    fn clearLight(slot : i32) : void {
+        let hSide : i32 = config::chunkSize + 2;
+        let n : i32 = hSide * hSide * config::worldHeight;
+        let base : i64 = (slot as i64) * (n as i64);
+        let i : i32 = 0;
+        while (i < n) {
+            writeU8(this.light, base + (i as i64), 0);
+            writeU8(this.skylight, base + (i as i64), 0);
+            i = i + 1;
         }
     }
 

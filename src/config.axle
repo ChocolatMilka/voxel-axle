@@ -14,7 +14,7 @@ use crate::configs::screen::{
 };
 
 use crate::configs::world::{
-    chunkSize, viewRadius, span, maxFacesPerChunk,
+    chunkSize, viewRadius, span, maxFacesPerChunk, maxTorchesPerChunk,
     seaLevel, maxHeight, worldHeight, tickHz, maintainTicks,
     simTicks, simBudget, simQueueCap, flowSearch,
 };
@@ -104,7 +104,7 @@ use crate::configs::atlas::{
     tlMushroomStem, tlRedMushroom, tlBrownMushroom,
     tlChickenBody, tlChickenHead, tlSheepWool, tlSheepHead,
     tlCowBody, tlCowHead, tlCreeperSkin, tlCreeperFace, tlChargeSkin, tlChargeFace,
-    tlPigBody, tlPigHead,
+    tlPigBody, tlPigHead, tlTorch,
 };
 
 use crate::configs::water::{
@@ -112,6 +112,16 @@ use crate::configs::water::{
     waterFogR, waterFogG, waterFogB, waterFogFar, waterFogMax,
     causticFreq, causticAmp, waterEdgeHeight, bubbleCount, bubbleSpeed,
     waterRippleSpeed, waterFlowSpeed,
+};
+
+use crate::configs::light::{
+    lightQueueCap, lightMin, lightFalloff, torchWarm,
+};
+
+use crate::configs::time::{
+    dayLengthTicks, dayStart, nightLevel, sunTilt,
+    daySkyR, daySkyG, daySkyB, nightSkyR, nightSkyG, nightSkyB,
+    duskSkyR, duskSkyG, duskSkyB,
 };
 
 use crate::configs::audio::{ AudioMaterial };

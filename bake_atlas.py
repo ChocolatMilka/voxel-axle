@@ -228,6 +228,11 @@ MOBS = [
 for path, box, base, label in MOBS:
     add(label, Image.open(path).convert("RGBA").crop(box), base)
 
+# ════════════════ DECORATION TILES (after the mobs) ════════════════
+# Torch: crop the torch sprite to its centre column (stick + flame) so it fills
+# the thin torch post; transparent texels fall back to a dark stub.
+add("torch", Image.open(src("torch")).convert("RGBA").crop((6, 0, 10, 16)), (28, 20, 12))  # 93
+
 # ════════════════ Write + report ════════════════
 total = len(raw) // (TILE * TILE * 4)
 (ROOT / "atlas.raw").write_bytes(raw)

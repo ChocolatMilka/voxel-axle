@@ -67,7 +67,7 @@ class Player extends Entity {
         this.hotbar[4] = Block::Snow;
         this.hotbar[5] = Block::Gravel;
         this.hotbar[6] = Block::Wood;
-        this.hotbar[7] = Block::Leaves;
+        this.hotbar[7] = Block::Torch;
         this.hotbar[8] = Block::Water;
         this.selected = 0;
     }

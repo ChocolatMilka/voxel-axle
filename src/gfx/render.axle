@@ -8,7 +8,7 @@
 // `useMobTextures` is on). The mob pass shares the world's z-buffer, so
 // terrain correctly occludes animals behind it.
 
-use sdl_platform::{allocBytes, getF64, setF64, putPixel, readI32, rgb};
+use sdl_platform::{allocBytes, getF64, setF64, putPixel, readI32, readU8, rgb};
 use crate::gfx::color::{scaleRgb, tintIf};
 use crate::gfx::raster::{rasterTriTex, rasterTri, clearFrame, buildMipChain, mipChainTexels, mipLevelOffset, mipLevelSize};
 use crate::entities::player::Player;
@@ -62,6 +62,14 @@ class Renderer {
     hw : f64,    // half the render width (horizontal projection centre);
                  // updated on resize so the aspect / FOV track the window
     mips : i64,  // mip chain of the atlas (built in setAtlas)
+    sunX : f64,  // ── day/night state, refreshed each frame in render() ──
+    sunY : f64,
+    sunZ : f64,
+    daylight : f64,   // 0 (night) .. 1 (noon); scales SKY light at render time
+    skyColR : i32,    // current sky / fog colour
+    skyColG : i32,
+    skyColB : i32,
+    lcurve : i64,     // 16 f64s: lightFalloff^(15-level), the brightness curve
 
     /**
      * Build a Renderer: allocate the projection / clipping scratch buffers,
@@ -70,6 +78,26 @@ class Renderer {
     constructor() {
         this.hw = config::halfW;
         this.mips = 0;
+        this.sunX = 0.0;
+        this.sunY = 1.0;
+        this.sunZ = 0.0;
+        this.daylight = 1.0;
+        this.skyColR = config::daySkyR;
+        this.skyColG = config::daySkyG;
+        this.skyColB = config::daySkyB;
+        // Brightness curve lookup: lcurve[level] = lightFalloff^(15-level).
+        this.lcurve = allocBytes(16 * 8);
+        let li : i32 = 0;
+        while (li < 16) {
+            let pc : f64 = 1.0;
+            let kc : i32 = 0;
+            while (kc < 15 - li) {
+                pc = pc * config::lightFalloff;
+                kc = kc + 1;
+            }
+            setF64(this.lcurve, li, pc);
+            li = li + 1;
+        }
         this.coff = malloc<i32>(72);
         this.uvu = malloc<i32>(24);
         this.uvv = malloc<i32>(24);
@@ -216,7 +244,7 @@ class Renderer {
      * @return brightness factor in [ambient, 1]
      */
     fn shadeN(nx : f64, ny : f64, nz : f64) : f64 {
-        let ndl : f64 = nx * config::lightX + ny * config::lightY + nz * config::lightZ;
+        let ndl : f64 = nx * this.sunX + ny * this.sunY + nz * this.sunZ;
         if (ndl < 0.0) {
             ndl = 0.0;
         }
@@ -545,6 +573,28 @@ class Renderer {
         if (sharp > 16.0) {
             sharp = 16.0;
         }
+        // Baked light: sky (high nibble) + block (low nibble). Open sky keeps
+        // surfaces bright; roofed-over / underground voxels go dark unless a
+        // torch lights them. shadeN gives the face-direction shading; block
+        // light tints warm.
+        let lbyte : i32 = readU8(man.flight, idx as i64);
+        let skyL : i32 = (lbyte >> 4) & 0xF;
+        let blkL : i32 = lbyte & 0xF;
+        // Exponential brightness curve (lcurve). Sky light is dimmed by the
+        // daylight factor (so night darkens with no re-mesh); torch/block light
+        // is not. Take the brighter of the two.
+        let skyF : f64 = getF64(this.lcurve, skyL) * this.daylight;
+        let blkF : f64 = getF64(this.lcurve, blkL);
+        let cf : f64 = skyF;
+        if (blkF > cf) {
+            cf = blkF;
+        }
+        let lfac : f64 = config::lightMin + (1.0 - config::lightMin) * cf;
+        let base : f64 = bright * lfac;
+        let wf : f64 = (blkL as f64) * 0.0667 * config::torchWarm;
+        let trr : f64 = base * (1.0 + wf);
+        let tgg : f64 = base;
+        let tbb : f64 = base * (1.0 - wf);
         let v : i32 = 0;
         while (v < n) {
             let rz2 : f64 = getF64(this.cbz, v);
@@ -561,7 +611,7 @@ class Renderer {
                 getF64(this.csx, 0), getF64(this.csy, 0), getF64(this.ciz, 0), getF64(this.cbu, 0), getF64(this.cbv, 0),
                 getF64(this.csx, t), getF64(this.csy, t), getF64(this.ciz, t), getF64(this.cbu, t), getF64(this.cbv, t),
                 getF64(this.csx, t + 1), getF64(this.csy, t + 1), getF64(this.ciz, t + 1), getF64(this.cbu, t + 1), getF64(this.cbv, t + 1),
-                this.mips, tile, lvlBase, lvlSz, lvlBase2, lvlSz2, mipFrac, sharp, bright, bright, bright, isWaterFace);
+                this.mips, tile, lvlBase, lvlSz, lvlBase2, lvlSz2, mipFrac, sharp, trr, tgg, tbb, isWaterFace, this.skyColR, this.skyColG, this.skyColB);
             t = t + 1;
         }
     }
@@ -603,9 +653,61 @@ class Renderer {
      * @param w       framebuffer width
      * @param h       framebuffer height
      */
-    fn render(man : ChunkManager, p : Player, pixels : i64, zbuf : i64, w : i32, h : i32, underwater : bool, phase : f64) : void {
+    /**
+     * Recompute the day/night state from dayTime (0..1): the sun direction
+     * (for face shading), the daylight factor (scales sky light), and the
+     * sky/fog colour (night → dusk → day). Called once per frame.
+     * @param dayTime  time of day in [0, 1)
+     */
+    fn updateDayState(dayTime : f64) : void {
+        // Sun angle: 0.25 = sunrise, 0.5 = noon, 0.75 = sunset.
+        let ang : f64 = (dayTime - 0.25) * 6.2831853;
+        let sx : f64 = Math::cos(ang);
+        let sy : f64 = Math::sin(ang);
+        let sz : f64 = config::sunTilt;
+        let len : f64 = Math::sqrt(sx * sx + sy * sy + sz * sz);
+        if (len < 0.0001) {
+            len = 0.0001;
+        }
+        this.sunX = sx / len;
+        this.sunY = sy / len;
+        this.sunZ = sz / len;
+        // Daylight: full above the horizon, floor (moonlight) below, smooth
+        // through dawn/dusk.
+        let dl : f64 = (sy + 0.2) * 2.0;
+        if (dl < 0.0) {
+            dl = 0.0;
+        }
+        if (dl > 1.0) {
+            dl = 1.0;
+        }
+        this.daylight = config::nightLevel + (1.0 - config::nightLevel) * dl;
+        // Sky colour: night → day, with a warm dusk/dawn push at the transition.
+        let ad : f64 = dl - 0.5;
+        if (ad < 0.0) {
+            ad = 0.0 - ad;
+        }
+        let dusk : f64 = 1.0 - ad * 2.0;
+        if (dusk < 0.0) {
+            dusk = 0.0;
+        }
+        dusk = dusk * 0.7;
+        let r : f64 = (config::nightSkyR as f64) + ((config::daySkyR - config::nightSkyR) as f64) * dl;
+        let g : f64 = (config::nightSkyG as f64) + ((config::daySkyG - config::nightSkyG) as f64) * dl;
+        let b : f64 = (config::nightSkyB as f64) + ((config::daySkyB - config::nightSkyB) as f64) * dl;
+        r = r + ((config::duskSkyR as f64) - r) * dusk;
+        g = g + ((config::duskSkyG as f64) - g) * dusk;
+        b = b + ((config::duskSkyB as f64) - b) * dusk;
+        this.skyColR = Math::floorToInt(r) as i32;
+        this.skyColG = Math::floorToInt(g) as i32;
+        this.skyColB = Math::floorToInt(b) as i32;
+    }
+
+    fn render(man : ChunkManager, p : Player, pixels : i64, zbuf : i64, w : i32, h : i32, underwater : bool, phase : f64, dayTime : f64) : void {
+        // Refresh the sun direction, daylight factor and sky/fog colour.
+        this.updateDayState(dayTime);
         // Underwater the cleared "void" becomes deep water instead of sky.
-        let bg : i32 = rgb(config::skyR, config::skyG, config::skyB);
+        let bg : i32 = rgb(this.skyColR, this.skyColG, this.skyColB);
         if (underwater) {
             bg = rgb(config::waterDeepR, config::waterDeepG, config::waterDeepB);
         }
@@ -620,6 +722,50 @@ class Renderer {
                 while (fi < n) {
                     this.renderFace(man, base + fi, p, pixels, zbuf, w, h, phase);
                     fi = fi + 1;
+                }
+            }
+            slot = slot + 1;
+        }
+    }
+
+    /**
+     * Draw every loaded/visible chunk's torches as thin upright posts (4 side
+     * quads + a top), reusing the oriented-quad path. Torch voxels emit no cube
+     * faces in the mesh; they are collected per slot and drawn here.
+     * @param man     chunk manager holding the per-slot torch lists
+     * @param p       player providing the eye position and orientation
+     * @param pixels  framebuffer pixel buffer
+     * @param zbuf    depth buffer
+     * @param w       framebuffer width
+     * @param h       framebuffer height
+     */
+    fn renderTorches(man : ChunkManager, p : Player, pixels : i64, zbuf : i64, w : i32, h : i32) : void {
+        let hw : f64 = 0.09;
+        let ht : f64 = 0.55;
+        let col : i32 = rgb(240, 180, 70);
+        let tl : i32 = config::tlTorch;
+        let slots : i32 = config::span * config::span;
+        let slot : i32 = 0;
+        while (slot < slots) {
+            if (man.loaded[slot] == 1 && this.chunkVisible(p, man.cxs[slot], man.czs[slot])) {
+                let base : i32 = slot * config::maxTorchesPerChunk;
+                let n : i32 = man.tcount[slot];
+                let ti : i32 = 0;
+                while (ti < n) {
+                    let cx : f64 = (man.tx[base + ti] as f64) + 0.5;
+                    let cz : f64 = (man.tz[base + ti] as f64) + 0.5;
+                    let x0 : f64 = cx - hw;
+                    let x1 : f64 = cx + hw;
+                    let z0 : f64 = cz - hw;
+                    let z1 : f64 = cz + hw;
+                    let y0 : f64 = man.ty[base + ti] as f64;
+                    let y1 : f64 = y0 + ht;
+                    this.drawQuad(p, pixels, zbuf, w, h, x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1, 1.0, 0.0, 0.0, col, tl, false);
+                    this.drawQuad(p, pixels, zbuf, w, h, x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, 0.0 - 1.0, 0.0, 0.0, col, tl, false);
+                    this.drawQuad(p, pixels, zbuf, w, h, x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, 0.0, 0.0, 1.0, col, tl, false);
+                    this.drawQuad(p, pixels, zbuf, w, h, x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0, 0.0, 0.0, 0.0 - 1.0, col, tl, false);
+                    this.drawQuad(p, pixels, zbuf, w, h, x0, y1, z0, x1, y1, z0, x1, y1, z1, x0, y1, z1, 0.0, 1.0, 0.0, col, tl, false);
+                    ti = ti + 1;
                 }
             }
             slot = slot + 1;
@@ -814,10 +960,10 @@ class Renderer {
 
             rasterTriTex(pixels, zbuf, w, h,
                 sx0, sy0, iz0, 0.0, 1.0, sx1, sy1, iz1, 1.0, 1.0, sx2, sy2, iz2, 1.0, 0.0,
-                this.mips, tile, 0, config::tilePx, 0, config::tilePx, 0.0, 4.0, tr, tg, tb, false);
+                this.mips, tile, 0, config::tilePx, 0, config::tilePx, 0.0, 4.0, tr, tg, tb, false, this.skyColR, this.skyColG, this.skyColB);
             rasterTriTex(pixels, zbuf, w, h,
                 sx0, sy0, iz0, 0.0, 1.0, sx2, sy2, iz2, 1.0, 0.0, sx3, sy3, iz3, 0.0, 0.0,
-                this.mips, tile, 0, config::tilePx, 0, config::tilePx, 0.0, 4.0, tr, tg, tb, false);
+                this.mips, tile, 0, config::tilePx, 0, config::tilePx, 0.0, 4.0, tr, tg, tb, false, this.skyColR, this.skyColG, this.skyColB);
         } else {
             let col : i32 = scaleRgb(tintIf(hurt, color), bright);
             rasterTri(pixels, zbuf, w, h, sx0, sy0, iz0, sx1, sy1, iz1, sx2, sy2, iz2, col);

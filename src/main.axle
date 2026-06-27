@@ -301,7 +301,7 @@ fn main() : void {
             while (stp < nsteps) {
                 sched.advance();
                 player.update(man, fwd, strafe, sprint, up, down);
-                mobs.update(man, player, sfx);
+                mobs.update(man, player, sfx, blocksim);
                 if (attackCd > 0) {
                     attackCd = attackCd - 1;
                 }
@@ -376,6 +376,7 @@ fn main() : void {
                     man.breakAt(picker.bx, picker.by, picker.bz);
                     sfx.blockEdit(broken, picker.bx, picker.by, picker.bz, mobs.rand());
                     blocksim.enqueue6(picker.bx, picker.by, picker.bz);
+                    man.lightUpdate(picker.bx, picker.by, picker.bz);
                 }
                 attackCd = config::editCooldown;
             }
@@ -386,6 +387,7 @@ fn main() : void {
                     man.placeAt(picker.px, picker.py, picker.pz, held);
                     sfx.blockEdit(held, picker.px, picker.py, picker.pz, mobs.rand());
                     blocksim.enqueue6(picker.px, picker.py, picker.pz);
+                    man.lightUpdate(picker.px, picker.py, picker.pz);
                 }
             }
             wasRight = rightDown;
@@ -442,8 +444,12 @@ fn main() : void {
         if (drawFrame) {
             let underwater : bool = player.isUnderwater();
             let phase : f64 = (sched.tick as f64) * config::waterRippleSpeed;
-            renderer.render(man, player, pixels, zbuf, w, h, underwater, phase);
+            // Day clock: advances with the fixed-step tick, wrapped to [0, 1).
+            let dayTime : f64 = config::dayStart + (sched.tick as f64) / (config::dayLengthTicks as f64);
+            dayTime = dayTime - (Math::floorToInt(dayTime) as f64);
+            renderer.render(man, player, pixels, zbuf, w, h, underwater, phase, dayTime);
             renderer.renderMobs(mobs, player, pixels, zbuf, w, h);
+            renderer.renderTorches(man, player, pixels, zbuf, w, h);
             // Living-water post-pass (depth fog + moving caustics) under the HUD.
             if (underwater) {
                 renderer.underwaterOverlay(pixels, zbuf, w, h, phase);

@@ -25,7 +25,7 @@ fn isAir(id : Block) : bool {
  * @return whether the block is transparent
  */
 fn isTransparent(id : Block) : bool {
-    return id == Block::Air || isWater(id);
+    return id == Block::Air || isWater(id) || id == Block::Torch;
 }
 
 /**
@@ -122,7 +122,48 @@ fn isSource(id : Block) : bool {
  * @return whether the block is collidable
  */
 fn isCollidable(id : Block) : bool {
-    return isSolid(id);
+    // Torches are solid for aiming (you can target/break them) but you walk
+    // through them.
+    return isSolid(id) && id != Block::Torch;
+}
+
+/**
+ * Light a block emits into the world (0 = none, 1..15 = brightness). Torches
+ * and glowstone are the light sources; the engine floods this outward.
+ * @param id  the block
+ * @return the emitted light level (0..15)
+ */
+fn lightEmission(id : Block) : i32 {
+    return match id {
+        Block::Torch => 14,
+        Block::Glowstone => 15,
+        _ => 0,
+    };
+}
+
+/**
+ * True for the leaf blocks. They cull faces like solids (you can't see through
+ * a canopy) but let LIGHT through, so a tree doesn't stamp a hard black shadow
+ * on the ground.
+ * @param id  the block
+ * @return whether the block is leaves
+ */
+fn isLeaves(id : Block) : bool {
+    return match id {
+        Block::Leaves | Block::LeavesBirch | Block::LeavesSpruce | Block::LeavesAcacia
+            | Block::LeavesJungle | Block::LeavesDarkOak | Block::CherryLeaves => true,
+        _ => false,
+    };
+}
+
+/**
+ * Does a block stop light (and cast shade)? Air, water, torches and leaves let
+ * light through; every other full block blocks it.
+ * @param id  the block
+ * @return whether the block is opaque to light
+ */
+fn isOpaque(id : Block) : bool {
+    return id != Block::Air && !isWater(id) && id != Block::Torch && !isLeaves(id);
 }
 
 /**
@@ -296,6 +337,7 @@ fn tileFor(id : Block, dir : FaceDir) : i32 {
             _ => config::tlMelonSide,
         },
         Block::Glowstone => config::tlGlowstone,
+        Block::Torch => config::tlTorch,
         Block::Water | Block::FlowWater1 | Block::FlowWater2 | Block::FlowWater3
             | Block::FlowWater4 | Block::FlowWater5 | Block::FlowWater6
             | Block::FlowWater7 => config::tlWater,
@@ -381,6 +423,7 @@ fn color(id : Block) : i32 {
         Block::Pumpkin => rgb(190, 122, 38),
         Block::Melon => rgb(110, 140, 40),
         Block::Glowstone => rgb(180, 150, 92),
+        Block::Torch => rgb(240, 180, 70),
         Block::CoalOre => rgb(70, 70, 72),
         Block::IronOre => rgb(150, 132, 116),
         Block::GoldOre => rgb(160, 150, 96),

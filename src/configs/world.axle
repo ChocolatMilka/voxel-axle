@@ -10,6 +10,7 @@ const chunkSize : i32 = 16;
 const viewRadius : i32 = 6;  // chunks loaded each side → 13×13
 const span : i32 = 13;  // 2*viewRadius + 1
 const maxFacesPerChunk : i32 = 14000;
+const maxTorchesPerChunk : i32 = 256;  // thin-post torches collected per chunk
 const seaLevel : i32 = 24;
 const maxHeight : i32 = 96;
 const worldHeight : i32 = 128;

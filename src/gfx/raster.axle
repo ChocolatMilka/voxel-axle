@@ -217,7 +217,7 @@ fn rasterTriTex(pixels : i64, zbuf : i64, w : i32, h : i32,
     x0 : f64, y0 : f64, iz0 : f64, u0 : f64, v0 : f64,
     x1 : f64, y1 : f64, iz1 : f64, u1 : f64, v1 : f64,
     x2 : f64, y2 : f64, iz2 : f64, u2 : f64, v2 : f64,
-    mips : i64, tile : i32, lvlBase : i32, lvlSz : i32, lvlBase2 : i32, lvlSz2 : i32, mipFrac : f64, sharp : f64, tr : f64, tg : f64, tb : f64, wrap : bool) : void {
+    mips : i64, tile : i32, lvlBase : i32, lvlSz : i32, lvlBase2 : i32, lvlSz2 : i32, mipFrac : f64, sharp : f64, tr : f64, tg : f64, tb : f64, wrap : bool, fogr : i32, fogg : i32, fogb : i32) : void {
     let area : f64 = edge(x0, y0, x1, y1, x2, y2);
     if (area > 0.0 - 0.0001 && area < 0.0001) {
         return;
@@ -418,9 +418,9 @@ fn rasterTriTex(pixels : i64, zbuf : i64, w : i32, h : i32,
                                 fog = 1.0;
                             }
                             let keep : f64 = 1.0 - fog;
-                            r = Math::floorToInt((r as f64) * keep + (config::skyR as f64) * fog) as i32;
-                            g = Math::floorToInt((g as f64) * keep + (config::skyG as f64) * fog) as i32;
-                            bl = Math::floorToInt((bl as f64) * keep + (config::skyB as f64) * fog) as i32;
+                            r = Math::floorToInt((r as f64) * keep + (fogr as f64) * fog) as i32;
+                            g = Math::floorToInt((g as f64) * keep + (fogg as f64) * fog) as i32;
+                            bl = Math::floorToInt((bl as f64) * keep + (fogb as f64) * fog) as i32;
                         }
                         *zp = izp;
                         let pp : ptr<i32> = (pixels + idx * 4) as ptr<i32>;
